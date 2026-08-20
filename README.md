@@ -1,2 +1,5 @@
-# <img width="54" height="54" alt="Logo_HofKarte" src="https://github.com/user-attachments/assets/d61c5037-219e-4946-b12c-e0cb04d0620c" /> HofKarte
+
+
+# <img width="75" height="75" alt="Logo_HofKarte" src="https://github.com/user-attachments/assets/cc9bb9c6-2a2d-44fb-bc96-8de2589bdbbe" /> HofKarte
+
 Home-Assistant-Integration zum Speichern und Finden von Hofläden
