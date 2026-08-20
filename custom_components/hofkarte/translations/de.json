@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HofKarte einrichten",
+        "description": "Richte HofKarte ein, um Hofläden zu speichern und zu finden.",
+        "data": {
+          "name": "Anzeigename"
+        }
+      }
+    },
+    "error": {
+      "invalid_name": "Bitte einen gültigen Anzeigenamen eingeben."
+    },
+    "abort": {
+      "single_instance_allowed": "HofKarte ist bereits eingerichtet. Es wird nur eine Instanz unterstützt."
+    }
+  }
+}

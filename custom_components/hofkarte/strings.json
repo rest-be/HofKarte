@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up HofKarte",
+        "description": "Set up HofKarte to save and find farm shops.",
+        "data": {
+          "name": "Display name"
+        }
+      }
+    },
+    "error": {
+      "invalid_name": "Please enter a valid display name."
+    },
+    "abort": {
+      "single_instance_allowed": "HofKarte is already configured. Only a single instance is supported."
+    }
+  }
+}

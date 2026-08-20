@@ -6,6 +6,32 @@ dokumentiert.
 Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unveröffentlicht]
+
+### Hinzugefügt
+
+- Config Flow (`config_flow.py`) zur Einrichtung über die
+  Home-Assistant-Oberfläche.
+- Config-Entry-Lifecycle (`async_setup_entry` / `async_unload_entry`) in
+  `__init__.py`.
+- Übersetzungsgrundlage (`strings.json`) sowie Übersetzungen für Englisch
+  (`translations/en.json`) und Deutsch (`translations/de.json`).
+- Tests für erfolgreichen Flow, ungültige Eingaben und doppelte Einrichtung.
+- Tests für Setup/Unload einer Config Entry.
+
+### Geändert
+
+- `manifest.json`: `config_flow` auf `true` gesetzt.
+- YAML-basiertes `async_setup` entfernt zugunsten von Config Entries
+  (siehe Globale Konventionen: keine YAML-Konfiguration parallel zum
+  Config Flow).
+
+### Offene Architekturentscheidung
+
+- Die konkrete Datenquelle für Hofladen-Daten steht noch nicht fest.
+  Der Config Flow beschränkt sich daher bewusst auf einen Anzeigenamen
+  als einzige Konfigurationsoption.
+
 ## [0.1.0] - Unveröffentlicht
 
 ### Hinzugefügt
@@ -17,7 +43,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Noch nicht enthalten
 
-- Config Flow / Options Flow
+- Options Flow
 - Hofladen-Datenmodell
 - DataUpdateCoordinator
 - Devices und Entities

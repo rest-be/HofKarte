@@ -3,9 +3,10 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Grundgerüst (Einheit 1). Es gibt noch keinen Config Flow, keine
-> Entities und keine Fachlogik. Diese Funktionen folgen in den nächsten
-> Entwicklungseinheiten.
+> **Status:** Config Flow und Config Entry (Einheit 2). Die Integration wird
+> über die Home-Assistant-Oberfläche eingerichtet. Es gibt noch keine
+> Entities und keine Hofladen-Fachlogik. Diese Funktionen folgen in den
+> nächsten Entwicklungseinheiten.
 
 ## Über dieses Projekt
 
@@ -34,6 +35,20 @@ ist Schritt 2–3 (benutzerdefiniertes Repository) erforderlich.*
 3. Prüfen, dass beim Start keine Fehler zur Domain `hofkarte` im Log
    erscheinen (siehe Abschnitt „Prüfanleitung“ unten).
 
+## Einrichtung
+
+Nach der Installation:
+
+1. In Home Assistant zu **Einstellungen → Geräte & Dienste** wechseln.
+2. **Integration hinzufügen** wählen und nach „HofKarte“ suchen.
+3. Im Einrichtungsdialog einen Anzeigenamen für die Integration vergeben
+   (z. B. „HofKarte“) und bestätigen.
+
+HofKarte ist als Single-Instance-Integration konzipiert: Es kann nur eine
+Instanz pro Home-Assistant-Installation eingerichtet werden, da sie eine
+zentrale, HA-weite Hofladen-Verwaltung darstellt. Ein erneuter
+Einrichtungsversuch wird entsprechend abgelehnt.
+
 ## Entitäten
 
 In dieser Einheit werden keine Entitäten bereitgestellt. Die Integration
@@ -41,13 +56,14 @@ lädt lediglich als leeres Grundgerüst.
 
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 
-- Kein Config Flow (folgt in Einheit 2).
+- Nur eine Instanz pro Home-Assistant-Installation möglich (Single Instance).
+- Kein Options Flow (folgt erst, sobald eine sinnvolle Option existiert).
 - Keine Hofladen-Daten, kein Coordinator, keine Sensoren.
+- Die konkrete Datenquelle für Hofläden (z. B. lokale Verwaltung durch die
+  Nutzerin/den Nutzer vs. externer Dienst) ist noch nicht festgelegt und
+  eine offene Architekturentscheidung für eine der nächsten Einheiten
+  (Fachliches Datenmodell und Data Layer).
 - Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
-- `manifest.json` enthält Platzhalter für `codeowners`,
-  `documentation` und `issue_tracker`, die vor einer echten
-  Veröffentlichung durch die tatsächliche GitHub-Organisation/Benutzer
-  ersetzt werden müssen.
 
 ## Entwicklung
 
