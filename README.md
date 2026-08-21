@@ -3,12 +3,10 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** DataUpdateCoordinator und Datenabruf (Einheit 4). Die
-> Integration führt beim Einrichten und danach periodisch einen zentralen,
-> asynchronen Datenabruf durch. Die tatsächliche Datenquelle steht noch
-> nicht fest; es wird ein Testdaten-Provider verwendet (siehe unten). Es
-> gibt noch keine Entities. Diese Funktion folgt in einer der nächsten
-> Entwicklungseinheiten.
+> **Status:** Hofladen als Device (Einheit 5). Jeder vom Coordinator
+> gelieferte Hofladen erscheint als logisches Device in der
+> Home-Assistant-Geräteverwaltung. Es gibt noch keine Entities (Sensoren)
+> – diese folgen in der nächsten Entwicklungseinheit.
 
 ## Über dieses Projekt
 
@@ -108,6 +106,28 @@ Anbindung. Sobald die Datenquelle feststeht, wird eine neue
 Provider-Implementierung ergänzt; Coordinator und übrige Integration
 bleiben davon unberührt.
 
+## Hofladen als Device
+
+Jeder vom Coordinator gelieferte Hofladen wird als logisches Device in der
+Home-Assistant-Geräteverwaltung abgebildet
+(`custom_components/hofkarte/device.py`) – **kein physisches Gerät**.
+
+- Der Device-Identifier basiert ausschliesslich auf der stabilen
+  `Hofladen.id` und ändert sich nie zwischen Neustarts oder Reloads.
+- Es werden bewusst **keine** `manufacturer`- oder `model`-Angaben
+  gesetzt: Ein Hofladen hat fachlich weder Hersteller noch Modell: Diese
+  Angaben werden nicht erfunden.
+- Die Device Registry wird beim Einrichten und bei jedem weiteren
+  Coordinator-Update synchronisiert: neu hinzugekommene Hofläden erhalten
+  ein Device, entfernte Hofläden verlieren ihres. Wiederholte Syncs (z. B.
+  bei einem Reload) erzeugen keine Duplikate.
+- Mehrere Hofläden sind durch ihre eindeutigen Identifiers sauber
+  voneinander getrennt.
+
+Diese Einheit enthält bewusst noch keine vollständige Sensorlandschaft,
+keine Öffnungsstatuslogik und keine Actions – diese folgen in späteren
+Einheiten.
+
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 
 - Nur eine Instanz pro Home-Assistant-Installation möglich (Single Instance).
@@ -118,7 +138,8 @@ bleiben davon unberührt.
 - Es wird ein Testdaten-Provider ohne echte Hofladen-Daten verwendet – die
   konkrete Datenquelle für Hofläden ist weiterhin nicht festgelegt und
   eine offene Architekturentscheidung.
-- Noch keine Home-Assistant-Entities (Sensoren, Devices).
+- Hofläden erscheinen als Devices, aber noch ohne Entities (Sensoren) –
+  Devices sind aktuell "leer".
 - Keine eigene SQL-Datenbank und keine Persistenz in dieser Einheit.
 - Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
 

@@ -10,6 +10,34 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- Device-Repräsentation für Hofläden (`device.py`): stabile
+  `identifiers`, die ausschliesslich auf `Hofladen.id` basieren, sowie
+  Synchronisation mit der Device Registry.
+- `async_sync_devices` erzeugt bzw. aktualisiert für jeden Hofladen ein
+  Device und entfernt Devices von Hofläden, die nicht mehr in den
+  Coordinator-Daten enthalten sind.
+- Devices werden beim Einrichten der Config Entry und bei jedem weiteren
+  Coordinator-Update synchronisiert (`coordinator.async_add_listener`).
+- Tests für Identifier-Stabilität, keine Hersteller-/Modellangaben,
+  Erstellung mehrerer sauber getrennter Devices, Idempotenz bei Reload,
+  Aktualisierung bei Namensänderung, Entfernen verschwundener Hofläden
+  sowie einen End-zu-End-Test über `async_setup_entry`.
+
+### Geändert
+
+- `__init__.py`: ruft nach dem initialen Datenabruf `async_sync_devices`
+  auf und hält die Device Registry über einen Coordinator-Listener aktuell.
+
+### Nicht enthalten (planmässig)
+
+- Vollständige Sensorlandschaft
+- Öffnungsstatuslogik
+- Actions
+
+## [0.4.0] - Unveröffentlicht
+
+### Hinzugefügt
+
 - Zentraler `HofKarteUpdateCoordinator` (`coordinator.py`) für den
   asynchronen Abruf, die Validierung und Bereitstellung der
   Hofladen-Daten als `dict[str, Hofladen]`.
@@ -39,16 +67,6 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Die konkrete Datenquelle für Hofladen-Rohdaten steht weiterhin nicht
   fest. Der Coordinator nutzt bewusst einen Testdaten-Provider
   (`StaticTestDataProvider`) statt einer erfundenen externen API.
-- Das Update-Intervall ist aktuell nur auf Code-Ebene konfigurierbar,
-  nicht über einen Options Flow in der Home-Assistant-Oberfläche.
-
-### Noch nicht enthalten
-
-- Options Flow
-- Devices und Entities
-- Öffnungszeitenlogik (Berechnung des aktuellen Öffnungsstatus)
-- Persistenz / reale Datenquelle
-- HACS-Releaseprozess im Detail
 
 ## [0.3.0] - Unveröffentlicht
 

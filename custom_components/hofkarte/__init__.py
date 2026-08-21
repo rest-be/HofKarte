@@ -3,8 +3,9 @@
 Die Einrichtung erfolgt ausschliesslich über den Config Flow (siehe
 ``config_flow.py``). Eine YAML-Konfiguration ist nicht vorgesehen.
 
-Diese Einheit hängt den zentralen ``HofKarteUpdateCoordinator`` in den
-Config-Entry-Lifecycle ein. Entities folgen in einer späteren Einheit.
+Diese Einheit registriert für jeden vom Coordinator gelieferten Hofladen
+ein logisches Device in der Home-Assistant-Geräteverwaltung. Entities
+folgen in einer späteren Einheit.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 from .coordinator import HofKarteUpdateCoordinator
 from .data_provider import StaticTestDataProvider
+from .device import async_sync_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,8 +30,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up HofKarte from a config entry.
 
     Erstellt den zentralen Coordinator, führt den initialen Datenabruf
-    durch und stellt den Coordinator für spätere Einheiten (Entities)
-    unter ``hass.data[DOMAIN][entry.entry_id]`` bereit.
+    durch, registriert je Hofladen ein Device in der Device Registry und
+    hält diese bei jedem weiteren Coordinator-Update synchron.
 
     Schlägt der initiale Abruf fehl, hebt
     ``async_config_entry_first_refresh`` automatisch ``ConfigEntryNotReady``
@@ -45,6 +47,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    async_sync_devices(hass, entry, coordinator.data)
+    entry.async_on_unload(
+        coordinator.async_add_listener(
+            lambda: async_sync_devices(hass, entry, coordinator.data)
+        )
+    )
 
     if PLATFORMS:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
