@@ -3,10 +3,11 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Config Flow und Config Entry (Einheit 2). Die Integration wird
-> über die Home-Assistant-Oberfläche eingerichtet. Es gibt noch keine
-> Entities und keine Hofladen-Fachlogik. Diese Funktionen folgen in den
-> nächsten Entwicklungseinheiten.
+> **Status:** Fachliches Datenmodell und Data Layer (Einheit 3). Die
+> Integration besitzt eine typisierte, interne Darstellung eines Hofladens
+> inkl. Parsing/Validierung. Es gibt noch keine Persistenz, keinen
+> Coordinator und keine Entities. Diese Funktionen folgen in den nächsten
+> Entwicklungseinheiten.
 
 ## Über dieses Projekt
 
@@ -54,15 +55,35 @@ Einrichtungsversuch wird entsprechend abgelehnt.
 In dieser Einheit werden keine Entitäten bereitgestellt. Die Integration
 lädt lediglich als leeres Grundgerüst.
 
+## Internes Datenmodell
+
+Intern verwaltet HofKarte einen Hofladen als typisierte, unveränderliche
+Datenstruktur (`custom_components/hofkarte/models.py`) mit u. a.:
+
+- Stammdaten (ID, Name, Beschreibung, Adresse, PLZ, Ort, Land, Koordinaten)
+- regelmässigen Öffnungszeiten und datumsbezogenen Sonderöffnungszeiten
+- Produkten, Kategorien, Zahlungsarten, Verkaufsarten und Merkmalen
+- optionalen Bildern
+
+Rohdaten (z. B. künftig aus einer lokalen Datenquelle) werden über
+`custom_components/hofkarte/parsing.py` in dieses Modell überführt und
+dabei validiert. Ungültige oder unvollständige Pflichtfelder führen zu
+einer klaren Fehlermeldung (`HofladenValidationError`); fehlende optionale
+Felder werden robust auf `None` bzw. leere Sammlungen abgebildet.
+
+Dieses Datenmodell ist rein intern und noch nicht an eine konkrete
+Datenquelle, einen Coordinator oder Home-Assistant-Entities angebunden.
+
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 
 - Nur eine Instanz pro Home-Assistant-Installation möglich (Single Instance).
 - Kein Options Flow (folgt erst, sobald eine sinnvolle Option existiert).
-- Keine Hofladen-Daten, kein Coordinator, keine Sensoren.
+- Das interne Datenmodell existiert, ist aber noch an keine Datenquelle
+  angebunden – es gibt noch keinen Coordinator und keine Sensoren.
 - Die konkrete Datenquelle für Hofläden (z. B. lokale Verwaltung durch die
   Nutzerin/den Nutzer vs. externer Dienst) ist noch nicht festgelegt und
-  eine offene Architekturentscheidung für eine der nächsten Einheiten
-  (Fachliches Datenmodell und Data Layer).
+  eine offene Architekturentscheidung für eine der nächsten Einheiten.
+- Keine eigene SQL-Datenbank und keine Persistenz in dieser Einheit.
 - Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
 
 ## Entwicklung
