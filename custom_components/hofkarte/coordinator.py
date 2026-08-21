@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import (
@@ -22,7 +23,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DEFAULT_FETCH_TIMEOUT_SECONDS, DEFAULT_UPDATE_INTERVAL, DOMAIN
-from .data_provider import HofladenDataProvider
+from .data_provider import HofladenDataProvider, MutableHofladenDataProvider
 from .models import Hofladen
 from .parsing import HofladenValidationError, parse_hofladen
 
@@ -95,3 +96,35 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
             hoflaeden[hofladen.id] = hofladen
 
         return hoflaeden
+
+    async def async_add_hofladen(self, raw_hofladen: dict[str, Any]) -> Hofladen:
+        """Einen neuen Hofladen hinzufügen und die Daten aktualisieren.
+
+        Die Rohdaten werden zunächst über ``parsing.parse_hofladen``
+        validiert (Fail-Fast: bei ungültigen Daten wird nichts geschrieben)
+        und erst danach an den Provider übergeben. Anschliessend wird ein
+        regulärer Refresh angestossen, damit ``coordinator.data`` sowie die
+        über den Coordinator-Listener angebundene Device Registry (siehe
+        ``device.py``) konsistent aktualisiert werden.
+
+        Wirft :class:`~custom_components.hofkarte.parsing.HofladenValidationError`
+        bei ungültigen Rohdaten, ``NotImplementedError``, falls der
+        aktuell konfigurierte Provider keine Schreibzugriffe unterstützt
+        (z. B. ein künftiger, rein lesender externer Dienst), und
+        :class:`~custom_components.hofkarte.data_provider.DuplicateHofladenIdError`,
+        falls die ``id`` bereits vergeben ist.
+        """
+        # Fail-Fast: fachliche Validierung vor jedem Schreibzugriff auf
+        # die Datenquelle, damit dort nie ungültige Datensätze landen.
+        hofladen = parse_hofladen(raw_hofladen)
+
+        if not isinstance(self._provider, MutableHofladenDataProvider):
+            raise NotImplementedError(
+                "Der konfigurierte Data Provider unterstützt keine "
+                "Schreibzugriffe (Hinzufügen neuer Hofläden)."
+            )
+
+        await self._provider.async_add_raw_hofladen(raw_hofladen)
+        await self.async_refresh()
+
+        return hofladen

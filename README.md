@@ -106,6 +106,25 @@ Anbindung. Sobald die Datenquelle feststeht, wird eine neue
 Provider-Implementierung ergänzt; Coordinator und übrige Integration
 bleiben davon unberührt.
 
+### Neuen Hofladen hinzufügen
+
+Provider, die Schreibzugriffe unterstützen (aktuell nur
+`StaticTestDataProvider`), implementieren zusätzlich
+`MutableHofladenDataProvider.async_add_raw_hofladen`. Der empfohlene
+Aufrufweg ist `HofKarteUpdateCoordinator.async_add_hofladen(raw_hofladen)`:
+
+1. Validiert die Rohdaten über `parsing.parse_hofladen` (Fail-Fast: bei
+   ungültigen Daten wird nichts geschrieben).
+2. Lehnt doppelte IDs ab (`DuplicateHofladenIdError`).
+3. Reicht die Daten an den Provider weiter und stösst einen regulären
+   Coordinator-Refresh an, sodass `coordinator.data` **und** die Device
+   Registry (siehe unten) automatisch konsistent aktualisiert werden.
+
+Unterstützt der konfigurierte Provider keine Schreibzugriffe (z. B. ein
+künftiger, rein lesender externer Dienst), wirft die Funktion einen
+`NotImplementedError`. Eine Home-Assistant-Oberfläche (Service/UI) für
+diese Funktion ist nicht Teil dieser Einheit.
+
 ## Hofladen als Device
 
 Jeder vom Coordinator gelieferte Hofladen wird als logisches Device in der

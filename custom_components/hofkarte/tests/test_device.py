@@ -164,3 +164,23 @@ async def test_setup_entry_creates_device_for_default_test_data(
 
     assert device is not None
     assert device.name == "Platzhalter-Hofladen"
+
+
+async def test_adding_hofladen_via_coordinator_creates_device(
+    hass: HomeAssistant,
+) -> None:
+    """Ein über den Coordinator hinzugefügter Hofladen muss automatisch ein
+    Device erhalten (Coordinator-Listener aus Einheit 5)."""
+    entry = _make_entry(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_add_hofladen({"id": "hof-neu", "name": "Neuer Hofladen"})
+    await hass.async_block_till_done()
+
+    device_registry = dr.async_get(hass)
+    device = device_registry.async_get_device(identifiers={(DOMAIN, "hof-neu")})
+
+    assert device is not None
+    assert device.name == "Neuer Hofladen"

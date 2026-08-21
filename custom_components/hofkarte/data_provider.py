@@ -42,13 +42,39 @@ class HofladenDataProvider(ABC):
         """
 
 
-class StaticTestDataProvider(HofladenDataProvider):
+class MutableHofladenDataProvider(HofladenDataProvider):
+    """Optionale Erweiterung für Provider, die auch Schreibzugriffe erlauben.
+
+    Nicht jede künftige Datenquelle wird Schreibzugriffe unterstützen (z. B.
+    ein rein lesender externer Dienst). Dieses zusätzliche Interface hält
+    Schreiboperationen daher bewusst getrennt von der grundlegenden,
+    nur-lesenden Provider-Schnittstelle.
+    """
+
+    @abstractmethod
+    async def async_add_raw_hofladen(self, raw_hofladen: dict[str, Any]) -> None:
+        """Einen neuen, rohen Hofladen-Datensatz zur Datenquelle hinzufügen.
+
+        Implementierungen müssen sicherstellen, dass ein bereits
+        vorhandener Datensatz mit identischer ``id`` nicht stillschweigend
+        überschrieben wird (siehe ``StaticTestDataProvider`` für ein
+        Beispiel).
+        """
+
+
+class DuplicateHofladenIdError(ValueError):
+    """Es existiert bereits ein Hofladen mit der angegebenen ID."""
+
+
+class StaticTestDataProvider(MutableHofladenDataProvider):
     """Testdaten-Provider ohne externe Anbindung.
 
     Dient ausschliesslich dazu, den Coordinator in dieser Einheit
     lauffähig und testbar zu machen, solange die tatsächliche Datenquelle
     nicht feststeht. Enthält keine echten Hofladen-Daten und keine
-    Netzwerk- oder Dateisystemzugriffe.
+    Netzwerk- oder Dateisystemzugriffe. Daten liegen nur im Arbeitsspeicher
+    und gehen bei einem Neustart verloren (keine Persistenz, siehe Regeln
+    aus Einheit 4/5).
     """
 
     def __init__(self, raw_hoflaeden: list[dict[str, Any]] | None = None) -> None:
@@ -72,6 +98,26 @@ class StaticTestDataProvider(HofladenDataProvider):
         await asyncio.sleep(0)
         return list(self._raw_hoflaeden)
 
+    async def async_add_raw_hofladen(self, raw_hofladen: dict[str, Any]) -> None:
+        """Einen rohen Hofladen-Datensatz im Arbeitsspeicher ergänzen.
+
+        Wirft :class:`DuplicateHofladenIdError`, falls bereits ein
+        Datensatz mit derselben ``id`` vorhanden ist. Die inhaltliche
+        Validierung (Pflichtfelder, Wertebereiche etc.) obliegt bewusst
+        nicht dem Provider, sondern ``parsing.parse_hofladen`` – siehe
+        ``coordinator.HofKarteUpdateCoordinator.async_add_hofladen`` für
+        den empfohlenen Aufrufweg inklusive Validierung.
+        """
+        await asyncio.sleep(0)
+
+        neue_id = raw_hofladen.get("id")
+        if any(vorhanden.get("id") == neue_id for vorhanden in self._raw_hoflaeden):
+            raise DuplicateHofladenIdError(
+                f"Ein Hofladen mit der ID '{neue_id}' existiert bereits."
+            )
+
+        self._raw_hoflaeden.append(dict(raw_hofladen))
+
 
 _DEFAULT_TEST_DATA: list[dict[str, Any]] = [
     {
@@ -79,3 +125,4 @@ _DEFAULT_TEST_DATA: list[dict[str, Any]] = [
         "name": "Platzhalter-Hofladen",
     },
 ]
+

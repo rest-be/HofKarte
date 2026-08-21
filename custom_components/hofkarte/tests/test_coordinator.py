@@ -11,7 +11,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from custom_components.hofkarte.coordinator import HofKarteUpdateCoordinator
-from custom_components.hofkarte.data_provider import HofladenDataProvider
+from custom_components.hofkarte.data_provider import (
+    DuplicateHofladenIdError,
+    HofladenDataProvider,
+    StaticTestDataProvider,
+)
+from custom_components.hofkarte.parsing import HofladenValidationError
 
 
 class _FakeProvider(HofladenDataProvider):
@@ -118,3 +123,57 @@ async def test_empty_data_source_yields_empty_mapping(hass: HomeAssistant) -> No
 
     assert coordinator.last_update_success is True
     assert coordinator.data == {}
+
+
+async def test_add_hofladen_appears_in_data_after_add(hass: HomeAssistant) -> None:
+    """Ein neu hinzugefügter Hofladen muss danach in coordinator.data stehen."""
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+    assert coordinator.data == {}
+
+    hofladen = await coordinator.async_add_hofladen(
+        {"id": "hof-neu", "name": "Neuer Hofladen"}
+    )
+
+    assert hofladen.id == "hof-neu"
+    assert "hof-neu" in coordinator.data
+    assert coordinator.data["hof-neu"].name == "Neuer Hofladen"
+
+
+async def test_add_hofladen_invalid_data_raises_and_does_not_add(
+    hass: HomeAssistant,
+) -> None:
+    """Ungültige Rohdaten dürfen weder validiert noch zum Provider durchgereicht werden."""
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    with pytest.raises(HofladenValidationError):
+        await coordinator.async_add_hofladen({"name": "Ohne ID"})
+
+    assert coordinator.data == {}
+
+
+async def test_add_hofladen_duplicate_id_raises(hass: HomeAssistant) -> None:
+    """Ein Duplikat der ID muss durchgereicht werden, nicht überschrieben."""
+    provider = StaticTestDataProvider(
+        raw_hoflaeden=[{"id": "hof-1", "name": "Bestehender Hofladen"}]
+    )
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    with pytest.raises(DuplicateHofladenIdError):
+        await coordinator.async_add_hofladen({"id": "hof-1", "name": "Anderer Name"})
+
+
+async def test_add_hofladen_not_supported_by_read_only_provider(
+    hass: HomeAssistant,
+) -> None:
+    """Ein rein lesender Provider muss einen klaren Fehler liefern."""
+    provider = _FakeProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    with pytest.raises(NotImplementedError):
+        await coordinator.async_add_hofladen({"id": "hof-neu", "name": "Neu"})

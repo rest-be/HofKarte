@@ -10,6 +10,28 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- `MutableHofladenDataProvider`-Schnittstelle in `data_provider.py` für
+  Provider mit Schreibzugriff, implementiert von `StaticTestDataProvider`
+  (`async_add_raw_hofladen`, lehnt doppelte IDs mit
+  `DuplicateHofladenIdError` ab).
+- `HofKarteUpdateCoordinator.async_add_hofladen(raw_hofladen)`: validiert
+  neue Hofladen-Rohdaten (Fail-Fast), reicht sie an den Provider weiter
+  und stösst einen Refresh an, sodass Daten und Device Registry
+  automatisch konsistent bleiben.
+- Tests für erfolgreiches Hinzufügen, ungültige Rohdaten, doppelte IDs,
+  nicht unterstützende (rein lesende) Provider sowie einen
+  End-zu-End-Test, der bestätigt, dass ein neuer Hofladen automatisch ein
+  Device erhält.
+
+### Hinweis
+
+- Keine Home-Assistant-Oberfläche (Service/UI) für diese Funktion – reine
+  Python-Ebene, wie angefragt.
+
+## [0.5.0] - Unveröffentlicht
+
+### Hinzugefügt
+
 - Device-Repräsentation für Hofläden (`device.py`): stabile
   `identifiers`, die ausschliesslich auf `Hofladen.id` basieren, sowie
   Synchronisation mit der Device Registry.
