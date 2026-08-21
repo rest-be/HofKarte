@@ -3,8 +3,8 @@
 Die Einrichtung erfolgt ausschliesslich über den Config Flow (siehe
 ``config_flow.py``). Eine YAML-Konfiguration ist nicht vorgesehen.
 
-Diese Einheit stellt den Config-Entry-Lifecycle bereit. Datenmodell,
-Coordinator und Entities folgen in späteren Einheiten.
+Diese Einheit hängt den zentralen ``HofKarteUpdateCoordinator`` in den
+Config-Entry-Lifecycle ein. Entities folgen in einer späteren Einheit.
 """
 
 from __future__ import annotations
@@ -15,6 +15,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .coordinator import HofKarteUpdateCoordinator
+from .data_provider import StaticTestDataProvider
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,12 +27,24 @@ PLATFORMS: list[str] = []
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up HofKarte from a config entry.
 
-    In dieser Einheit gibt es noch kein Datenmodell und keinen Coordinator.
-    Die Funktion registriert lediglich den Eintrag in ``hass.data``, damit
-    spätere Einheiten (z. B. Data Layer, Coordinator) darauf aufbauen können.
+    Erstellt den zentralen Coordinator, führt den initialen Datenabruf
+    durch und stellt den Coordinator für spätere Einheiten (Entities)
+    unter ``hass.data[DOMAIN][entry.entry_id]`` bereit.
+
+    Schlägt der initiale Abruf fehl, hebt
+    ``async_config_entry_first_refresh`` automatisch ``ConfigEntryNotReady``
+    aus; Home Assistant versucht die Einrichtung dann später erneut.
     """
+    # Der Data Provider ist bewusst eine Testdaten-Implementierung, da die
+    # tatsächliche Datenquelle noch nicht feststeht (offene
+    # Architekturentscheidung, siehe data_provider.py und README).
+    provider = StaticTestDataProvider()
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+
+    await coordinator.async_config_entry_first_refresh()
+
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {}
+    hass.data[DOMAIN][entry.entry_id] = coordinator
 
     if PLATFORMS:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

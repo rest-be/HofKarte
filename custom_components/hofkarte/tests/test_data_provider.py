@@ -1,0 +1,25 @@
+"""Tests für den HofKarte-Data-Provider."""
+
+from custom_components.hofkarte.data_provider import StaticTestDataProvider
+
+
+async def test_static_provider_returns_default_data() -> None:
+    """Ohne explizite Daten liefert der Provider einen Platzhalter-Datensatz."""
+    provider = StaticTestDataProvider()
+
+    raw_hoflaeden = await provider.async_fetch_raw_hoflaeden()
+
+    assert len(raw_hoflaeden) == 1
+    assert raw_hoflaeden[0]["id"] == "platzhalter-hofladen"
+
+
+async def test_static_provider_returns_custom_data() -> None:
+    """Explizit übergebene Testdaten müssen unverändert zurückgegeben werden."""
+    custom_data = [{"id": "hof-x", "name": "Hofladen X"}]
+    provider = StaticTestDataProvider(raw_hoflaeden=custom_data)
+
+    raw_hoflaeden = await provider.async_fetch_raw_hoflaeden()
+
+    assert raw_hoflaeden == custom_data
+    # Rückgabe muss eine Kopie sein, keine Referenz auf die interne Liste.
+    assert raw_hoflaeden is not provider._raw_hoflaeden

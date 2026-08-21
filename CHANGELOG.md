@@ -10,6 +10,50 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- Zentraler `HofKarteUpdateCoordinator` (`coordinator.py`) für den
+  asynchronen Abruf, die Validierung und Bereitstellung der
+  Hofladen-Daten als `dict[str, Hofladen]`.
+- Data-Provider-Abstraktion (`data_provider.py`) mit
+  `HofladenDataProvider`-Schnittstelle und einer Testdaten-Implementierung
+  (`StaticTestDataProvider`), solange die tatsächliche Datenquelle nicht
+  feststeht.
+- Konfigurierbares Update-Intervall (Standard 15 Minuten) und
+  Abruf-Timeout (Standard 30 Sekunden) als Coordinator-Parameter.
+- Initialer Datenabruf beim Einrichten der Config Entry über
+  `async_config_entry_first_refresh` (inkl. automatischem Retry via
+  `ConfigEntryNotReady` bei Fehlschlag).
+- Tests für erfolgreichen Abruf, Zeitüberschreitung, Datenquellenfehler,
+  einzelne ungültige Datensätze, leere Datenquelle und Verhalten bei
+  einem Fehlversuch nach vorherigem Erfolg.
+
+### Geändert
+
+- `__init__.py`: `async_setup_entry` erstellt und startet nun den
+  Coordinator und legt ihn (statt eines leeren Platzhalter-Dicts) unter
+  `hass.data[DOMAIN][entry.entry_id]` ab.
+- `const.py`: `DEFAULT_UPDATE_INTERVAL` und
+  `DEFAULT_FETCH_TIMEOUT_SECONDS` ergänzt.
+
+### Offene Architekturentscheidung
+
+- Die konkrete Datenquelle für Hofladen-Rohdaten steht weiterhin nicht
+  fest. Der Coordinator nutzt bewusst einen Testdaten-Provider
+  (`StaticTestDataProvider`) statt einer erfundenen externen API.
+- Das Update-Intervall ist aktuell nur auf Code-Ebene konfigurierbar,
+  nicht über einen Options Flow in der Home-Assistant-Oberfläche.
+
+### Noch nicht enthalten
+
+- Options Flow
+- Devices und Entities
+- Öffnungszeitenlogik (Berechnung des aktuellen Öffnungsstatus)
+- Persistenz / reale Datenquelle
+- HACS-Releaseprozess im Detail
+
+## [0.3.0] - Unveröffentlicht
+
+### Hinzugefügt
+
 - Internes, typisiertes Datenmodell für Hofläden (`models.py`): Stammdaten,
   Öffnungszeiten, Sonderöffnungszeiten, Produkte, Kategorien,
   Zahlungsarten, Verkaufsarten, Merkmale, optionale Bilder. Alle
@@ -20,21 +64,6 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Umfangreiche Tests für vollständige und unvollständige Datensätze sowie
   für einzelne Validierungsregeln (Koordinatenbereich, Zeitformate,
   Öffnungszeit-Reihenfolge, Sonderöffnungszeit-Regeln).
-
-### Offene Architekturentscheidung
-
-- Die konkrete Datenquelle für Hofladen-Rohdaten steht weiterhin nicht
-  fest. `parsing.py` kennt bewusst nur ein einfaches, quellenunabhängiges
-  Mapping-Format und keine bestimmte externe API.
-
-### Noch nicht enthalten
-
-- Options Flow
-- DataUpdateCoordinator
-- Devices und Entities
-- Öffnungszeitenlogik (Berechnung des aktuellen Öffnungsstatus)
-- Persistenz / eigene Datenquelle
-- HACS-Releaseprozess im Detail
 
 ## [0.2.0] - Unveröffentlicht
 

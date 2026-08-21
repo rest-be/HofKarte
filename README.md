@@ -3,10 +3,11 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Fachliches Datenmodell und Data Layer (Einheit 3). Die
-> Integration besitzt eine typisierte, interne Darstellung eines Hofladens
-> inkl. Parsing/Validierung. Es gibt noch keine Persistenz, keinen
-> Coordinator und keine Entities. Diese Funktionen folgen in den nächsten
+> **Status:** DataUpdateCoordinator und Datenabruf (Einheit 4). Die
+> Integration führt beim Einrichten und danach periodisch einen zentralen,
+> asynchronen Datenabruf durch. Die tatsächliche Datenquelle steht noch
+> nicht fest; es wird ein Testdaten-Provider verwendet (siehe unten). Es
+> gibt noch keine Entities. Diese Funktion folgt in einer der nächsten
 > Entwicklungseinheiten.
 
 ## Über dieses Projekt
@@ -74,15 +75,50 @@ Felder werden robust auf `None` bzw. leere Sammlungen abgebildet.
 Dieses Datenmodell ist rein intern und noch nicht an eine konkrete
 Datenquelle, einen Coordinator oder Home-Assistant-Entities angebunden.
 
+## Datenabruf (Coordinator)
+
+Ein zentraler `HofKarteUpdateCoordinator`
+(`custom_components/hofkarte/coordinator.py`) ruft die Hofladen-Rohdaten
+asynchron ab, validiert sie über `parsing.parse_hofladen` und stellt das
+Ergebnis als `dict[str, Hofladen]` für die gesamte Integration bereit.
+Künftige Entities lesen ausschliesslich aus dem Coordinator – es gibt
+keine Mehrfachabfragen pro Entity.
+
+Eigenschaften:
+
+- Asynchroner Abruf mit konfigurierbarem Timeout (Standard: 30 Sekunden)
+- Konfigurierbares Update-Intervall (Standard: 15 Minuten)
+- Initialer Datenabruf beim Einrichten der Config Entry; schlägt dieser
+  fehl, versucht Home Assistant die Einrichtung automatisch später erneut
+  (`ConfigEntryNotReady`)
+- Einzelne ungültige Datensätze werden übersprungen und geloggt, statt den
+  gesamten Abruf scheitern zu lassen
+- Bei einem späteren Fehlversuch bleiben die zuletzt erfolgreich
+  abgerufenen Daten erhalten; `coordinator.last_update_success` zeigt die
+  Verfügbarkeit an
+
+### Data Provider (offene Architekturentscheidung)
+
+Die tatsächliche Datenquelle für Hofladen-Daten steht weiterhin nicht
+fest. Um den Coordinator dennoch sinnvoll umzusetzen, kapselt
+`custom_components/hofkarte/data_provider.py` eine klar abgegrenzte
+Provider-Schnittstelle (`HofladenDataProvider`) sowie eine
+Testdaten-Implementierung (`StaticTestDataProvider`) ohne externe
+Anbindung. Sobald die Datenquelle feststeht, wird eine neue
+Provider-Implementierung ergänzt; Coordinator und übrige Integration
+bleiben davon unberührt.
+
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 
 - Nur eine Instanz pro Home-Assistant-Installation möglich (Single Instance).
 - Kein Options Flow (folgt erst, sobald eine sinnvolle Option existiert).
-- Das interne Datenmodell existiert, ist aber noch an keine Datenquelle
-  angebunden – es gibt noch keinen Coordinator und keine Sensoren.
-- Die konkrete Datenquelle für Hofläden (z. B. lokale Verwaltung durch die
-  Nutzerin/den Nutzer vs. externer Dienst) ist noch nicht festgelegt und
-  eine offene Architekturentscheidung für eine der nächsten Einheiten.
+  Update-Intervall und Timeout des Coordinators sind aktuell nur auf
+  Code-Ebene konfigurierbar (Konstruktorparameter), nicht über die
+  Home-Assistant-Oberfläche.
+- Es wird ein Testdaten-Provider ohne echte Hofladen-Daten verwendet – die
+  konkrete Datenquelle für Hofläden ist weiterhin nicht festgelegt und
+  eine offene Architekturentscheidung.
+- Noch keine Home-Assistant-Entities (Sensoren, Devices).
 - Keine eigene SQL-Datenbank und keine Persistenz in dieser Einheit.
 - Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
 
