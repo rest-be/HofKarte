@@ -10,6 +10,48 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- Vollständige, deterministische Öffnungszeiten-Berechnung in
+  `opening_hours.py`: `is_open`, `get_next_opening`, `get_next_closing`.
+  Unterstützt mehrere Intervalle pro Tag, Sonderöffnungszeiten
+  (inkl. Sonder-Schliessung über einen Datumsbereich),
+  Mitternachtsüberschreitung, Wochenwechsel und die Zeitzone des
+  Home-Assistant-Systems (zeitzonenbewusste Berechnung statt naiver
+  Datums-/Uhrzeit-Arithmetik).
+- Binary Sensor „Geöffnet“ sowie die Sensoren „Nächste Öffnung“ und
+  „Nächste Schliessung“ liefern nun echte berechnete Werte statt des
+  bisherigen Platzhalter-Zustands „unbekannt“.
+- Umfangreiche Tests für alle in Einheit 7 geforderten Mindestfälle:
+  offen innerhalb eines Intervalls, geschlossen vor Öffnung, geschlossen
+  nach Schliessung, zwei Intervalle am selben Tag, Mitternacht (vor/nach/
+  nach Ende), Sonderöffnung, Sonder-Schliessung (Einzeltag und
+  Datumsbereich), Wochenwechsel sowie Zeitzonen-/Sommerzeit-Grenzfälle.
+
+### Geändert
+
+- `parsing.py`: Validierungsregel für `beginn`/`ende` (Öffnungszeit und
+  Sonderöffnungszeit) gelockert. Bisher wurde `ende <= beginn`
+  grundsätzlich abgelehnt; nun ist nur noch `ende == beginn` ungültig.
+  `ende < beginn` ist gültig und wird als Mitternachtsüberschreitung
+  interpretiert. Diese Änderung war notwendig, um die von Einheit 7
+  geforderte Mitternachtsüberschreitung überhaupt abbilden zu können
+  (Grenzen: „Keine Änderung der Entitätsarchitektur außer soweit für
+  korrekte Zustände notwendig“).
+- Bestehende Parsing-Tests entsprechend angepasst: der bisherige Test
+  „Ende vor Beginn wird abgelehnt“ wurde durch einen Test ersetzt, der
+  bestätigt, dass dies nun gültig ist (Mitternachtsüberschreitung); ein
+  neuer Test deckt weiterhin `ende == beginn` als ungültig ab.
+
+### Bekannte Grenze
+
+- Uhrzeiten, die exakt in eine Sommerzeit-Umstellungslücke fallen oder im
+  doppelt vorkommenden Bereich beim Zurückstellen liegen, werden mit der
+  von Python/`zoneinfo` standardmässig gewählten Auflösung berechnet
+  (kein explizites Disambiguieren dieser seltenen Grenzfälle).
+
+## [0.6.0] - Unveröffentlicht
+
+### Hinzugefügt
+
 - Binary Sensor „Geöffnet“ (`binary_sensor.py`) pro Hofladen. Bewusst
   ohne Device Class, da keine Home-Assistant-Device-Class für „Geschäft
   geöffnet“ passt.
@@ -21,11 +63,9 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - `async_setup_hofladen_entities`-Helper (`entity.py`): legt Entities für
   alle aktuellen und künftig über den Coordinator hinzukommenden
   Hofläden an, ohne dass ein Reload nötig ist.
-- Vorgesehenes, aktuell bewusst leeres Berechnungsmodul
-  `opening_hours.py` mit den Funktionen `is_open`, `get_next_opening`,
-  `get_next_closing` (liefern derzeit `None`). Die robuste
-  Implementierung folgt in einer kommenden Einheit
-  („Öffnungszeiten und Sonderöffnungszeiten“).
+- Vorgesehenes Berechnungsmodul `opening_hours.py` (in dieser Einheit
+  noch als Stub, liefert `None`; die robuste Implementierung folgt in
+  Einheit 7).
 - Tests für Entity-Erzeugung, `unique_id`-Muster, Device-Zuordnung,
   fehlende Device Class beim Binary Sensor, Verfügbarkeit, sowie die
   dynamische Entity-Erzeugung bei neu hinzugefügten Hofläden.
@@ -41,16 +81,6 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
   Kopie. `async_add_raw_hofladen` konnte dadurch globalen, über
   Testläufe hinweg geteilten Zustand verändern. Behoben, indem der
   Konstruktor in jedem Fall eine Kopie anlegt.
-
-### Nicht enthalten (planmässig)
-
-- Robuste Öffnungszeiten-Berechnung (mehrere Intervalle, Sonderöffnungs-
-  zeiten, Mitternachtsüberschreitung, Zeitzone) – folgt in einer
-  kommenden Einheit.
-- Entfernungs-Sensor (Geosuche/Entfernung ist noch nicht zuverlässig
-  verfügbar).
-- Automatische Entfernung von Entities verschwundener Hofläden aus der
-  Entity Registry (bekannte Einschränkung, siehe README).
 
 ## [0.5.1] - Unveröffentlicht
 

@@ -53,9 +53,9 @@ class HofKarteGeoeffnetBinarySensor(HofKarteEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         """Aktueller Öffnungsstatus.
 
-        Liefert ``None`` (Zustand „unbekannt“), solange die robuste
-        Öffnungszeiten-Berechnung noch nicht implementiert ist (siehe
-        ``opening_hours.py``, Einheit 7).
+        Berechnet über ``opening_hours.is_open``. Liefert ``None``
+        (Zustand „unbekannt“), wenn der Hofladen nicht (mehr) existiert
+        oder keinerlei Öffnungszeiten hinterlegt sind.
         """
         hofladen = self.hofladen
         if hofladen is None:

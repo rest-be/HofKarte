@@ -150,12 +150,32 @@ def test_parse_koordinate_kein_zahlwert() -> None:
         parse_hofladen({"id": "hof-7", "name": "Hofladen", "latitude": "nord"})
 
 
-def test_parse_oeffnungszeit_ende_vor_beginn() -> None:
-    """Ein Öffnungszeit-Ende vor dem Beginn muss abgelehnt werden."""
+def test_parse_oeffnungszeit_mitternachtsueberschreitung_ist_gueltig() -> None:
+    """Ein Ende vor dem Beginn ist gültig und bedeutet Mitternachtsüberschreitung.
+
+    Regel geändert in Einheit 7 (Öffnungszeiten-Berechnung): zuvor wurde
+    'ende' vor 'beginn' abgelehnt; jetzt wird dies als Intervall über
+    Mitternacht hinweg interpretiert (z. B. 22:00–02:00), siehe
+    ``opening_hours.py``.
+    """
     raw = {
         "id": "hof-8",
         "name": "Hofladen",
         "oeffnungszeiten": [{"wochentag": 1, "beginn": "18:00", "ende": "08:00"}],
+    }
+
+    hofladen = parse_hofladen(raw)
+
+    assert hofladen.oeffnungszeiten[0].beginn == time(18, 0)
+    assert hofladen.oeffnungszeiten[0].ende == time(8, 0)
+
+
+def test_parse_oeffnungszeit_ende_gleich_beginn_ist_ungueltig() -> None:
+    """Ein Ende gleich dem Beginn ist weiterhin ungültig (keine Dauer definierbar)."""
+    raw = {
+        "id": "hof-8b",
+        "name": "Hofladen",
+        "oeffnungszeiten": [{"wochentag": 1, "beginn": "08:00", "ende": "08:00"}],
     }
 
     with pytest.raises(HofladenValidationError):
@@ -214,6 +234,49 @@ def test_parse_sonderoeffnungszeit_nicht_geschlossen_ohne_uhrzeiten() -> None:
                 "datum_von": "2026-06-01",
                 "datum_bis": "2026-06-01",
                 "geschlossen": False,
+            }
+        ],
+    }
+
+    with pytest.raises(HofladenValidationError):
+        parse_hofladen(raw)
+
+
+def test_parse_sonderoeffnungszeit_mitternachtsueberschreitung_ist_gueltig() -> None:
+    """Auch Sonderöffnungszeiten dürfen die Mitternacht überschreiten (z. B.
+    Silvester-Sonderöffnung 20:00–02:00)."""
+    raw = {
+        "id": "hof-12b",
+        "name": "Hofladen",
+        "sonderoeffnungszeiten": [
+            {
+                "datum_von": "2026-12-31",
+                "datum_bis": "2026-12-31",
+                "geschlossen": False,
+                "beginn": "20:00",
+                "ende": "02:00",
+            }
+        ],
+    }
+
+    hofladen = parse_hofladen(raw)
+
+    assert hofladen.sonderoeffnungszeiten[0].beginn == time(20, 0)
+    assert hofladen.sonderoeffnungszeiten[0].ende == time(2, 0)
+
+
+def test_parse_sonderoeffnungszeit_ende_gleich_beginn_ist_ungueltig() -> None:
+    """Ende gleich Beginn ist auch bei Sonderöffnungszeiten ungültig."""
+    raw = {
+        "id": "hof-12c",
+        "name": "Hofladen",
+        "sonderoeffnungszeiten": [
+            {
+                "datum_von": "2026-06-01",
+                "datum_bis": "2026-06-01",
+                "geschlossen": False,
+                "beginn": "09:00",
+                "ende": "09:00",
             }
         ],
     }

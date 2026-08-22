@@ -11,6 +11,12 @@ Ungültige oder unvollständige Pflichtdaten führen zu einer
 :class:`HofladenValidationError` mit einer für Menschen verständlichen
 Fehlermeldung. Fehlende optionale Felder werden robust auf ``None`` bzw.
 leere Sammlungen abgebildet.
+
+Intervall-Regel für ``beginn``/``ende`` (Öffnungszeit und
+Sonderöffnungszeit): ``ende == beginn`` ist ungültig (nicht definierbare
+Dauer). ``ende < beginn`` ist hingegen gültig und bedeutet ein Intervall,
+das die Mitternacht überschreitet (z. B. 22:00–02:00) – siehe
+``opening_hours.py`` für die Berechnung anhand solcher Intervalle.
 """
 
 from __future__ import annotations
@@ -128,8 +134,10 @@ def _parse_oeffnungszeit(raw: Any, index: int) -> Oeffnungszeit:
 
     beginn = _parse_time(raw.get("beginn"), context, "beginn")
     ende = _parse_time(raw.get("ende"), context, "ende")
-    if ende <= beginn:
-        raise HofladenValidationError(f"{context}: 'ende' muss nach 'beginn' liegen.")
+    if ende == beginn:
+        raise HofladenValidationError(
+            f"{context}: 'ende' darf nicht gleich 'beginn' sein."
+        )
 
     return Oeffnungszeit(wochentag=wochentag, beginn=beginn, ende=ende)
 
@@ -158,9 +166,9 @@ def _parse_sonderoeffnungszeit(raw: Any, index: int) -> Sonderoeffnungszeit:
             )
         beginn = _parse_time(raw["beginn"], context, "beginn")
         ende = _parse_time(raw["ende"], context, "ende")
-        if ende <= beginn:
+        if ende == beginn:
             raise HofladenValidationError(
-                f"{context}: 'ende' muss nach 'beginn' liegen."
+                f"{context}: 'ende' darf nicht gleich 'beginn' sein."
             )
 
     return Sonderoeffnungszeit(

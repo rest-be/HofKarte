@@ -3,12 +3,13 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Sensoren und Binary Sensor „Geöffnet“ (Einheit 6). Jeder
-> Hofladen besitzt jetzt einen Binary Sensor „Geöffnet“ sowie die Sensoren
-> „Nächste Öffnung“ und „Nächste Schliessung“. Die robuste
-> Öffnungszeiten-Berechnung folgt erst in der nächsten Entwicklungseinheit
-> – bis dahin zeigen diese Entities bewusst den Zustand „unbekannt“ statt
-> erfundener Werte.
+> **Status:** Öffnungszeiten und Sonderöffnungszeiten (Einheit 7). Der
+> Binary Sensor „Geöffnet“ sowie die Sensoren „Nächste Öffnung“ und
+> „Nächste Schliessung“ zeigen nun echte, deterministisch berechnete
+> Werte auf Basis der hinterlegten Öffnungszeiten und
+> Sonderöffnungszeiten – inklusive mehrerer Intervalle pro Tag,
+> Mitternachtsüberschreitung, Wochenwechsel und der Zeitzone des
+> Home-Assistant-Systems.
 
 ## Über dieses Projekt
 
@@ -72,8 +73,14 @@ dabei validiert. Ungültige oder unvollständige Pflichtfelder führen zu
 einer klaren Fehlermeldung (`HofladenValidationError`); fehlende optionale
 Felder werden robust auf `None` bzw. leere Sammlungen abgebildet.
 
-Dieses Datenmodell ist rein intern und noch nicht an eine konkrete
-Datenquelle, einen Coordinator oder Home-Assistant-Entities angebunden.
+Für Öffnungszeiten und Sonderöffnungszeiten gilt: `ende == beginn` ist
+ungültig (keine definierbare Dauer). `ende` **vor** `beginn` ist hingegen
+gültig und bedeutet ein Intervall, das die Mitternacht überschreitet
+(z. B. 22:00–02:00). Diese Regel wurde in Einheit 7 bewusst gelockert, um
+Mitternachtsüberschreitung überhaupt abbilden zu können.
+
+Dieses Datenmodell ist rein intern und nicht direkt an Home-Assistant-
+Entities gebunden.
 
 ## Datenabruf (Coordinator)
 
@@ -172,17 +179,31 @@ Entities, ohne dass ein Reload nötig ist. Entities werden „unavailable“,
 sobald der letzte Coordinator-Abruf fehlgeschlagen ist oder der Hofladen
 aus den Daten verschwunden ist.
 
-### Öffnungsstatus (aktueller Zwischenstand)
+### Öffnungsstatus
 
 Alle drei Entities beziehen ihren Wert ausschliesslich aus dem dafür
 vorgesehenen Modul `custom_components/hofkarte/opening_hours.py`. Dieses
-Modul liefert aktuell bewusst überall `None`: Die robuste Berechnung
-(mehrere Intervalle pro Tag, Sonderöffnungszeiten,
-Mitternachtsüberschreitung, Zeitzone des Home-Assistant-Systems,
-Grenzfälle) ist Gegenstand einer eigenen, kommenden Einheit
-(„Öffnungszeiten und Sonderöffnungszeiten“). Bis dahin zeigen die
-Entities korrekt den Zustand „unbekannt“ statt eines erfundenen oder
-naiv berechneten Wertes.
+Modul berechnet den Öffnungsstatus deterministisch anhand der
+regulären Öffnungszeiten und Sonderöffnungszeiten:
+
+- Montag bis Sonntag, mehrere Intervalle pro Tag
+- Sonderöffnungszeiten überschreiben reguläre Zeiten vollständig,
+  inklusive Sonder-Schliessungen über einen Datumsbereich
+- Mitternachtsüberschreitende Intervalle (z. B. 22:00–02:00)
+- Wochenwechsel (z. B. ein Sonntagabend-Intervall, das in den Montag
+  hineinreicht)
+- Zeitzone des Home-Assistant-Systems (zeitzonenbewusste Berechnung
+  statt naiver Datums-/Uhrzeit-Arithmetik)
+
+Hat ein Hofladen überhaupt keine Öffnungszeiten hinterlegt, liefern die
+Funktionen bewusst `None` (Zustand „unbekannt“) statt fälschlich
+„geschlossen“ zu behaupten.
+
+**Bekannte Grenze:** Bei Uhrzeiten, die exakt in eine
+Sommerzeit-Umstellungslücke fallen oder im doppelt vorkommenden Bereich
+beim Zurückstellen liegen, wird die von Python/`zoneinfo` standardmässig
+gewählte Auflösung verwendet (keine explizite Disambiguierung für diese
+seltenen Grenzfälle).
 
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 
@@ -195,9 +216,11 @@ naiv berechneten Wertes.
   konkrete Datenquelle für Hofläden ist weiterhin nicht festgelegt und
   eine offene Architekturentscheidung.
 - Der Binary Sensor „Geöffnet“ sowie die Sensoren „Nächste Öffnung“ und
-  „Nächste Schliessung“ zeigen aktuell immer den Zustand „unbekannt“, da
-  die zugehörige Berechnungslogik erst in einer kommenden Einheit
-  implementiert wird.
+  „Nächste Schliessung“ liefern jetzt echte berechnete Werte (siehe
+  Abschnitt „Öffnungsstatus“ oben). Bei Uhrzeiten in einer
+  Sommerzeit-Umstellungslücke bzw. im doppelt vorkommenden Bereich beim
+  Zurückstellen wird die von `zoneinfo` standardmässig gewählte
+  Auflösung verwendet, ohne explizite Disambiguierung.
 - Verschwindet ein Hofladen dauerhaft aus den Daten, wird sein Device
   entfernt (siehe Einheit 5), seine Entities bleiben jedoch als
   „unavailable“ in der Entity Registry bestehen, statt automatisch entfernt

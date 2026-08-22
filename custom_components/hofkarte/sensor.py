@@ -61,9 +61,9 @@ class HofKarteNaechsteOeffnungSensor(_HofKarteZeitpunktSensor):
     def native_value(self):
         """Nächster Öffnungszeitpunkt.
 
-        Liefert ``None`` (Zustand „unbekannt“), solange die robuste
-        Öffnungszeiten-Berechnung noch nicht implementiert ist (siehe
-        ``opening_hours.py``, Einheit 7).
+        Berechnet über ``opening_hours.get_next_opening``. Liefert
+        ``None`` (Zustand „unbekannt“), wenn der Hofladen nicht (mehr)
+        existiert oder keinerlei Öffnungszeiten hinterlegt sind.
         """
         hofladen = self.hofladen
         if hofladen is None:
@@ -86,9 +86,9 @@ class HofKarteNaechsteSchliessungSensor(_HofKarteZeitpunktSensor):
     def native_value(self):
         """Nächster Schliesszeitpunkt.
 
-        Liefert ``None`` (Zustand „unbekannt“), solange die robuste
-        Öffnungszeiten-Berechnung noch nicht implementiert ist (siehe
-        ``opening_hours.py``, Einheit 7).
+        Berechnet über ``opening_hours.get_next_closing``. Liefert
+        ``None`` (Zustand „unbekannt“), wenn der Hofladen nicht (mehr)
+        existiert oder keinerlei Öffnungszeiten hinterlegt sind.
         """
         hofladen = self.hofladen
         if hofladen is None:
