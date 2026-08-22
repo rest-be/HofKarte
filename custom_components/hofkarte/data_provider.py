@@ -84,7 +84,7 @@ class StaticTestDataProvider(MutableHofladenDataProvider):
         Hofladen als Platzhalter zurückgegeben.
         """
         self._raw_hoflaeden = (
-            raw_hoflaeden if raw_hoflaeden is not None else _DEFAULT_TEST_DATA
+            list(raw_hoflaeden) if raw_hoflaeden is not None else list(_DEFAULT_TEST_DATA)
         )
 
     async def async_fetch_raw_hoflaeden(self) -> list[dict[str, Any]]:

@@ -3,9 +3,10 @@
 Die Einrichtung erfolgt ausschliesslich über den Config Flow (siehe
 ``config_flow.py``). Eine YAML-Konfiguration ist nicht vorgesehen.
 
-Diese Einheit registriert für jeden vom Coordinator gelieferten Hofladen
-ein logisches Device in der Home-Assistant-Geräteverwaltung. Entities
-folgen in einer späteren Einheit.
+Diese Einheit richtet zusätzlich zu den Devices (Einheit 5) die
+Hofladen-Entities (Binary Sensor „Geöffnet“, Sensoren „Nächste
+Öffnung“/„Nächste Schliessung“) über die Plattformen ``binary_sensor``
+und ``sensor`` ein.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
@@ -22,8 +24,7 @@ from .device import async_sync_devices
 
 _LOGGER = logging.getLogger(__name__)
 
-# Es werden noch keine Plattformen (Sensoren o. Ä.) benötigt.
-PLATFORMS: list[str] = []
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

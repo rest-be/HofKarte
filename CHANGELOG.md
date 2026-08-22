@@ -10,6 +10,52 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- Binary Sensor „Geöffnet“ (`binary_sensor.py`) pro Hofladen. Bewusst
+  ohne Device Class, da keine Home-Assistant-Device-Class für „Geschäft
+  geöffnet“ passt.
+- Sensoren „Nächste Öffnung“ und „Nächste Schliessung“ (`sensor.py`) pro
+  Hofladen, Device Class `timestamp`.
+- Gemeinsame Entity-Basisklasse `HofKarteEntity` (`entity.py`) mit
+  Device-Zuordnung und Verfügbarkeit (abhängig vom letzten
+  Coordinator-Abruf und der Existenz des Hofladens in den Daten).
+- `async_setup_hofladen_entities`-Helper (`entity.py`): legt Entities für
+  alle aktuellen und künftig über den Coordinator hinzukommenden
+  Hofläden an, ohne dass ein Reload nötig ist.
+- Vorgesehenes, aktuell bewusst leeres Berechnungsmodul
+  `opening_hours.py` mit den Funktionen `is_open`, `get_next_opening`,
+  `get_next_closing` (liefern derzeit `None`). Die robuste
+  Implementierung folgt in einer kommenden Einheit
+  („Öffnungszeiten und Sonderöffnungszeiten“).
+- Tests für Entity-Erzeugung, `unique_id`-Muster, Device-Zuordnung,
+  fehlende Device Class beim Binary Sensor, Verfügbarkeit, sowie die
+  dynamische Entity-Erzeugung bei neu hinzugefügten Hofläden.
+
+### Geändert
+
+- `__init__.py`: `PLATFORMS` umfasst nun `binary_sensor` und `sensor`.
+
+### Behoben
+
+- `data_provider.py`: `StaticTestDataProvider()` ohne explizite Testdaten
+  referenzierte bisher die geteilte Default-Liste direkt statt einer
+  Kopie. `async_add_raw_hofladen` konnte dadurch globalen, über
+  Testläufe hinweg geteilten Zustand verändern. Behoben, indem der
+  Konstruktor in jedem Fall eine Kopie anlegt.
+
+### Nicht enthalten (planmässig)
+
+- Robuste Öffnungszeiten-Berechnung (mehrere Intervalle, Sonderöffnungs-
+  zeiten, Mitternachtsüberschreitung, Zeitzone) – folgt in einer
+  kommenden Einheit.
+- Entfernungs-Sensor (Geosuche/Entfernung ist noch nicht zuverlässig
+  verfügbar).
+- Automatische Entfernung von Entities verschwundener Hofläden aus der
+  Entity Registry (bekannte Einschränkung, siehe README).
+
+## [0.5.1] - Unveröffentlicht
+
+### Hinzugefügt
+
 - `MutableHofladenDataProvider`-Schnittstelle in `data_provider.py` für
   Provider mit Schreibzugriff, implementiert von `StaticTestDataProvider`
   (`async_add_raw_hofladen`, lehnt doppelte IDs mit
@@ -22,11 +68,6 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
   nicht unterstützende (rein lesende) Provider sowie einen
   End-zu-End-Test, der bestätigt, dass ein neuer Hofladen automatisch ein
   Device erhält.
-
-### Hinweis
-
-- Keine Home-Assistant-Oberfläche (Service/UI) für diese Funktion – reine
-  Python-Ebene, wie angefragt.
 
 ## [0.5.0] - Unveröffentlicht
 
@@ -49,12 +90,6 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 - `__init__.py`: ruft nach dem initialen Datenabruf `async_sync_devices`
   auf und hält die Device Registry über einen Coordinator-Listener aktuell.
-
-### Nicht enthalten (planmässig)
-
-- Vollständige Sensorlandschaft
-- Öffnungsstatuslogik
-- Actions
 
 ## [0.4.0] - Unveröffentlicht
 

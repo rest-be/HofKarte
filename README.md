@@ -3,10 +3,12 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Hofladen als Device (Einheit 5). Jeder vom Coordinator
-> gelieferte Hofladen erscheint als logisches Device in der
-> Home-Assistant-Geräteverwaltung. Es gibt noch keine Entities (Sensoren)
-> – diese folgen in der nächsten Entwicklungseinheit.
+> **Status:** Sensoren und Binary Sensor „Geöffnet“ (Einheit 6). Jeder
+> Hofladen besitzt jetzt einen Binary Sensor „Geöffnet“ sowie die Sensoren
+> „Nächste Öffnung“ und „Nächste Schliessung“. Die robuste
+> Öffnungszeiten-Berechnung folgt erst in der nächsten Entwicklungseinheit
+> – bis dahin zeigen diese Entities bewusst den Zustand „unbekannt“ statt
+> erfundener Werte.
 
 ## Über dieses Projekt
 
@@ -147,6 +149,41 @@ Diese Einheit enthält bewusst noch keine vollständige Sensorlandschaft,
 keine Öffnungsstatuslogik und keine Actions – diese folgen in späteren
 Einheiten.
 
+## Entities
+
+Für jeden Hofladen werden folgende Entities bereitgestellt (jeweils dem
+zugehörigen Device zugeordnet, `unique_id` stabil aus `Hofladen.id`
+gebildet):
+
+| Plattform       | Entity                | Device Class | Zustand aktuell           |
+|------------------|------------------------|--------------|----------------------------|
+| `binary_sensor`  | Geöffnet               | –            | „unbekannt“ (siehe unten)  |
+| `sensor`         | Nächste Öffnung        | `timestamp`  | „unbekannt“ (siehe unten)  |
+| `sensor`         | Nächste Schliessung    | `timestamp`  | „unbekannt“ (siehe unten)  |
+
+Für den Binary Sensor wurde bewusst **keine** Device Class gesetzt: Es
+gibt keine passende Home-Assistant-Device-Class für „Geschäft geöffnet“
+(vorhandene Klassen wie `opening` beziehen sich auf physische Öffnungen
+wie Türen/Fenster).
+
+Neu über den Coordinator hinzukommende Hofläden (siehe
+„Neuen Hofladen hinzufügen“ unten) erhalten automatisch alle drei
+Entities, ohne dass ein Reload nötig ist. Entities werden „unavailable“,
+sobald der letzte Coordinator-Abruf fehlgeschlagen ist oder der Hofladen
+aus den Daten verschwunden ist.
+
+### Öffnungsstatus (aktueller Zwischenstand)
+
+Alle drei Entities beziehen ihren Wert ausschliesslich aus dem dafür
+vorgesehenen Modul `custom_components/hofkarte/opening_hours.py`. Dieses
+Modul liefert aktuell bewusst überall `None`: Die robuste Berechnung
+(mehrere Intervalle pro Tag, Sonderöffnungszeiten,
+Mitternachtsüberschreitung, Zeitzone des Home-Assistant-Systems,
+Grenzfälle) ist Gegenstand einer eigenen, kommenden Einheit
+(„Öffnungszeiten und Sonderöffnungszeiten“). Bis dahin zeigen die
+Entities korrekt den Zustand „unbekannt“ statt eines erfundenen oder
+naiv berechneten Wertes.
+
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 
 - Nur eine Instanz pro Home-Assistant-Installation möglich (Single Instance).
@@ -157,8 +194,15 @@ Einheiten.
 - Es wird ein Testdaten-Provider ohne echte Hofladen-Daten verwendet – die
   konkrete Datenquelle für Hofläden ist weiterhin nicht festgelegt und
   eine offene Architekturentscheidung.
-- Hofläden erscheinen als Devices, aber noch ohne Entities (Sensoren) –
-  Devices sind aktuell "leer".
+- Der Binary Sensor „Geöffnet“ sowie die Sensoren „Nächste Öffnung“ und
+  „Nächste Schliessung“ zeigen aktuell immer den Zustand „unbekannt“, da
+  die zugehörige Berechnungslogik erst in einer kommenden Einheit
+  implementiert wird.
+- Verschwindet ein Hofladen dauerhaft aus den Daten, wird sein Device
+  entfernt (siehe Einheit 5), seine Entities bleiben jedoch als
+  „unavailable“ in der Entity Registry bestehen, statt automatisch entfernt
+  zu werden – eine bekannte Einschränkung, die bei Bedarf in einer
+  späteren Einheit adressiert werden kann.
 - Keine eigene SQL-Datenbank und keine Persistenz in dieser Einheit.
 - Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
 
