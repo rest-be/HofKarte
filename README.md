@@ -3,13 +3,10 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Öffnungszeiten und Sonderöffnungszeiten (Einheit 7). Der
-> Binary Sensor „Geöffnet“ sowie die Sensoren „Nächste Öffnung“ und
-> „Nächste Schliessung“ zeigen nun echte, deterministisch berechnete
-> Werte auf Basis der hinterlegten Öffnungszeiten und
-> Sonderöffnungszeiten – inklusive mehrerer Intervalle pro Tag,
-> Mitternachtsüberschreitung, Wochenwechsel und der Zeitzone des
-> Home-Assistant-Systems.
+> **Status:** Sortiment und Eigenschaften (Einheit 8). Kategorien, Produkte,
+> Zahlungsarten, Verkaufsarten und Merkmale eines Hofladens sind jetzt als
+> Attribute am Binary Sensor „Geöffnet“ verfügbar. Es wurden bewusst
+> keine zusätzlichen Sensoren dafür erstellt.
 
 ## Über dieses Projekt
 
@@ -162,11 +159,11 @@ Für jeden Hofladen werden folgende Entities bereitgestellt (jeweils dem
 zugehörigen Device zugeordnet, `unique_id` stabil aus `Hofladen.id`
 gebildet):
 
-| Plattform       | Entity                | Device Class | Zustand aktuell           |
-|------------------|------------------------|--------------|----------------------------|
-| `binary_sensor`  | Geöffnet               | –            | „unbekannt“ (siehe unten)  |
-| `sensor`         | Nächste Öffnung        | `timestamp`  | „unbekannt“ (siehe unten)  |
-| `sensor`         | Nächste Schliessung    | `timestamp`  | „unbekannt“ (siehe unten)  |
+| Plattform       | Entity                | Device Class | Attribute                     |
+|------------------|------------------------|--------------|--------------------------------|
+| `binary_sensor`  | Geöffnet               | –            | Sortiment & Eigenschaften (siehe unten) |
+| `sensor`         | Nächste Öffnung        | `timestamp`  | –                              |
+| `sensor`         | Nächste Schliessung    | `timestamp`  | –                              |
 
 Für den Binary Sensor wurde bewusst **keine** Device Class gesetzt: Es
 gibt keine passende Home-Assistant-Device-Class für „Geschäft geöffnet“
@@ -204,6 +201,37 @@ Sommerzeit-Umstellungslücke fallen oder im doppelt vorkommenden Bereich
 beim Zurückstellen liegen, wird die von Python/`zoneinfo` standardmässig
 gewählte Auflösung verwendet (keine explizite Disambiguierung für diese
 seltenen Grenzfälle).
+
+## Sortiment und Eigenschaften
+
+Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale sind
+fachlich keine Messwerte und rechtfertigen keine eigenen Sensoren. Sie
+werden daher als `extra_state_attributes` **ausschliesslich** am Binary
+Sensor „Geöffnet“ bereitgestellt (`custom_components/hofkarte/attributes.py`):
+
+```yaml
+kategorien: ["Gemüse", "Milchprodukte"]
+produkte:
+  - name: "Kartoffeln"
+    kategorien: ["Gemüse"]
+zahlungsarten: ["Bargeld", "TWINT"]
+verkaufsarten: ["Ab-Hof-Verkauf"]
+merkmale: ["Bio"]
+```
+
+- Fehlende Sammlungen ergeben stets eine leere Liste, nie `None` oder
+  einen fehlenden Schlüssel (stabile Struktur unabhängig vom
+  Vollständigkeitsgrad der Daten).
+- Namen werden für eine deterministische Darstellung sortiert
+  (`str.casefold`, Unicode-Codepoint-Reihenfolge – **keine** lokalisierte
+  deutsche Kollation; Umlaute landen dadurch nach „Z“ statt bei
+  A/O/U einsortiert).
+- Verweist ein Produkt auf eine Kategorie-ID, die im Hofladen nicht
+  existiert, wird ersatzweise die rohe ID gezeigt statt die Zuordnung zu
+  verwerfen.
+- Diese Attribute werden bewusst **nicht** auf die beiden
+  Zeitpunkt-Sensoren dupliziert, um dieselben (teils umfangreichen)
+  Daten nicht mehrfach über mehrere Entities hinweg zu wiederholen.
 
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 

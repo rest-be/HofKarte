@@ -134,3 +134,35 @@ async def test_newly_added_hofladen_gets_both_sensors(hass: HomeAssistant) -> No
 
     assert oeffnung_id is not None
     assert schliessung_id is not None
+
+
+def _extra_state_attributes_or_default(entity) -> dict:
+    """Testhilfe: ``extra_state_attributes`` ist standardmässig ``None``;
+    für den Vergleich als leeres dict behandeln."""
+    return entity.extra_state_attributes or {}
+
+
+async def test_sensoren_dupliziert_sortiment_attribute_nicht(
+    hass: HomeAssistant,
+) -> None:
+    """Sortiment und Eigenschaften dürfen nicht auf diese Sensoren
+    dupliziert werden – sie sind ausschliesslich am Binary Sensor
+    "Geöffnet" exponiert (siehe attributes.py, Regeln dieser Einheit:
+    grosse Datenmengen nicht bei jeder State-Änderung duplizieren)."""
+    provider = _FakeProvider(
+        [
+            {
+                "id": "hof-1",
+                "name": "Hofladen Eins",
+                "merkmale": [{"id": "bio", "name": "Bio"}],
+            }
+        ]
+    )
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    oeffnung = HofKarteNaechsteOeffnungSensor(coordinator, "hof-1")
+    schliessung = HofKarteNaechsteSchliessungSensor(coordinator, "hof-1")
+
+    assert "merkmale" not in _extra_state_attributes_or_default(oeffnung)
+    assert "merkmale" not in _extra_state_attributes_or_default(schliessung)

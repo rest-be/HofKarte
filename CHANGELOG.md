@@ -10,6 +10,38 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- Sortiment und Eigenschaften (Kategorien, Produkte, Zahlungsarten,
+  Verkaufsarten, Merkmale) als `extra_state_attributes` am Binary Sensor
+  „Geöffnet“ (`attributes.py`, `build_sortiment_attributes`). Bewusst
+  keine zusätzlichen Sensoren erstellt (Regeln: „Keine künstlichen
+  Messwerte“, „Keine unnötigen Entities“).
+- Produkte enthalten die aufgelösten Namen ihrer zugeordneten Kategorien
+  (Fallback auf die rohe Kategorie-ID, falls diese im Hofladen nicht
+  existiert).
+- Fehlende Sammlungen ergeben stets eine leere Liste statt `None` oder
+  einem fehlenden Schlüssel (stabile Attributstruktur).
+- Namen werden für eine deterministische Darstellung sortiert
+  (`str.casefold`, Unicode-Codepoint-Reihenfolge).
+- Tests für vollständiges Mapping, fehlende Werte, Kategorie-Auflösung
+  (inkl. unbekannter IDs), Sortierverhalten sowie End-zu-End-Tests über
+  den tatsächlichen Home-Assistant-State.
+
+### Geändert
+
+- `binary_sensor.py`: `HofKarteGeoeffnetBinarySensor` liefert nun
+  `extra_state_attributes` über `attributes.build_sortiment_attributes`.
+
+### Bewusst nicht dupliziert
+
+- Die Sensoren „Nächste Öffnung“/„Nächste Schliessung“ tragen diese
+  Attribute nicht (Regeln dieser Einheit: grosse Datenmengen nicht bei
+  jeder State-Änderung duplizieren) – durch einen expliziten Test
+  abgesichert.
+
+## [0.7.0] - Unveröffentlicht
+
+### Hinzugefügt
+
 - Vollständige, deterministische Öffnungszeiten-Berechnung in
   `opening_hours.py`: `is_open`, `get_next_opening`, `get_next_closing`.
   Unterstützt mehrere Intervalle pro Tag, Sonderöffnungszeiten
