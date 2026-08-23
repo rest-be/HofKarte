@@ -3,10 +3,10 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Sortiment und Eigenschaften (Einheit 8). Kategorien, Produkte,
-> Zahlungsarten, Verkaufsarten und Merkmale eines Hofladens sind jetzt als
-> Attribute am Binary Sensor „Geöffnet“ verfügbar. Es wurden bewusst
-> keine zusätzlichen Sensoren dafür erstellt.
+> **Status:** Geosuche und Entfernung (Einheit 9). Jeder Hofladen mit
+> hinterlegten Koordinaten zeigt zusätzlich seine Luftlinien-Entfernung
+> zur konfigurierten Home-Assistant-Position. Es werden keine
+> Standortdaten gespeichert oder an externe Dienste übertragen.
 
 ## Über dieses Projekt
 
@@ -164,6 +164,7 @@ gebildet):
 | `binary_sensor`  | Geöffnet               | –            | Sortiment & Eigenschaften (siehe unten) |
 | `sensor`         | Nächste Öffnung        | `timestamp`  | –                              |
 | `sensor`         | Nächste Schliessung    | `timestamp`  | –                              |
+| `sensor`         | Entfernung             | `distance`   | –                              |
 
 Für den Binary Sensor wurde bewusst **keine** Device Class gesetzt: Es
 gibt keine passende Home-Assistant-Device-Class für „Geschäft geöffnet“
@@ -233,6 +234,31 @@ merkmale: ["Bio"]
   Zeitpunkt-Sensoren dupliziert, um dieselben (teils umfangreichen)
   Daten nicht mehrfach über mehrere Entities hinweg zu wiederholen.
 
+## Entfernung
+
+Der Sensor „Entfernung“ zeigt die Luftlinien-Entfernung eines Hofladens
+zur konfigurierten Home-Assistant-Position
+(`hass.config.latitude`/`longitude`) in Kilometern
+(`custom_components/hofkarte/distance.py`):
+
+- Berechnung über die Haversine-Formel (Grosskreisdistanz), inklusive
+  korrekter Behandlung der Datumsgrenze.
+- Device Class `distance`, Einheit Kilometer, `state_class: measurement`.
+- Der volle, ungerundete Wert bleibt für Verlauf/Statistik erhalten; Home
+  Assistant rundet die Anzeige über `suggested_display_precision`
+  (1 Nachkommastelle). Für Kontexte ausserhalb von Entities steht
+  zusätzlich die eigenständig testbare Funktion `round_distance_km` zur
+  Verfügung.
+- Zustand „unbekannt“, wenn der Hofladen keine Koordinaten hinterlegt hat
+  oder die Home-Assistant-Position nicht bekannt ist – es wird kein Wert
+  erfunden oder geschätzt.
+
+**Keine Standortverfolgung:** Es wird ausschliesslich die statische,
+konfigurierte Home-Position gelesen (kein `device_tracker`, keine
+Personen- oder Geräteverfolgung). Die Integration speichert diese
+Position nicht selbst und überträgt sie nicht an externe Dienste – die
+Berechnung erfolgt vollständig lokal.
+
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 
 - Nur eine Instanz pro Home-Assistant-Installation möglich (Single Instance).
@@ -255,6 +281,11 @@ merkmale: ["Bio"]
   zu werden – eine bekannte Einschränkung, die bei Bedarf in einer
   späteren Einheit adressiert werden kann.
 - Keine eigene SQL-Datenbank und keine Persistenz in dieser Einheit.
+- Der Entfernungs-Sensor nutzt `hass.config.latitude`/`longitude` als
+  Referenzpunkt, unabhängig davon, ob diese jemals über die
+  Home-Assistant-Einrichtung tatsächlich konfiguriert wurden (Standard
+  0.0/0.0 in einer frischen, unkonfigurierten Installation). Es findet
+  keine Plausibilitätsprüfung auf „echte“ Koordinaten statt.
 - Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
 
 ## Entwicklung

@@ -1,15 +1,21 @@
-"""Sensoren für Hofläden: nächster Öffnungs- und Schliesszeitpunkt."""
+"""Sensoren für Hofläden: nächster Öffnungs-/Schliesszeitpunkt und Entfernung."""
 
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfLength
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import HofKarteUpdateCoordinator
+from .distance import calculate_distance_km
 from .entity import HofKarteEntity, async_setup_hofladen_entities
 from .opening_hours import get_next_closing, get_next_opening
 
@@ -29,6 +35,7 @@ async def async_setup_entry(
             [
                 HofKarteNaechsteOeffnungSensor,
                 HofKarteNaechsteSchliessungSensor,
+                HofKarteEntfernungSensor,
             ],
         )
     )
@@ -94,3 +101,54 @@ class HofKarteNaechsteSchliessungSensor(_HofKarteZeitpunktSensor):
         if hofladen is None:
             return None
         return get_next_closing(hofladen, dt_util.now())
+
+
+class HofKarteEntfernungSensor(HofKarteEntity, SensorEntity):
+    """Entfernung eines Hofladens zur Home-Assistant-Position (Luftlinie).
+
+    Nutzt ausschliesslich ``hass.config.latitude``/``longitude`` – die
+    konfigurierte Position der Home-Assistant-Installation selbst – als
+    Referenzpunkt. Das ist ein stabiler Konfigurationswert, kein von der
+    Integration verfolgter oder gespeicherter Standort (siehe
+    ``distance.py``, Regeln dieser Einheit: „Keine Standortdaten
+    persistieren“, „Keine Standortübertragung an externe Dienste“).
+
+    Ein Distance Sensor ist hier fachlich sinnvoll: Der Zweck von
+    HofKarte ist das Finden von Hofläden, und Home Assistant bietet mit
+    ``SensorDeviceClass.DISTANCE`` eine passende, etablierte Device
+    Class dafür (u. a. genutzt von Zonen-/Geolocation-Sensoren).
+    """
+
+    _attr_name = "Entfernung"
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    # HA rundet den angezeigten Wert; der volle Wert bleibt für
+    # Verlauf/Statistik erhalten (siehe distance.round_distance_km für
+    # eine eigenständig testbare Variante ausserhalb von Entities).
+    _attr_suggested_display_precision = 1
+
+    def __init__(
+        self, coordinator: HofKarteUpdateCoordinator, hofladen_id: str
+    ) -> None:
+        super().__init__(coordinator, hofladen_id)
+        self._attr_unique_id = f"{DOMAIN}_{hofladen_id}_entfernung"
+
+    @property
+    def native_value(self) -> float | None:
+        """Entfernung in Kilometern.
+
+        Berechnet über ``distance.calculate_distance_km``. Liefert
+        ``None`` (Zustand „unbekannt“), wenn der Hofladen nicht (mehr)
+        existiert, keine Koordinaten hinterlegt hat, oder die
+        Home-Assistant-Position nicht bekannt ist.
+        """
+        hofladen = self.hofladen
+        if hofladen is None:
+            return None
+        return calculate_distance_km(
+            self.hass.config.latitude,
+            self.hass.config.longitude,
+            hofladen.latitude,
+            hofladen.longitude,
+        )

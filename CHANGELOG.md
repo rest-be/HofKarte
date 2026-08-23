@@ -10,6 +10,40 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- Entfernungsberechnung als reine, testbare Fachfunktionen in
+  `distance.py`: `haversine_distance_km` (Grosskreisdistanz, korrekt auch
+  über die Datumsgrenze hinweg), `calculate_distance_km` (liefert `None`
+  bei fehlender Home- oder Hofladen-Position) und `round_distance_km`
+  (Rundung für die Anzeige, standardmässig 1 Nachkommastelle).
+- Sensor „Entfernung“ (`HofKarteEntfernungSensor` in `sensor.py`) pro
+  Hofladen: Device Class `distance`, Einheit Kilometer,
+  `state_class: measurement`, `suggested_display_precision: 1`. Nutzt
+  ausschliesslich `hass.config.latitude`/`longitude` als Referenzpunkt.
+- Tests für bekannte Koordinaten, identische Koordinaten (0 km),
+  Symmetrie, Antipoden (halber Erdumfang), Datumsgrenze, Rundung,
+  fehlende Home-Position, fehlende Hofladen-Koordinaten sowie
+  End-zu-End-Tests über den tatsächlichen Home-Assistant-State.
+
+### Geändert
+
+- `sensor.py`: `async_setup_entry` registriert zusätzlich
+  `HofKarteEntfernungSensor` über den bestehenden
+  `async_setup_hofladen_entities`-Mechanismus (automatische Erzeugung
+  auch für später hinzugefügte Hofläden, kein Reload nötig).
+
+### Eingehaltene Grenzen
+
+- Keine Speicherung der Home-Assistant-Position durch die Integration –
+  `hass.config.latitude`/`longitude` wird bei jeder Berechnung live
+  gelesen, nie zwischengespeichert.
+- Keine Standortübertragung an externe Dienste – die Berechnung erfolgt
+  vollständig lokal (reine Mathematik, kein Netzwerkzugriff).
+- Keine eigene Kartenkomponente.
+
+## [0.8.0] - Unveröffentlicht
+
+### Hinzugefügt
+
 - Sortiment und Eigenschaften (Kategorien, Produkte, Zahlungsarten,
   Verkaufsarten, Merkmale) als `extra_state_attributes` am Binary Sensor
   „Geöffnet“ (`attributes.py`, `build_sortiment_attributes`). Bewusst

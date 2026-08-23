@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
@@ -14,6 +15,7 @@ from custom_components.hofkarte.const import DOMAIN
 from custom_components.hofkarte.coordinator import HofKarteUpdateCoordinator
 from custom_components.hofkarte.data_provider import HofladenDataProvider
 from custom_components.hofkarte.sensor import (
+    HofKarteEntfernungSensor,
     HofKarteNaechsteOeffnungSensor,
     HofKarteNaechsteSchliessungSensor,
 )
@@ -166,3 +168,153 @@ async def test_sensoren_dupliziert_sortiment_attribute_nicht(
 
     assert "merkmale" not in _extra_state_attributes_or_default(oeffnung)
     assert "merkmale" not in _extra_state_attributes_or_default(schliessung)
+
+
+# ---------------------------------------------------------------------------
+# Entfernungs-Sensor
+# ---------------------------------------------------------------------------
+
+_ZUERICH_LAT, _ZUERICH_LON = 47.3769, 8.5417
+_BERN_LAT, _BERN_LON = 46.9480, 7.4474
+
+
+async def test_entfernung_unique_id_pattern(hass: HomeAssistant) -> None:
+    """Die unique_id muss stabil und eindeutig aus der Hofladen-ID gebildet werden."""
+    provider = _FakeProvider([{"id": "hof-1", "name": "Hofladen Eins"}])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    entity = HofKarteEntfernungSensor(coordinator, "hof-1")
+
+    assert entity.unique_id == f"{DOMAIN}_hof-1_entfernung"
+
+
+async def test_entfernung_hat_distance_device_class_und_einheit(
+    hass: HomeAssistant,
+) -> None:
+    """Der Sensor muss die Device Class DISTANCE mit Einheit Kilometer tragen."""
+    from homeassistant.components.sensor import SensorDeviceClass
+    from homeassistant.const import UnitOfLength
+
+    provider = _FakeProvider([{"id": "hof-1", "name": "Hofladen Eins"}])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    entity = HofKarteEntfernungSensor(coordinator, "hof-1")
+
+    assert entity.device_class == SensorDeviceClass.DISTANCE
+    assert entity.native_unit_of_measurement == UnitOfLength.KILOMETERS
+
+
+async def test_entfernung_native_value_mit_bekannten_koordinaten(
+    hass: HomeAssistant,
+) -> None:
+    """Bei bekannter HA-Position und Hofladen-Koordinaten muss die Distanz stimmen."""
+    hass.config.latitude = _ZUERICH_LAT
+    hass.config.longitude = _ZUERICH_LON
+
+    provider = _FakeProvider(
+        [
+            {
+                "id": "hof-1",
+                "name": "Hofladen Bern",
+                "latitude": _BERN_LAT,
+                "longitude": _BERN_LON,
+            }
+        ]
+    )
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    entity = HofKarteEntfernungSensor(coordinator, "hof-1")
+    entity.hass = hass  # normalerweise von der Entity-Plattform gesetzt
+
+    assert entity.native_value == pytest.approx(95.49, abs=0.1)
+
+
+async def test_entfernung_none_wenn_hofladen_keine_koordinaten_hat(
+    hass: HomeAssistant,
+) -> None:
+    """Ohne Hofladen-Koordinaten muss der Sensor 'unbekannt' (None) sein."""
+    hass.config.latitude = _ZUERICH_LAT
+    hass.config.longitude = _ZUERICH_LON
+
+    provider = _FakeProvider([{"id": "hof-1", "name": "Hofladen ohne Koordinaten"}])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    entity = HofKarteEntfernungSensor(coordinator, "hof-1")
+    entity.hass = hass  # normalerweise von der Entity-Plattform gesetzt
+
+    assert entity.native_value is None
+
+
+async def test_entfernung_none_wenn_hofladen_fehlt(hass: HomeAssistant) -> None:
+    """Ohne Hofladen darf keine Distanz erfunden werden."""
+    provider = _FakeProvider([])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    entity = HofKarteEntfernungSensor(coordinator, "unbekannt")
+
+    assert entity.native_value is None
+    assert entity.available is False
+
+
+async def test_newly_added_hofladen_gets_entfernung_sensor(
+    hass: HomeAssistant,
+) -> None:
+    """Ein über den Coordinator hinzugefügter Hofladen erhält automatisch
+    auch den Entfernungs-Sensor, ohne dass ein Reload nötig ist."""
+    entry = _make_entry(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-neu",
+            "name": "Neuer Hofladen",
+            "latitude": _BERN_LAT,
+            "longitude": _BERN_LON,
+        }
+    )
+    await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    entfernung_id = entity_registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{DOMAIN}_hof-neu_entfernung"
+    )
+
+    assert entfernung_id is not None
+    assert hass.states.get(entfernung_id) is not None
+
+
+async def test_entfernung_end_zu_ende_ueber_hass_state(hass: HomeAssistant) -> None:
+    """End-zu-End: Die berechnete Distanz muss im tatsächlichen HA-State ankommen."""
+    hass.config.latitude = _ZUERICH_LAT
+    hass.config.longitude = _ZUERICH_LON
+
+    entry = _make_entry(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-bern",
+            "name": "Hofladen Bern",
+            "latitude": _BERN_LAT,
+            "longitude": _BERN_LON,
+        }
+    )
+    await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    entfernung_id = entity_registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{DOMAIN}_hof-bern_entfernung"
+    )
+    state = hass.states.get(entfernung_id)
+
+    assert state is not None
+    assert float(state.state) == pytest.approx(95.49, abs=0.1)
