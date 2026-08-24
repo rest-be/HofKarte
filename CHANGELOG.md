@@ -1,3 +1,7 @@
+## 0.10.2
+- Stammdatenformular neu strukturiert: Name, Beschreibung, Adresse, PLZ/Ort, Land, Latitude/Longitude, Webseite.
+- Neues Feld `website` durchgängig im Datenmodell, Parsing und Management-UI.
+
 # Changelog
 
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei
