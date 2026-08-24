@@ -373,3 +373,20 @@ pytest custom_components/hofkarte/tests
 ## Lizenz
 
 Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
+
+## Grafische Hofladenverwaltung (Einheit 10)
+
+Nach der Einrichtung von HofKarte steht im Home-Assistant-Seitenmenü die
+Verwaltungsseite **HofKarte** zur Verfügung. Dort können Administratoren:
+
+- neue Hofläden erstellen,
+- bestehende Hofläden bearbeiten,
+- Stammdaten und Koordinaten ändern,
+- reguläre und Sonderöffnungszeiten bearbeiten,
+- Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale bearbeiten,
+- Hofläden kontrolliert löschen.
+
+Änderungen werden direkt im integrationsinternen Home-Assistant-Storage
+persistiert und ohne Neustart an Coordinator, Devices und Entities
+weitergegeben. Die Verwaltungsoberfläche verwendet ausschließlich lokale
+Home-Assistant-Mechanismen.

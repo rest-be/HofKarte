@@ -1,7 +1,9 @@
 {
   "domain": "hofkarte",
   "name": "HofKarte",
-  "codeowners": ["@rest-be"],
+  "codeowners": [
+    "@rest-be"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/rest-be/hofkarte",
   "issue_tracker": "https://github.com/rest-be/hofkarte/issues",

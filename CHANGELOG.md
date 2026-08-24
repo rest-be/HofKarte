@@ -368,3 +368,19 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Grundlegende HACS-kompatible Repository-Struktur (`hacs.json`).
 - README mit Installations- und Entwicklungsgrundlagen.
 - Minimale Teststruktur (pytest + Home-Assistant-Testwerkzeuge).
+
+## [0.10.0] - Einheit 10
+
+### Hinzugefügt
+
+- Native Home-Assistant-Seitenleiste „HofKarte“ zur grafischen Verwaltung der Hofläden.
+- Hofläden können über die Oberfläche neu erstellt, bearbeitet und gelöscht werden.
+- Stammdaten, Koordinaten, reguläre und Sonderöffnungszeiten sowie Sortiment und Eigenschaften sind grafisch editierbar.
+- Änderungen werden ohne Neustart über den bestehenden Storage-Provider und Coordinator in Devices und Entities übernommen.
+- Neue WebSocket-Schnittstelle für die geschützte Verwaltungsoberfläche.
+- Persistentes Löschen von Hofläden im Storage-Provider.
+
+### Sicherheit
+
+- Verwaltungsoberfläche und Schreiboperationen erfordern Home-Assistant-Administratorrechte.
+- Keine externe Datenquelle, keine externe API und keine Standortübertragung.

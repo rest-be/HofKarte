@@ -21,10 +21,19 @@ from .const import DOMAIN
 from .coordinator import HofKarteUpdateCoordinator
 from .data_provider import StorageHofladenDataProvider
 from .device import async_sync_devices
+from .frontend import async_register_frontend, async_remove_frontend, async_setup_frontend_assets
+from .management import async_register_websocket_commands
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+
+
+async def async_setup(hass: HomeAssistant) -> bool:
+    """Register global HofKarte frontend/WebSocket functionality."""
+    async_register_websocket_commands(hass)
+    await async_setup_frontend_assets(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -58,6 +67,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             lambda: async_sync_devices(hass, entry, coordinator.data)
         )
     )
+
+    await async_register_frontend(hass)
+    entry.async_on_unload(lambda: async_remove_frontend(hass))
 
     if PLATFORMS:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
