@@ -250,3 +250,42 @@ async def test_extra_state_attributes_visible_in_hass_state(
     assert state is not None
     assert state.attributes.get("merkmale") == ["Bio"]
     assert state.attributes.get("kategorien") == []
+
+
+async def test_update_sortiment_wirkt_sich_ohne_reload_auf_attribute_aus(
+    hass: HomeAssistant,
+) -> None:
+    """Eine über den Coordinator vorgenommene Sortiment-Änderung muss sich
+    ohne Reload in den State-Attributen niederschlagen (Ergänzung zu
+    Einheit 8: User Editierbar)."""
+    entry = _make_entry(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-edit",
+            "name": "Editierbarer Hofladen",
+            "merkmale": [{"id": "bio", "name": "Bio"}],
+        }
+    )
+    await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    entity_id = entity_registry.async_get_entity_id(
+        "binary_sensor", DOMAIN, f"{DOMAIN}_hof-edit_geoeffnet"
+    )
+    assert hass.states.get(entity_id).attributes.get("merkmale") == ["Bio"]
+
+    await coordinator.async_update_hofladen_sortiment(
+        "hof-edit",
+        merkmale=[
+            {"id": "bio", "name": "Bio"},
+            {"id": "parkplatz", "name": "Parkplatz"},
+        ],
+    )
+    await hass.async_block_till_done()
+
+    state = hass.states.get(entity_id)
+    assert state.attributes.get("merkmale") == ["Bio", "Parkplatz"]

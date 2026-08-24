@@ -23,7 +23,11 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import DEFAULT_FETCH_TIMEOUT_SECONDS, DEFAULT_UPDATE_INTERVAL, DOMAIN
-from .data_provider import HofladenDataProvider, MutableHofladenDataProvider
+from .data_provider import (
+    HofladenDataProvider,
+    HofladenNotFoundError,
+    MutableHofladenDataProvider,
+)
 from .models import Hofladen
 from .parsing import HofladenValidationError, parse_hofladen
 
@@ -128,3 +132,83 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
         await self.async_refresh()
 
         return hofladen
+
+    async def async_update_hofladen_sortiment(
+        self,
+        hofladen_id: str,
+        *,
+        kategorien: list[dict[str, Any]] | None = None,
+        produkte: list[dict[str, Any]] | None = None,
+        zahlungsarten: list[dict[str, Any]] | None = None,
+        verkaufsarten: list[dict[str, Any]] | None = None,
+        merkmale: list[dict[str, Any]] | None = None,
+    ) -> Hofladen:
+        """Sortiment und Eigenschaften (Fachbereiche aus Einheit 8) eines
+        bestehenden Hofladens durch die Nutzerin/den Nutzer bearbeiten.
+
+        Bewusst auf genau diese fünf Fachbereiche beschränkt (Kategorien,
+        Produkte, Zahlungsarten, Verkaufsarten, Merkmale) – andere Felder
+        eines Hofladens (Name, Adresse, Öffnungszeiten, ...) werden über
+        diese Funktion nicht verändert.
+
+        Jeder Parameter, der nicht ``None`` ist, ersetzt die entsprechende
+        Sammlung vollständig; ``None`` bedeutet „unverändert lassen“. Um
+        eine Sammlung bewusst zu leeren, eine leere Liste ``[]``
+        übergeben. Werden keine Parameter gesetzt, bleibt der Hofladen
+        unverändert und wird unverändert zurückgegeben.
+
+        Die Rohdaten des bestehenden Hofladens werden mit den Änderungen
+        zusammengeführt und über ``parsing.parse_hofladen`` validiert,
+        bevor irgendetwas geschrieben wird (Fail-Fast, analog zu
+        ``async_add_hofladen``). Anschliessend wird ein regulärer Refresh
+        angestossen, damit ``coordinator.data`` sowie abhängige Entities
+        (z. B. die Sortiment-Attribute am Binary Sensor „Geöffnet“, siehe
+        ``attributes.py``) konsistent aktualisiert werden.
+
+        Wirft :class:`~custom_components.hofkarte.data_provider.HofladenNotFoundError`,
+        falls keine ``id`` mit diesem Wert existiert,
+        :class:`~custom_components.hofkarte.parsing.HofladenValidationError`
+        bei ungültigen Werten, und ``NotImplementedError``, falls der
+        aktuell konfigurierte Provider keine Schreibzugriffe unterstützt.
+        """
+        if not isinstance(self._provider, MutableHofladenDataProvider):
+            raise NotImplementedError(
+                "Der konfigurierte Data Provider unterstützt keine "
+                "Schreibzugriffe (Bearbeiten von Hofläden)."
+            )
+
+        aktuelle_rohdaten = await self._provider.async_fetch_raw_hoflaeden()
+        aktueller_raw = next(
+            (raw for raw in aktuelle_rohdaten if raw.get("id") == hofladen_id),
+            None,
+        )
+        if aktueller_raw is None:
+            raise HofladenNotFoundError(
+                f"Kein Hofladen mit der ID '{hofladen_id}' gefunden."
+            )
+
+        updates: dict[str, Any] = {}
+        if kategorien is not None:
+            updates["kategorien"] = kategorien
+        if produkte is not None:
+            updates["produkte"] = produkte
+        if zahlungsarten is not None:
+            updates["zahlungsarten"] = zahlungsarten
+        if verkaufsarten is not None:
+            updates["verkaufsarten"] = verkaufsarten
+        if merkmale is not None:
+            updates["merkmale"] = merkmale
+
+        if not updates:
+            # Nichts zu ändern: aktuellen, bereits validen Stand liefern.
+            return parse_hofladen(aktueller_raw)
+
+        # Fail-Fast: den vollständigen, zusammengeführten Datensatz
+        # validieren, bevor der Provider überhaupt geschrieben wird.
+        zusammengefuehrter_raw = {**aktueller_raw, **updates}
+        validierter_hofladen = parse_hofladen(zusammengefuehrter_raw)
+
+        await self._provider.async_update_raw_hofladen(hofladen_id, updates)
+        await self.async_refresh()
+
+        return validierter_hofladen

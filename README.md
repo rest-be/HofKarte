@@ -131,6 +131,61 @@ künftiger, rein lesender externer Dienst), wirft die Funktion einen
 `NotImplementedError`. Eine Home-Assistant-Oberfläche (Service/UI) für
 diese Funktion ist nicht Teil dieser Einheit.
 
+### Sortiment und Eigenschaften eines Hofladens bearbeiten
+
+Analog dazu unterstützt `MutableHofladenDataProvider` auch das teilweise
+Bearbeiten eines **bestehenden** Hofladens über
+`async_update_raw_hofladen(hofladen_id, updates)`. Der empfohlene
+Aufrufweg ist
+`HofKarteUpdateCoordinator.async_update_hofladen_sortiment(hofladen_id, ...)`
+– bewusst beschränkt auf genau die fünf Fachbereiche aus dem Abschnitt
+„Sortiment und Eigenschaften“ unten (Kategorien, Produkte,
+Zahlungsarten, Verkaufsarten, Merkmale). Andere Felder (Name, Adresse,
+Öffnungszeiten, ...) werden über diese Funktion nicht verändert.
+
+```python
+await coordinator.async_update_hofladen_sortiment(
+    "hof-1",
+    zahlungsarten=[{"id": "twint", "name": "TWINT"}],
+)
+```
+
+- Jeder gesetzte Parameter ersetzt die entsprechende Sammlung
+  vollständig; `None` (Standard) bedeutet „unverändert lassen“. Eine
+  bewusst leere Liste `[]` leert die Sammlung.
+- Fail-Fast: Der zusammengeführte Datensatz wird vor jedem Schreibzugriff
+  vollständig über `parsing.parse_hofladen` validiert.
+- Wirft `HofladenNotFoundError`, falls die `id` nicht existiert, sowie
+  `NotImplementedError` bei einem nicht-schreibfähigen Provider.
+- Löst wie beim Hinzufügen einen regulären Refresh aus – Änderungen
+  erscheinen ohne Reload in `coordinator.data` und den abhängigen
+  Sortiment-Attributen (siehe unten).
+
+**Standardkatalog:** `custom_components/hofkarte/sortiment_katalog.py`
+sowie `const.STANDARD_ZAHLUNGSARTEN`/`STANDARD_VERKAUFSARTEN`/
+`STANDARD_MERKMALE` bieten vorgefertigte, gültige Rohdaten für gängige
+Werte:
+
+| Zahlungsarten | Verkaufsarten     | Merkmale        |
+|---------------|-------------------|-----------------|
+| Bargeld       | Hofladen          | Bio             |
+| Debitkarte    | Selbstbedienung   | eigener Anbau   |
+| Kreditkarte   | Verkaufsautomat   | Parkplatz       |
+| TWINT         | Ab-Hof-Verkauf    | barrierefrei    |
+
+```python
+from custom_components.hofkarte.sortiment_katalog import (
+    standard_zahlungsarten_rohdaten,
+)
+
+await coordinator.async_update_hofladen_sortiment(
+    "hof-1", zahlungsarten=standard_zahlungsarten_rohdaten()
+)
+```
+
+Dies ist ein **Vorschlagskatalog** – Nutzer sind nicht auf diese Werte
+beschränkt; jeder beliebige Name ist zulässig.
+
 ## Hofladen als Device
 
 Jeder vom Coordinator gelieferte Hofladen wird als logisches Device in der
@@ -208,7 +263,9 @@ seltenen Grenzfälle).
 Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale sind
 fachlich keine Messwerte und rechtfertigen keine eigenen Sensoren. Sie
 werden daher als `extra_state_attributes` **ausschliesslich** am Binary
-Sensor „Geöffnet“ bereitgestellt (`custom_components/hofkarte/attributes.py`):
+Sensor „Geöffnet“ bereitgestellt (`custom_components/hofkarte/attributes.py`).
+Nutzer können diese fünf Fachbereiche pro Hofladen bearbeiten – siehe
+„Sortiment und Eigenschaften eines Hofladens bearbeiten“ oben.
 
 ```yaml
 kategorien: ["Gemüse", "Milchprodukte"]

@@ -14,6 +14,7 @@ from custom_components.hofkarte.coordinator import HofKarteUpdateCoordinator
 from custom_components.hofkarte.data_provider import (
     DuplicateHofladenIdError,
     HofladenDataProvider,
+    HofladenNotFoundError,
     StaticTestDataProvider,
 )
 from custom_components.hofkarte.parsing import HofladenValidationError
@@ -177,3 +178,154 @@ async def test_add_hofladen_not_supported_by_read_only_provider(
 
     with pytest.raises(NotImplementedError):
         await coordinator.async_add_hofladen({"id": "hof-neu", "name": "Neu"})
+
+
+# ---------------------------------------------------------------------------
+# async_update_hofladen_sortiment (Ergänzung zu Einheit 8: User Editierbar)
+# ---------------------------------------------------------------------------
+
+
+async def test_update_sortiment_aendert_gewaehltes_feld(hass: HomeAssistant) -> None:
+    """Nur das übergebene Feld darf geändert werden, andere bleiben erhalten."""
+    provider = StaticTestDataProvider(
+        raw_hoflaeden=[
+            {
+                "id": "hof-1",
+                "name": "Hofladen Eins",
+                "merkmale": [{"id": "bio", "name": "Bio"}],
+                "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
+            }
+        ]
+    )
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    ergebnis = await coordinator.async_update_hofladen_sortiment(
+        "hof-1",
+        zahlungsarten=[
+            {"id": "bar", "name": "Bargeld"},
+            {"id": "twint", "name": "TWINT"},
+        ],
+    )
+
+    assert [z.name for z in ergebnis.zahlungsarten] == ["Bargeld", "TWINT"]
+    assert [m.name for m in ergebnis.merkmale] == ["Bio"]  # unverändert
+
+    # Auch im Coordinator (nach Refresh) muss die Änderung sichtbar sein.
+    aktualisiert = coordinator.data["hof-1"]
+    assert [z.name for z in aktualisiert.zahlungsarten] == ["Bargeld", "TWINT"]
+    assert [m.name for m in aktualisiert.merkmale] == ["Bio"]
+
+
+async def test_update_sortiment_mehrere_fachbereiche_gleichzeitig(
+    hass: HomeAssistant,
+) -> None:
+    """Mehrere Fachbereiche müssen in einem Aufruf gemeinsam änderbar sein."""
+    provider = StaticTestDataProvider(
+        raw_hoflaeden=[{"id": "hof-1", "name": "Hofladen Eins"}]
+    )
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    ergebnis = await coordinator.async_update_hofladen_sortiment(
+        "hof-1",
+        kategorien=[{"id": "gemuese", "name": "Gemüse"}],
+        verkaufsarten=[{"id": "hofladen", "name": "Hofladen"}],
+        merkmale=[{"id": "bio", "name": "Bio"}],
+    )
+
+    assert [k.name for k in ergebnis.kategorien] == ["Gemüse"]
+    assert [v.name for v in ergebnis.verkaufsarten] == ["Hofladen"]
+    assert [m.name for m in ergebnis.merkmale] == ["Bio"]
+
+
+async def test_update_sortiment_leere_liste_leert_feld(hass: HomeAssistant) -> None:
+    """Eine explizit übergebene leere Liste muss das Feld leeren (kein 'unverändert')."""
+    provider = StaticTestDataProvider(
+        raw_hoflaeden=[
+            {
+                "id": "hof-1",
+                "name": "Hofladen Eins",
+                "merkmale": [{"id": "bio", "name": "Bio"}],
+            }
+        ]
+    )
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    ergebnis = await coordinator.async_update_hofladen_sortiment(
+        "hof-1", merkmale=[]
+    )
+
+    assert ergebnis.merkmale == ()
+
+
+async def test_update_sortiment_ohne_parameter_aendert_nichts(
+    hass: HomeAssistant,
+) -> None:
+    """Werden keine Parameter gesetzt, bleibt der Hofladen unverändert."""
+    provider = StaticTestDataProvider(
+        raw_hoflaeden=[
+            {
+                "id": "hof-1",
+                "name": "Hofladen Eins",
+                "merkmale": [{"id": "bio", "name": "Bio"}],
+            }
+        ]
+    )
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    ergebnis = await coordinator.async_update_hofladen_sortiment("hof-1")
+
+    assert [m.name for m in ergebnis.merkmale] == ["Bio"]
+
+
+async def test_update_sortiment_unbekannte_id_wirft_fehler(
+    hass: HomeAssistant,
+) -> None:
+    """Eine nicht existierende Hofladen-ID muss abgelehnt werden."""
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    with pytest.raises(HofladenNotFoundError):
+        await coordinator.async_update_hofladen_sortiment(
+            "unbekannt", merkmale=[{"id": "bio", "name": "Bio"}]
+        )
+
+
+async def test_update_sortiment_ungueltige_daten_wirft_fehler_und_aendert_nichts(
+    hass: HomeAssistant,
+) -> None:
+    """Ungültige Werte müssen abgelehnt werden, ohne den Provider zu verändern
+    (Fail-Fast, analog zu async_add_hofladen)."""
+    provider = StaticTestDataProvider(
+        raw_hoflaeden=[{"id": "hof-1", "name": "Hofladen Eins"}]
+    )
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    with pytest.raises(HofladenValidationError):
+        await coordinator.async_update_hofladen_sortiment(
+            "hof-1", merkmale=[{"id": "bio"}]  # 'name' fehlt
+        )
+
+    # Der Datensatz darf durch den fehlgeschlagenen Versuch nicht verändert
+    # worden sein.
+    unveraendert = coordinator.data["hof-1"]
+    assert unveraendert.merkmale == ()
+
+
+async def test_update_sortiment_nicht_unterstuetzt_bei_read_only_provider(
+    hass: HomeAssistant,
+) -> None:
+    """Ein rein lesender Provider muss einen klaren Fehler liefern."""
+    provider = _FakeProvider(raw_hoflaeden=[{"id": "hof-1", "name": "Hofladen Eins"}])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    with pytest.raises(NotImplementedError):
+        await coordinator.async_update_hofladen_sortiment(
+            "hof-1", merkmale=[{"id": "bio", "name": "Bio"}]
+        )

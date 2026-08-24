@@ -10,6 +10,45 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- Ergänzung zu Einheit 8: Sortiment und Eigenschaften eines **bestehenden**
+  Hofladens sind jetzt nutzereditierbar.
+- `data_provider.py`: `MutableHofladenDataProvider.async_update_raw_hofladen`
+  (teilweise Aktualisierung eines bestehenden Rohdatensatzes), neue
+  `HofladenNotFoundError`. Implementiert in `StaticTestDataProvider`.
+- `coordinator.py`: `HofKarteUpdateCoordinator.async_update_hofladen_sortiment`
+  – bewusst auf genau die fünf Fachbereiche beschränkt (Kategorien,
+  Produkte, Zahlungsarten, Verkaufsarten, Merkmale); andere Felder
+  (Name, Adresse, Öffnungszeiten, ...) bleiben unangetastet. Fail-Fast
+  wie bei `async_add_hofladen`: Validierung vor jedem Schreibzugriff,
+  Refresh danach für konsistente `coordinator.data` und Entities.
+- `const.py`: `STANDARD_ZAHLUNGSARTEN` (Bargeld, Debitkarte, Kreditkarte,
+  TWINT), `STANDARD_VERKAUFSARTEN` (Hofladen, Selbstbedienung,
+  Verkaufsautomat, Ab-Hof-Verkauf), `STANDARD_MERKMALE` (Bio, eigener
+  Anbau, Parkplatz, barrierefrei) als Vorschlagswerte.
+- Neues Modul `sortiment_katalog.py`: erzeugt aus den Standardwerten
+  direkt verwendbare, gültige Rohdaten (`{"id": ..., "name": ...}`) inkl.
+  deterministischer ID-Ableitung (`slug`).
+- Tests für Provider-Update (Feld-Merge, unbekannte ID), Coordinator-
+  Update (einzelnes Feld, mehrere Felder gleichzeitig, explizites Leeren
+  via `[]`, kein Parameter = keine Änderung, unbekannte ID, ungültige
+  Daten ändern nichts, nicht unterstützt bei read-only Provider),
+  Standardkatalog (Namen, Slug-Determinismus, Round-Trip-Gültigkeit über
+  `parse_hofladen`) sowie ein End-zu-End-Test, der bestätigt, dass eine
+  Sortiment-Änderung sich ohne Reload in den State-Attributen
+  niederschlägt.
+
+### Hinweis
+
+- Wie beim Hinzufügen keine Home-Assistant-Oberfläche (Service/UI) –
+  reine Python-Ebene.
+- Der Standardkatalog ist ein Vorschlag; Nutzer sind auf keine
+  bestimmten Werte beschränkt (siehe `parsing.py`: jeder nicht-leere
+  Name ist gültig).
+
+## [0.9.0] - Unveröffentlicht
+
+### Hinzugefügt
+
 - Entfernungsberechnung als reine, testbare Fachfunktionen in
   `distance.py`: `haversine_distance_km` (Grosskreisdistanz, korrekt auch
   über die Datumsgrenze hinweg), `calculate_distance_km` (liefert `None`

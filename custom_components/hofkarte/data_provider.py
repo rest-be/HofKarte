@@ -15,6 +15,11 @@ Provider-Implementierung ergänzt (z. B. ein Dateisystem- oder
 HTTP-basierter Provider). Coordinator und übrige Integration greifen
 ausschliesslich auf die abstrakte Schnittstelle zu und müssen dafür nicht
 geändert werden.
+
+``MutableHofladenDataProvider`` deckt sowohl das Hinzufügen neuer
+Hofläden als auch das teilweise Aktualisieren bestehender Hofläden ab
+(z. B. um die nutzereditierbaren Fachbereiche aus Einheit 8 – Kategorien,
+Produkte, Zahlungsarten, Verkaufsarten, Merkmale – zu ändern).
 """
 
 from __future__ import annotations
@@ -61,9 +66,26 @@ class MutableHofladenDataProvider(HofladenDataProvider):
         Beispiel).
         """
 
+    @abstractmethod
+    async def async_update_raw_hofladen(
+        self, hofladen_id: str, updates: dict[str, Any]
+    ) -> None:
+        """Einzelne Felder eines bestehenden Hofladens aktualisieren.
+
+        ``updates`` enthält nur die zu ändernden Felder; alle übrigen,
+        nicht in ``updates`` enthaltenen Felder des bestehenden
+        Datensatzes bleiben unverändert (teilweise Aktualisierung, kein
+        vollständiger Ersatz). Wirft :class:`HofladenNotFoundError`, wenn
+        keine ``id`` mit diesem Wert existiert.
+        """
+
 
 class DuplicateHofladenIdError(ValueError):
     """Es existiert bereits ein Hofladen mit der angegebenen ID."""
+
+
+class HofladenNotFoundError(KeyError):
+    """Es existiert kein Hofladen mit der angegebenen ID."""
 
 
 class StaticTestDataProvider(MutableHofladenDataProvider):
@@ -117,6 +139,30 @@ class StaticTestDataProvider(MutableHofladenDataProvider):
             )
 
         self._raw_hoflaeden.append(dict(raw_hofladen))
+
+    async def async_update_raw_hofladen(
+        self, hofladen_id: str, updates: dict[str, Any]
+    ) -> None:
+        """Einzelne Felder eines bestehenden Hofladens im Arbeitsspeicher
+        aktualisieren (teilweise Aktualisierung, siehe Basisklasse).
+
+        Wirft :class:`HofladenNotFoundError`, falls keine ``id`` mit
+        diesem Wert existiert. Die inhaltliche Validierung des
+        resultierenden Gesamtdatensatzes obliegt bewusst nicht dem
+        Provider, sondern ``parsing.parse_hofladen`` – siehe
+        ``coordinator.HofKarteUpdateCoordinator.async_update_hofladen_sortiment``
+        für den empfohlenen Aufrufweg inklusive Validierung.
+        """
+        await asyncio.sleep(0)
+
+        for index, vorhandener in enumerate(self._raw_hoflaeden):
+            if vorhandener.get("id") == hofladen_id:
+                self._raw_hoflaeden[index] = {**vorhandener, **updates}
+                return
+
+        raise HofladenNotFoundError(
+            f"Kein Hofladen mit der ID '{hofladen_id}' gefunden."
+        )
 
 
 _DEFAULT_TEST_DATA: list[dict[str, Any]] = [

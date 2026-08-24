@@ -4,6 +4,7 @@ import pytest
 
 from custom_components.hofkarte.data_provider import (
     DuplicateHofladenIdError,
+    HofladenNotFoundError,
     StaticTestDataProvider,
 )
 
@@ -49,3 +50,36 @@ async def test_static_provider_add_raw_hofladen_rejects_duplicate_id() -> None:
 
     with pytest.raises(DuplicateHofladenIdError):
         await provider.async_add_raw_hofladen({"id": "hof-1", "name": "Anderer Name"})
+
+
+async def test_static_provider_update_raw_hofladen_merges_fields() -> None:
+    """Ein Update darf nur die übergebenen Felder ändern, nicht die übrigen."""
+    provider = StaticTestDataProvider(
+        raw_hoflaeden=[
+            {
+                "id": "hof-1",
+                "name": "Hofladen Eins",
+                "plz": "3000",
+                "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
+            }
+        ]
+    )
+
+    await provider.async_update_raw_hofladen(
+        "hof-1", {"zahlungsarten": [{"id": "twint", "name": "TWINT"}]}
+    )
+    raw_hoflaeden = await provider.async_fetch_raw_hoflaeden()
+
+    assert len(raw_hoflaeden) == 1
+    aktualisiert = raw_hoflaeden[0]
+    assert aktualisiert["name"] == "Hofladen Eins"  # unverändert
+    assert aktualisiert["plz"] == "3000"  # unverändert
+    assert aktualisiert["zahlungsarten"] == [{"id": "twint", "name": "TWINT"}]
+
+
+async def test_static_provider_update_raw_hofladen_unbekannte_id() -> None:
+    """Ein Update auf eine nicht existierende ID muss abgelehnt werden."""
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+
+    with pytest.raises(HofladenNotFoundError):
+        await provider.async_update_raw_hofladen("unbekannt", {"name": "Neu"})
