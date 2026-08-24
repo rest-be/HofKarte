@@ -19,7 +19,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .coordinator import HofKarteUpdateCoordinator
-from .data_provider import StaticTestDataProvider
+from .data_provider import StorageHofladenDataProvider
 from .device import async_sync_devices
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,10 +38,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ``async_config_entry_first_refresh`` automatisch ``ConfigEntryNotReady``
     aus; Home Assistant versucht die Einrichtung dann später erneut.
     """
-    # Der Data Provider ist bewusst eine Testdaten-Implementierung, da die
-    # tatsächliche Datenquelle noch nicht feststeht (offene
-    # Architekturentscheidung, siehe data_provider.py und README).
-    provider = StaticTestDataProvider()
+    # Architekturentscheid: Home Assistant ist sowohl Laufzeit- als auch
+    # Verwaltungsoberfläche für HofKarte. Die vom Benutzer gepflegten
+    # Hofläden werden in einem integrationsinternen, persistenten Store
+    # gehalten (siehe data_provider.StorageHofladenDataProvider). Der
+    # Coordinator kennt ausschliesslich die abstrakte
+    # HofladenDataProvider-Schnittstelle, nicht die konkrete Speicherform.
+    provider = StorageHofladenDataProvider(hass)
     coordinator = HofKarteUpdateCoordinator(hass, provider)
 
     await coordinator.async_config_entry_first_refresh()

@@ -41,6 +41,58 @@ async def test_setup_entry_loads_without_error(hass: HomeAssistant) -> None:
     assert coordinator.data is not None
 
 
+async def test_frischer_eintrag_startet_ohne_erfundene_hoflaeden(
+    hass: HomeAssistant,
+) -> None:
+    """Architekturentscheid: Ein frisch eingerichteter Eintrag verwendet den
+    integrationsinternen, persistenten Store (StorageHofladenDataProvider).
+    Dieser startet leer – es dürfen keine erfundenen Beispieldaten
+    erscheinen; Hofläden werden vollständig von der Nutzerin/dem Nutzer
+    gepflegt."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="HofKarte", data={CONF_NAME: "HofKarte"}
+    )
+    entry.add_to_hass(hass)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.data == {}
+
+
+async def test_reload_erhaelt_vom_benutzer_hinzugefuegte_hoflaeden(
+    hass: HomeAssistant,
+) -> None:
+    """Architekturentscheid: Über den persistenten Store hinzugefügte
+    Hofläden müssen einen Reload der Integration überstehen (echte
+    Persistenz, nicht nur In-Memory für die Laufzeit einer Coordinator-
+    Instanz)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="HofKarte", data={CONF_NAME: "HofKarte"}
+    )
+    entry.add_to_hass(hass)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator_vor_reload = hass.data[DOMAIN][entry.entry_id]
+    await coordinator_vor_reload.async_add_hofladen(
+        {"id": "hof-persistent", "name": "Persistenter Hofladen"}
+    )
+
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator_nach_reload = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator_nach_reload is not coordinator_vor_reload  # neue Instanz
+    assert "hof-persistent" in coordinator_nach_reload.data
+    assert (
+        coordinator_nach_reload.data["hof-persistent"].name
+        == "Persistenter Hofladen"
+    )
+
+
 async def test_unload_entry(hass: HomeAssistant) -> None:
     """Eine geladene Config Entry muss sauber entladen werden können."""
     entry = MockConfigEntry(

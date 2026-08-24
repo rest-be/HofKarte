@@ -40,10 +40,21 @@ class _FakeProvider(HofladenDataProvider):
 async def test_both_sensors_created_for_default_test_data(
     hass: HomeAssistant,
 ) -> None:
-    """Für den Platzhalter-Hofladen müssen beide Sensoren entstehen."""
+    """Für einen hinzugefügten Hofladen müssen beide Sensoren entstehen.
+
+    Seit dem Architekturentscheid (persistenter Store statt Testdaten-
+    Provider in der Produktion) startet ein frisch eingerichteter Eintrag
+    ohne Hofläden; der Testdatensatz wird daher explizit ergänzt.
+    """
     entry = _make_entry(hass)
 
     await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_add_hofladen(
+        {"id": "platzhalter-hofladen", "name": "Platzhalter-Hofladen"}
+    )
     await hass.async_block_till_done()
 
     entity_registry = er.async_get(hass)
@@ -56,7 +67,7 @@ async def test_both_sensors_created_for_default_test_data(
 
     assert oeffnung_id is not None
     assert schliessung_id is not None
-    # Solange Einheit 7 nicht implementiert ist, ist der Zustand "unbekannt".
+    # Ohne hinterlegte Öffnungszeiten ist der Zustand bewusst "unbekannt".
     assert hass.states.get(oeffnung_id).state == "unknown"
     assert hass.states.get(schliessung_id).state == "unknown"
 
@@ -66,6 +77,12 @@ async def test_sensors_have_timestamp_device_class(hass: HomeAssistant) -> None:
     entry = _make_entry(hass)
 
     await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_add_hofladen(
+        {"id": "platzhalter-hofladen", "name": "Platzhalter-Hofladen"}
+    )
     await hass.async_block_till_done()
 
     entity_registry = er.async_get(hass)

@@ -3,10 +3,13 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Geosuche und Entfernung (Einheit 9). Jeder Hofladen mit
-> hinterlegten Koordinaten zeigt zusätzlich seine Luftlinien-Entfernung
-> zur konfigurierten Home-Assistant-Position. Es werden keine
-> Standortdaten gespeichert oder an externe Dienste übertragen.
+> **Status:** Geosuche und Entfernung (Einheit 9), ergänzt um den
+> Architekturentscheid zur Datenquelle: Home Assistant ist sowohl
+> Laufzeit- als auch Verwaltungsoberfläche für HofKarte. Die vom
+> Benutzer gepflegten Hofläden werden in einem integrationsinternen,
+> persistenten Store gehalten (keine externe Datenbank, kein externer
+> Dienst). Die zuvor offene Architekturentscheidung zur Datenquelle ist
+> damit gelöst.
 
 ## Über dieses Projekt
 
@@ -101,23 +104,37 @@ Eigenschaften:
   abgerufenen Daten erhalten; `coordinator.last_update_success` zeigt die
   Verfügbarkeit an
 
-### Data Provider (offene Architekturentscheidung)
+### Data Provider und Architekturentscheid zur Datenquelle
 
-Die tatsächliche Datenquelle für Hofladen-Daten steht weiterhin nicht
-fest. Um den Coordinator dennoch sinnvoll umzusetzen, kapselt
-`custom_components/hofkarte/data_provider.py` eine klar abgegrenzte
-Provider-Schnittstelle (`HofladenDataProvider`) sowie eine
-Testdaten-Implementierung (`StaticTestDataProvider`) ohne externe
-Anbindung. Sobald die Datenquelle feststeht, wird eine neue
-Provider-Implementierung ergänzt; Coordinator und übrige Integration
-bleiben davon unberührt.
+**Architekturentscheid:** Home Assistant ist sowohl Laufzeitumgebung als
+auch Verwaltungsoberfläche für HofKarte. Die vom Benutzer gepflegten
+Hofläden werden in einem integrationsinternen, persistenten Store
+gehalten – keine externe Datenbank, kein externer Dienst. Der
+`HofladenDataProvider` kapselt diesen Store vollständig; Coordinator und
+Entities greifen ausschliesslich über diese Abstraktion darauf zu und
+kennen die konkrete Speicherform nicht.
+
+`custom_components/hofkarte/data_provider.py` definiert dazu:
+
+- **`HofladenDataProvider`** / **`MutableHofladenDataProvider`**: die
+  abstrakten Schnittstellen (unverändert seit den früheren Einheiten).
+- **`StorageHofladenDataProvider`**: die produktive Implementierung,
+  verwendet in `__init__.py`. Kapselt Home Assistants
+  `helpers.storage.Store` (JSON-Datei unter `.storage/` im
+  Konfigurationsverzeichnis). Startet leer – keine erfundenen
+  Beispieldaten; Hofläden werden vollständig von der Nutzerin/dem
+  Nutzer über `async_add_hofladen`/`async_update_hofladen_sortiment`
+  gepflegt. Daten überstehen Neustarts und Reloads.
+- **`StaticTestDataProvider`**: reiner In-Memory-Provider ausschliesslich
+  für die Testsuite (keine Persistenz).
 
 ### Neuen Hofladen hinzufügen
 
-Provider, die Schreibzugriffe unterstützen (aktuell nur
-`StaticTestDataProvider`), implementieren zusätzlich
-`MutableHofladenDataProvider.async_add_raw_hofladen`. Der empfohlene
-Aufrufweg ist `HofKarteUpdateCoordinator.async_add_hofladen(raw_hofladen)`:
+Provider, die Schreibzugriffe unterstützen (`StorageHofladenDataProvider`
+in der Produktion, `StaticTestDataProvider` in Tests), implementieren
+zusätzlich `MutableHofladenDataProvider.async_add_raw_hofladen`. Der
+empfohlene Aufrufweg ist
+`HofKarteUpdateCoordinator.async_add_hofladen(raw_hofladen)`:
 
 1. Validiert die Rohdaten über `parsing.parse_hofladen` (Fail-Fast: bei
    ungültigen Daten wird nichts geschrieben).
@@ -323,9 +340,6 @@ Berechnung erfolgt vollständig lokal.
   Update-Intervall und Timeout des Coordinators sind aktuell nur auf
   Code-Ebene konfigurierbar (Konstruktorparameter), nicht über die
   Home-Assistant-Oberfläche.
-- Es wird ein Testdaten-Provider ohne echte Hofladen-Daten verwendet – die
-  konkrete Datenquelle für Hofläden ist weiterhin nicht festgelegt und
-  eine offene Architekturentscheidung.
 - Der Binary Sensor „Geöffnet“ sowie die Sensoren „Nächste Öffnung“ und
   „Nächste Schliessung“ liefern jetzt echte berechnete Werte (siehe
   Abschnitt „Öffnungsstatus“ oben). Bei Uhrzeiten in einer
@@ -337,7 +351,9 @@ Berechnung erfolgt vollständig lokal.
   „unavailable“ in der Entity Registry bestehen, statt automatisch entfernt
   zu werden – eine bekannte Einschränkung, die bei Bedarf in einer
   späteren Einheit adressiert werden kann.
-- Keine eigene SQL-Datenbank und keine Persistenz in dieser Einheit.
+- Keine eigene SQL-Datenbank – Persistenz erfolgt über Home Assistants
+  `helpers.storage.Store` (JSON-Datei unter `.storage/`), siehe
+  Architekturentscheid oben.
 - Der Entfernungs-Sensor nutzt `hass.config.latitude`/`longitude` als
   Referenzpunkt, unabhängig davon, ob diese jemals über die
   Home-Assistant-Einrichtung tatsächlich konfiguriert wurden (Standard

@@ -35,10 +35,21 @@ class _FakeProvider(HofladenDataProvider):
 async def test_binary_sensor_created_for_default_test_data(
     hass: HomeAssistant,
 ) -> None:
-    """Für den Platzhalter-Hofladen muss ein Binary Sensor entstehen."""
+    """Für einen hinzugefügten Hofladen muss ein Binary Sensor entstehen.
+
+    Seit dem Architekturentscheid (persistenter Store statt Testdaten-
+    Provider in der Produktion) startet ein frisch eingerichteter Eintrag
+    ohne Hofläden; der Testdatensatz wird daher explizit ergänzt.
+    """
     entry = _make_entry(hass)
 
     await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_add_hofladen(
+        {"id": "platzhalter-hofladen", "name": "Platzhalter-Hofladen"}
+    )
     await hass.async_block_till_done()
 
     entity_registry = er.async_get(hass)
@@ -49,8 +60,8 @@ async def test_binary_sensor_created_for_default_test_data(
     assert entity_id is not None
     state = hass.states.get(entity_id)
     assert state is not None
-    # Der Platzhalter-Hofladen hat keine Öffnungszeiten hinterlegt, daher
-    # ist der Status bewusst "unbekannt" statt erfunden "geschlossen".
+    # Der Testhofladen hat keine Öffnungszeiten hinterlegt, daher ist der
+    # Status bewusst "unbekannt" statt erfunden "geschlossen".
     assert state.state == "unknown"
 
 
@@ -59,6 +70,12 @@ async def test_binary_sensor_has_no_device_class(hass: HomeAssistant) -> None:
     entry = _make_entry(hass)
 
     await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_add_hofladen(
+        {"id": "platzhalter-hofladen", "name": "Platzhalter-Hofladen"}
+    )
     await hass.async_block_till_done()
 
     entity_registry = er.async_get(hass)
@@ -77,6 +94,12 @@ async def test_binary_sensor_is_assigned_to_correct_device(
     """Die Entity muss demselben Device zugeordnet sein wie der Hofladen."""
     entry = _make_entry(hass)
     await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_add_hofladen(
+        {"id": "platzhalter-hofladen", "name": "Platzhalter-Hofladen"}
+    )
     await hass.async_block_till_done()
 
     device_registry = dr.async_get(hass)

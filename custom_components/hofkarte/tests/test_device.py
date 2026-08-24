@@ -151,10 +151,22 @@ async def test_sync_removes_device_for_disappeared_hofladen(
 async def test_setup_entry_creates_device_for_default_test_data(
     hass: HomeAssistant,
 ) -> None:
-    """Der End-zu-End-Setup-Pfad muss den Platzhalter-Hofladen als Device anlegen."""
+    """Der End-zu-End-Setup-Pfad muss einen hinzugefügten Hofladen als
+    Device anlegen.
+
+    Seit dem Architekturentscheid (persistenter Store statt Testdaten-
+    Provider in der Produktion) startet ein frisch eingerichteter Eintrag
+    ohne Hofläden; der Testdatensatz wird daher explizit ergänzt.
+    """
     entry = _make_entry(hass)
 
     await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    await coordinator.async_add_hofladen(
+        {"id": "platzhalter-hofladen", "name": "Platzhalter-Hofladen"}
+    )
     await hass.async_block_till_done()
 
     device_registry = dr.async_get(hass)

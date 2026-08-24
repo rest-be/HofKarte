@@ -8,6 +8,54 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Architekturentscheid
+
+- **Datenquelle final festgelegt** (löst die seit Einheit 4 offene
+  Architekturentscheidung): Home Assistant ist sowohl Laufzeitumgebung
+  als auch Verwaltungsoberfläche für HofKarte. Die vom Benutzer
+  gepflegten Hofläden werden in einem integrationsinternen, persistenten
+  Store gehalten – keine externe Datenbank, kein externer Dienst. Der
+  `HofladenDataProvider` kapselt diesen Store; Coordinator und Entities
+  greifen ausschliesslich über diese Abstraktion darauf zu.
+
+### Hinzugefügt
+
+- `data_provider.py`: neue produktive Implementierung
+  `StorageHofladenDataProvider`, basierend auf Home Assistants
+  `helpers.storage.Store` (JSON-Datei unter `.storage/`). Startet leer
+  (keine erfundenen Beispieldaten), lädt Daten einmalig (Lazy Load,
+  In-Memory-Cache) und schreibt bei jeder Mutation sowohl in den Cache
+  als auch persistent in den Store. Ein `asyncio.Lock` schützt vor
+  verlorenen Schreibzugriffen bei gleichzeitigen Änderungen.
+- Tests für `StorageHofladenDataProvider`: leerer Start, Kopie bei
+  `fetch`, Hinzufügen/Abrufen, doppelte ID abgelehnt, Update mit
+  Feld-Merge, unbekannte ID abgelehnt, sowie zwei Tests, die *echte*
+  Persistenz über eine neue Provider-Instanz hinweg verifizieren
+  (simuliert einen Neustart/Reload).
+- `test_init.py`: neuer Test, der bestätigt, dass ein frischer Eintrag
+  ohne Hofläden startet (`coordinator.data == {}`), sowie ein
+  End-zu-End-Test, der einen echten `hass.config_entries.async_reload`
+  durchführt und bestätigt, dass ein zuvor hinzugefügter Hofladen den
+  Reload übersteht.
+
+### Geändert
+
+- `__init__.py`: `async_setup_entry` verwendet nun
+  `StorageHofladenDataProvider(hass)` statt `StaticTestDataProvider()`.
+  `StaticTestDataProvider` bleibt unverändert als reiner
+  Testdaten-Provider für die Testsuite bestehen.
+- `data_provider.py`: Moduldokumentation und Docstring von
+  `StaticTestDataProvider` aktualisiert (nicht mehr „offene
+  Architekturentscheidung“, sondern klar als testspezifisch markiert).
+- Vier bestehende End-zu-End-Tests (`test_device.py`, `test_sensor.py`,
+  `test_binary_sensor.py`), die implizit auf den bisherigen
+  Standard-Platzhalter-Hofladen des alten `StaticTestDataProvider` in
+  der Produktion angewiesen waren, wurden angepasst: Sie fügen den
+  Testdatensatz jetzt explizit über `coordinator.async_add_hofladen`
+  hinzu, da ein frischer Store ohne vorbelegte Daten startet.
+
+## [0.9.1] - Unveröffentlicht
+
 ### Hinzugefügt
 
 - Ergänzung zu Einheit 8: Sortiment und Eigenschaften eines **bestehenden**

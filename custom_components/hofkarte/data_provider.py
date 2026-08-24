@@ -1,20 +1,20 @@
 """Data Provider für Hofladen-Rohdaten.
 
-Offene Architekturentscheidung (siehe auch README und CHANGELOG): Zum
-Zeitpunkt dieser Einheit steht die tatsächliche Datenquelle für
-Hofladen-Daten noch nicht fest (z. B. lokale Verwaltung durch die
-Nutzerin/den Nutzer vs. externer Dienst). Um trotzdem einen echten,
-asynchronen Datenabruf mit Home-Assistant-Lifecycle (Coordinator, Timeout,
-Fehlerbehandlung) sinnvoll umzusetzen, ohne eine Datenquelle zu erfinden,
-definiert dieses Modul eine klar abgegrenzte Provider-Schnittstelle
-(:class:`HofladenDataProvider`) sowie eine Testdaten-Implementierung
-(:class:`StaticTestDataProvider`).
+Architekturentscheid (löst die zuvor offene Frage der Datenquelle, siehe
+CHANGELOG): Home Assistant ist sowohl Laufzeitumgebung als auch
+Verwaltungsoberfläche für HofKarte. Die vom Benutzer gepflegten Hofläden
+werden in einem integrationsinternen, persistenten Store gehalten (Home
+Assistants ``helpers.storage.Store``, siehe
+:class:`StorageHofladenDataProvider`) – keine externe Datenbank, kein
+externer Dienst. Der ``HofladenDataProvider`` kapselt diesen Store;
+Coordinator und Entities greifen ausschliesslich über diese Abstraktion
+darauf zu und kennen die konkrete Speicherform nicht.
 
-Sobald die tatsächliche Datenquelle feststeht, wird hier eine neue
-Provider-Implementierung ergänzt (z. B. ein Dateisystem- oder
-HTTP-basierter Provider). Coordinator und übrige Integration greifen
-ausschliesslich auf die abstrakte Schnittstelle zu und müssen dafür nicht
-geändert werden.
+Dieses Modul definiert dazu eine klar abgegrenzte Provider-Schnittstelle
+(:class:`HofladenDataProvider`), deren produktive Implementierung
+(:class:`StorageHofladenDataProvider`) sowie eine reine
+Testdaten-Implementierung ohne Persistenz
+(:class:`StaticTestDataProvider`) für die Testsuite.
 
 ``MutableHofladenDataProvider`` deckt sowohl das Hinzufügen neuer
 Hofläden als auch das teilweise Aktualisieren bestehender Hofläden ab
@@ -27,6 +27,9 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from typing import Any
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 
 
 class HofladenDataProvider(ABC):
@@ -88,15 +91,104 @@ class HofladenNotFoundError(KeyError):
     """Es existiert kein Hofladen mit der angegebenen ID."""
 
 
-class StaticTestDataProvider(MutableHofladenDataProvider):
-    """Testdaten-Provider ohne externe Anbindung.
+# Home Assistant migriert die gespeicherte Struktur automatisch, falls
+# diese Versionsnummer künftig erhöht wird (siehe Store-Dokumentation).
+_STORAGE_VERSION = 1
+_STORAGE_KEY = "hofkarte_hoflaeden"
 
-    Dient ausschliesslich dazu, den Coordinator in dieser Einheit
-    lauffähig und testbar zu machen, solange die tatsächliche Datenquelle
-    nicht feststeht. Enthält keine echten Hofladen-Daten und keine
-    Netzwerk- oder Dateisystemzugriffe. Daten liegen nur im Arbeitsspeicher
-    und gehen bei einem Neustart verloren (keine Persistenz, siehe Regeln
-    aus Einheit 4/5).
+
+class StorageHofladenDataProvider(MutableHofladenDataProvider):
+    """Produktiver, persistenter Hofladen-Datenspeicher.
+
+    Kapselt Home Assistants ``helpers.storage.Store`` (JSON-Datei unter
+    ``.storage/`` im Konfigurationsverzeichnis) gemäss Architekturentscheid:
+    HofKarte verwaltet die vom Benutzer gepflegten Hofläden vollständig
+    integrationsintern – keine externe Datenbank, kein externer Dienst,
+    kein manuelles Bearbeiten der Datei nötig (Bearbeitung erfolgt
+    ausschliesslich über ``async_add_raw_hofladen``/
+    ``async_update_raw_hofladen``, die diese Klasse implementiert).
+
+    Die geladenen Daten werden nach dem ersten Zugriff im Arbeitsspeicher
+    gehalten (keine wiederholten Store-Lesezugriffe bei jedem
+    Coordinator-Update) und bei jeder Schreiboperation sowohl im Speicher
+    als auch im Store aktualisiert, sodass beide stets konsistent sind.
+    Ein ``asyncio.Lock`` verhindert verlorene Schreibzugriffe bei
+    gleichzeitigen Änderungen.
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._store: Store[list[dict[str, Any]]] = Store(
+            hass, _STORAGE_VERSION, _STORAGE_KEY
+        )
+        self._raw_hoflaeden: list[dict[str, Any]] | None = None
+        self._lock = asyncio.Lock()
+
+    async def _async_geladene_daten(self) -> list[dict[str, Any]]:
+        """Daten bei Bedarf einmalig aus dem Store laden (Lazy Load)."""
+        if self._raw_hoflaeden is None:
+            geladen = await self._store.async_load()
+            # Ein frisch eingerichteter Store enthält noch keine Datei
+            # (async_load liefert dann None). Bewusst mit einer leeren
+            # Liste starten statt erfundener Beispieldaten – die
+            # Hofläden werden vollständig von der Nutzerin/dem Nutzer
+            # gepflegt.
+            self._raw_hoflaeden = geladen if geladen is not None else []
+        return self._raw_hoflaeden
+
+    async def async_fetch_raw_hoflaeden(self) -> list[dict[str, Any]]:
+        """Alle im Store gehaltenen Hofladen-Rohdaten zurückgeben."""
+        daten = await self._async_geladene_daten()
+        return list(daten)
+
+    async def async_add_raw_hofladen(self, raw_hofladen: dict[str, Any]) -> None:
+        """Einen neuen Hofladen persistent ergänzen.
+
+        Wirft :class:`DuplicateHofladenIdError`, falls bereits ein
+        Datensatz mit derselben ``id`` vorhanden ist.
+        """
+        async with self._lock:
+            daten = await self._async_geladene_daten()
+
+            neue_id = raw_hofladen.get("id")
+            if any(vorhanden.get("id") == neue_id for vorhanden in daten):
+                raise DuplicateHofladenIdError(
+                    f"Ein Hofladen mit der ID '{neue_id}' existiert bereits."
+                )
+
+            daten.append(dict(raw_hofladen))
+            await self._store.async_save(daten)
+
+    async def async_update_raw_hofladen(
+        self, hofladen_id: str, updates: dict[str, Any]
+    ) -> None:
+        """Einzelne Felder eines bestehenden Hofladens persistent aktualisieren.
+
+        Wirft :class:`HofladenNotFoundError`, falls keine ``id`` mit
+        diesem Wert existiert.
+        """
+        async with self._lock:
+            daten = await self._async_geladene_daten()
+
+            for index, vorhandener in enumerate(daten):
+                if vorhandener.get("id") == hofladen_id:
+                    daten[index] = {**vorhandener, **updates}
+                    await self._store.async_save(daten)
+                    return
+
+            raise HofladenNotFoundError(
+                f"Kein Hofladen mit der ID '{hofladen_id}' gefunden."
+            )
+
+
+class StaticTestDataProvider(MutableHofladenDataProvider):
+    """Reiner Testdaten-Provider ohne Persistenz und ohne externe Anbindung.
+
+    Wird ausschliesslich von der Testsuite verwendet, um Coordinator und
+    Entities isoliert und deterministisch zu testen, ohne einen echten
+    Home-Assistant-Store zu benötigen. Für den produktiven Betrieb wird
+    stattdessen :class:`StorageHofladenDataProvider` verwendet (siehe
+    ``__init__.py``). Daten liegen nur im Arbeitsspeicher und gehen bei
+    einem Neustart verloren.
     """
 
     def __init__(self, raw_hoflaeden: list[dict[str, Any]] | None = None) -> None:
