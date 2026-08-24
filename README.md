@@ -54,8 +54,9 @@ Einrichtungsversuch wird entsprechend abgelehnt.
 
 ## Entitäten
 
-In dieser Einheit werden keine Entitäten bereitgestellt. Die Integration
-lädt lediglich als leeres Grundgerüst.
+Die Integration stellt für jeden Hofladen einen Binary Sensor und drei
+Sensoren bereit: „Geöffnet“, „Nächste Öffnung“, „Nächste Schliessung“ und
+„Entfernung“.
 
 ## Internes Datenmodell
 
@@ -244,14 +245,14 @@ gibt keine passende Home-Assistant-Device-Class für „Geschäft geöffnet“
 wie Türen/Fenster).
 
 Neu über den Coordinator hinzukommende Hofläden (siehe
-„Neuen Hofladen hinzufügen“ unten) erhalten automatisch alle drei
+„Neuen Hofladen hinzufügen“ unten) erhalten automatisch alle vier
 Entities, ohne dass ein Reload nötig ist. Entities werden „unavailable“,
 sobald der letzte Coordinator-Abruf fehlgeschlagen ist oder der Hofladen
 aus den Daten verschwunden ist.
 
 ### Öffnungsstatus
 
-Alle drei Entities beziehen ihren Wert ausschliesslich aus dem dafür
+Die drei zeit-/öffnungsbezogenen Entities beziehen ihren Wert ausschliesslich aus dem dafür
 vorgesehenen Modul `custom_components/hofkarte/opening_hours.py`. Dieses
 Modul berechnet den Öffnungsstatus deterministisch anhand der
 regulären Öffnungszeiten und Sonderöffnungszeiten:
@@ -355,10 +356,9 @@ Berechnung erfolgt vollständig lokal.
   `helpers.storage.Store` (JSON-Datei unter `.storage/`), siehe
   Architekturentscheid oben.
 - Der Entfernungs-Sensor nutzt `hass.config.latitude`/`longitude` als
-  Referenzpunkt, unabhängig davon, ob diese jemals über die
-  Home-Assistant-Einrichtung tatsächlich konfiguriert wurden (Standard
-  0.0/0.0 in einer frischen, unkonfigurierten Installation). Es findet
-  keine Plausibilitätsprüfung auf „echte“ Koordinaten statt.
+  Referenzpunkt. Das Standardpaar `0.0/0.0` einer frischen, noch nicht
+  sinnvoll konfigurierten Installation wird als unbekannte Position
+  behandelt; einzelne Koordinaten `0.0` bleiben gültig.
 - Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
 
 ## Entwicklung

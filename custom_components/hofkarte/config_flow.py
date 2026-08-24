@@ -3,17 +3,14 @@
 Die Integration wird ausschliesslich über die Home-Assistant-Oberfläche
 eingerichtet. Eine YAML-Konfiguration ist bewusst nicht vorgesehen.
 
-Architekturhinweis (offene Entscheidung):
-Die eigentliche Hofladen-Datenquelle steht zum Zeitpunkt dieser Einheit noch
-nicht fest (z. B. lokale Verwaltung durch den Benutzer vs. externer Dienst).
-Um keine erfundene externe API anzunehmen, beschränkt sich der Config Flow
-in dieser Einheit auf eine klar begrenzte, sinnvolle Konfigurationsstruktur:
-einen Anzeigenamen für die Integrationsinstanz. HofKarte wird als
+Architekturentscheidung Datenquelle:
+Home Assistant ist Laufzeit- und Verwaltungsumgebung für HofKarte. Die vom
+Benutzer gepflegten Hofläden werden integrationsintern über
+``helpers.storage.Store`` persistent gespeichert. Der Config Flow konfiguriert
+nur die zentrale Integrationsinstanz; die Hofladen-Daten werden nicht über
+eine externe API oder eine eigene Datenbank bezogen. HofKarte wird als
 Single-Instance-Integration behandelt, da sie eine zentrale, HA-weite
 Kartenverwaltung darstellt und nicht pro Hofladen einzeln eingerichtet wird.
-Die konkrete Datenquelle für Hofläden ist Gegenstand einer späteren
-Architekturentscheidung (siehe Einheit 3 – Fachliches Datenmodell und
-Data Layer).
 """
 
 from __future__ import annotations

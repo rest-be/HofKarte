@@ -7,6 +7,7 @@ import pytest
 from custom_components.hofkarte.distance import (
     calculate_distance_km,
     haversine_distance_km,
+    is_valid_home_position,
     round_distance_km,
 )
 
@@ -97,11 +98,26 @@ def test_calculate_distance_km_mit_bekannten_koordinaten() -> None:
     assert distanz == pytest.approx(95.49, abs=0.1)
 
 
+def test_is_valid_home_position() -> None:
+    """Nur nutzbare Home-Assistant-Koordinaten gelten als bekannt."""
+    assert is_valid_home_position(_ZUERICH_LAT, _ZUERICH_LON) is True
+    assert is_valid_home_position(0.0, _ZUERICH_LON) is True
+    assert is_valid_home_position(_ZUERICH_LAT, 0.0) is True
+    assert is_valid_home_position(0.0, 0.0) is False
+    assert is_valid_home_position(None, _ZUERICH_LON) is False
+    assert is_valid_home_position(_ZUERICH_LAT, None) is False
+
+
 def test_calculate_distance_km_fehlende_home_position() -> None:
     """Ohne bekannte Home-Assistant-Position muss None geliefert werden."""
     assert calculate_distance_km(None, None, _BERN_LAT, _BERN_LON) is None
     assert calculate_distance_km(_ZUERICH_LAT, None, _BERN_LAT, _BERN_LON) is None
     assert calculate_distance_km(None, _ZUERICH_LON, _BERN_LAT, _BERN_LON) is None
+
+
+def test_calculate_distance_km_standardposition_0_0_gilt_als_unbekannt() -> None:
+    """0.0/0.0 darf nicht als echte Home-Position verwendet werden."""
+    assert calculate_distance_km(0.0, 0.0, _BERN_LAT, _BERN_LON) is None
 
 
 def test_calculate_distance_km_fehlende_hofladen_koordinaten() -> None:

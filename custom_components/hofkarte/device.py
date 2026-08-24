@@ -54,8 +54,10 @@ def async_sync_devices(
       identischen ``identifiers`` (z. B. bei einem Reload oder einem
       erneuten Coordinator-Update) erzeugen keine Duplikate.
     - Devices von Hofläden, die nicht mehr in ``hoflaeden`` enthalten
-      sind (z. B. aus der Datenquelle entfernt), werden aus der Device
-      Registry entfernt, damit keine verwaisten Geräte zurückbleiben.
+      sind (z. B. aus dem persistenten Storage entfernt), werden aus der
+      Device Registry entfernt. Die bereits registrierten Entities bleiben
+      bewusst bestehen und werden durch ``HofKarteEntity.available``
+      ``unavailable``; dadurch bleiben stabile Entity-IDs erhalten.
     - Devices, die nicht zu dieser Config Entry gehören, bleiben
       unangetastet.
     """

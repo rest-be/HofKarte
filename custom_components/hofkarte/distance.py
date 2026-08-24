@@ -61,6 +61,28 @@ def round_distance_km(
     return round(distance_km, ndigits)
 
 
+def is_valid_home_position(
+    latitude: float | None, longitude: float | None
+) -> bool:
+    """Prüfen, ob eine konfigurierte Home-Assistant-Position nutzbar ist.
+
+    ``None`` bedeutet eine unbekannte Position. Zusätzlich wird das von
+    Home Assistant bei einer frischen, noch nicht sinnvoll konfigurierten
+    Installation verwendete Paar ``0.0 / 0.0`` als unbekannt behandelt,
+    damit daraus keine irreführende Entfernung berechnet wird. Einzelne
+    Koordinaten von ``0.0`` bleiben dagegen gültig.
+    """
+    if latitude is None or longitude is None:
+        return False
+    if not math.isfinite(latitude) or not math.isfinite(longitude):
+        return False
+    if not -90.0 <= latitude <= 90.0:
+        return False
+    if not -180.0 <= longitude <= 180.0:
+        return False
+    return not (latitude == 0.0 and longitude == 0.0)
+
+
 def calculate_distance_km(
     home_latitude: float | None,
     home_longitude: float | None,
@@ -69,13 +91,13 @@ def calculate_distance_km(
 ) -> float | None:
     """Entfernung eines Hofladens zur Home-Assistant-Position in Kilometern.
 
-    Liefert ``None`` (statt eines erfundenen oder geschätzten Werts),
-    wenn entweder die Home-Assistant-Position oder die Koordinaten des
-    Hofladens nicht bekannt sind – siehe Regeln dieser Einheit:
-    „Verhalten bei fehlender Position“, „Verhalten bei fehlenden
-    Hofladen-Koordinaten“.
+    Liefert ``None`` (statt eines erfundenen oder geschätzten Werts), wenn
+    die Home-Assistant-Position nicht nutzbar ist oder die Koordinaten des
+    Hofladens nicht bekannt sind. Das Standardpaar ``0.0 / 0.0`` einer
+    frischen, unkonfigurierten Home-Assistant-Installation wird als
+    unbekannte Home-Position behandelt.
     """
-    if home_latitude is None or home_longitude is None:
+    if not is_valid_home_position(home_latitude, home_longitude):
         return None
     if hofladen_latitude is None or hofladen_longitude is None:
         return None

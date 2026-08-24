@@ -8,6 +8,23 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Abgleich Einheit 1–9
+
+- Datenquelle als verbindliche Architekturentscheidung dokumentiert:
+  Home Assistant `helpers.storage.Store` ist der persistente,
+  integrationsinterne Speicher; keine externe Datenbank, kein externer Dienst
+  und keine eigene REST-API.
+- Veraltete Dokumentation im Config Flow und Parsing zum inzwischen
+  festgelegten Data Provider entfernt.
+- Verhalten bei entfernten Hofläden dokumentiert: Das Device wird entfernt,
+  bereits registrierte Entities bleiben mit stabiler `unique_id` bestehen und
+  werden `unavailable`.
+- Home-Assistant-Position für den Distance Sensor plausibilisiert: Das
+  Standardpaar `0.0/0.0` wird als unbekannt behandelt; gültige einzelne
+  `0.0`-Koordinaten bleiben zulässig.
+- Tests für die Positionsvalidierung ergänzt.
+
+
 ### Architekturentscheid
 
 - **Datenquelle final festgelegt** (löst die seit Einheit 4 offene

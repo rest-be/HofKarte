@@ -1,11 +1,11 @@
 """Parsing und Validierung roher Hofladen-Daten.
 
-Dieses Modul trennt bewusst Rohdaten (``Mapping``/``dict``, z. B. künftig aus
-einer lokalen Datenquelle) von der internen, typisierten Darstellung in
-``models.py``. Es kennt kein konkretes Rohdatenformat einer bestimmten
-externen API – die tatsächliche Datenquelle ist weiterhin eine offene
-Architekturentscheidung (siehe Einheit 2 und README). Erwartet wird
-lediglich ein einfaches, JSON-kompatibles Mapping je Hofladen.
+Dieses Modul trennt bewusst Rohdaten (``Mapping``/``dict``) von der internen,
+typisierten Darstellung in ``models.py``. Die produktive Datenquelle ist der
+integrationsinterne Home-Assistant-Storage, der über den Data Provider
+kapselt wird. Das Parsing kennt bewusst keine konkrete Speicher- oder
+Persistenzimplementierung und erwartet lediglich ein einfaches,
+JSON-kompatibles Mapping je Hofladen.
 
 Ungültige oder unvollständige Pflichtdaten führen zu einer
 :class:`HofladenValidationError` mit einer für Menschen verständlichen
