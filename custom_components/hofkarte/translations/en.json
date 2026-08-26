@@ -15,45 +15,5 @@
     "abort": {
       "single_instance_allowed": "HofKarte is already configured. Only a single instance is supported."
     }
-  },
-  "services": {
-    "refresh": {
-      "name": "Refresh data",
-      "description": "Reload farm shop data from the integration store via the coordinator."
-    },
-    "search": {
-      "name": "Search farm shops",
-      "description": "Search and filter farm shops. Multiple criteria are combined with AND. Returns a result list.",
-      "fields": {
-        "suchbegriff": {
-          "name": "Search term",
-          "description": "Free text over name, description, address, city and assortment."
-        },
-        "kategorie": {
-          "name": "Category",
-          "description": "Filter by category name or ID."
-        },
-        "produkt": {
-          "name": "Product",
-          "description": "Filter by product name or ID."
-        },
-        "verkaufsart": {
-          "name": "Sales type",
-          "description": "Filter by sales type (for example self-service)."
-        },
-        "zahlungsart": {
-          "name": "Payment method",
-          "description": "Filter by payment method (for example TWINT)."
-        },
-        "merkmal": {
-          "name": "Feature",
-          "description": "Filter by feature (for example organic)."
-        },
-        "geoeffnet": {
-          "name": "Open",
-          "description": "Only currently open (on) or closed (off) shops. Shops without opening hours are excluded from this filter."
-        }
-      }
-    }
   }
 }

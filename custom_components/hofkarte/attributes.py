@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .images import build_images_attribute
 from .models import Hofladen
 
 
@@ -66,14 +67,18 @@ def _produkt_eintraege(
 
 
 def build_sortiment_attributes(hofladen: Hofladen) -> dict[str, Any]:
-    """Sortiment und Eigenschaften als stabile Attributstruktur.
+    """Sortiment, Eigenschaften und Bilder als stabile Attributstruktur.
 
     Fehlen einzelne Sammlungen (z. B. keine Zahlungsarten hinterlegt),
     liefert das jeweilige Feld stets eine leere Liste statt eines
     fehlenden Schlüssels oder ``None`` – für eine vorhersagbare,
     stabile Struktur unabhängig vom Vollständigkeitsgrad der Daten.
+
+    Bilder werden gefiltert und nur sichere URLs (http/https) enthalten.
+    Ungültige Bilder werden stillschweigend entfernt.
     """
     kategorie_namen_je_id = _kategorie_namen_je_id(hofladen)
+    images_attr = build_images_attribute(hofladen.bilder)
 
     return {
         "kategorien": _sortierte_namen(
@@ -89,4 +94,6 @@ def build_sortiment_attributes(hofladen: Hofladen) -> dict[str, Any]:
         "merkmale": _sortierte_namen(
             [merkmal.name for merkmal in hofladen.merkmale]
         ),
+        "primary_image": images_attr["primary_image"],
+        "images": images_attr["images"],
     }

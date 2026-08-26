@@ -3,11 +3,13 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Einheit 10 – Suche, Filter und Home-Assistant-Actions.
-> Hofläden werden über den integrationsinternen Store gepflegt. Die
-> grafische Verwaltungsoberfläche (Sidebar-Panel) bleibt für CRUD
-> zuständig. Automationen nutzen die Actions ``hofkarte.refresh`` und
-> ``hofkarte.search``.
+> **Status:** Geosuche und Entfernung (Einheit 9), ergänzt um den
+> Architekturentscheid zur Datenquelle: Home Assistant ist sowohl
+> Laufzeit- als auch Verwaltungsoberfläche für HofKarte. Die vom
+> Benutzer gepflegten Hofläden werden in einem integrationsinternen,
+> persistenten Store gehalten (keine externe Datenbank, kein externer
+> Dienst). Die zuvor offene Architekturentscheidung zur Datenquelle ist
+> damit gelöst.
 
 ## Über dieses Projekt
 
@@ -64,7 +66,7 @@ Datenstruktur (`custom_components/hofkarte/models.py`) mit u. a.:
 - Stammdaten (ID, Name, Beschreibung, Adresse, PLZ, Ort, Land, Koordinaten)
 - regelmässigen Öffnungszeiten und datumsbezogenen Sonderöffnungszeiten
 - Produkten, Kategorien, Zahlungsarten, Verkaufsarten und Merkmalen
-- optionalen Bildern
+- optionalen Bildern (siehe Abschnitt „Bilder und Detailinformationen" unten)
 
 Rohdaten (z. B. künftig aus einer lokalen Datenquelle) werden über
 `custom_components/hofkarte/parsing.py` in dieses Modell überführt und
@@ -80,6 +82,93 @@ Mitternachtsüberschreitung überhaupt abbilden zu können.
 
 Dieses Datenmodell ist rein intern und nicht direkt an Home-Assistant-
 Entities gebunden.
+
+## Bilder und Detailinformationen (Einheit 11)
+
+Bilder eines Hofladens werden bewusst plattformgerecht für Home Assistant
+aufbereitet:
+
+- Bilder bleiben als externe URLs; es werden keine lokalen Bildkopien
+  erzeugt.
+- Nur `http://` und `https://` URLs werden akzeptiert; `file://`,
+  `data:` und andere unsichere Protokolle werden abgelehnt.
+- Das erste gültige Bild wird als `primary_image` markiert; alle gültigen
+  Bilder stehen im Attribut `images` mit optionaler `description`.
+- Ungültige oder unsichere URLs werden stillschweigend aus den Attributen
+  gefiltert; fehlende Bilder führen nicht zu Fehlern.
+- Zusätzlich gibt es eine Camera-Entity (`camera.<hofladen>_hauptbild`),
+  die das `primary_image` als HA-Camera bereitstellt. Die Camera nutzt
+  aiohttp mit einem begrenzten Timeout und überlässt Caching/Rendering
+  Home Assistant.
+
+Ziel: sichere, praxistaugliche Bildintegration ohne zusätzliche Server
+oder lokale Dateiverwaltung; die Integration vermeidet dadurch
+Sicherheitsrisiken und unnötige Duplikate.
+
+### Beispiele
+
+Kurze Beispiele, wie das Hauptbild und die Bildattribute in Home Assistant genutzt werden können.
+
+Lovelace — Picture Entity (empfohlen, nutzt die neue Camera-Entity):
+
+```yaml
+type: picture-entity
+entity: camera.hofladen_xyz_hauptbild
+camera_image: camera.hofladen_xyz_hauptbild
+camera_view: live
+name: Hofladen Hauptbild
+```
+
+Template — Template-Sensor, der die `primary_image`-URL aus den Entity-Attributen extrahiert:
+
+```yaml
+# configuration.yaml (Template integration)
+template:
+  - sensor:
+      - name: "Hofladen Hauptbild URL"
+        state: "{{ state_attr('binary_sensor.hofladen_xyz_geoeffnet', 'primary_image') }}"
+```
+
+Lovelace — Picture Elements mit Text-Overlay (Beispiel):
+
+```yaml
+type: picture-elements
+image: >-
+  {{ state_attr('binary_sensor.hofladen_xyz_geoeffnet', 'primary_image') }}
+elements:
+  - type: image
+    entity: camera.hofladen_xyz_hauptbild
+    image: >-
+      {{ state_attr('binary_sensor.hofladen_xyz_geoeffnet', 'primary_image') }}
+    style:
+      top: 50%
+      left: 50%
+      width: 100%
+  - type: state-label
+    entity: binary_sensor.hofladen_xyz_geoeffnet
+    attribute: primary_image
+    style:
+      top: 5%
+      left: 5%
+      color: white
+      background: 'rgba(0,0,0,0.4)'
+      padding: 6px
+  - type: state-badge
+    entity: sensor.hofladen_xyz_entfernung
+    style:
+      top: 5%
+      right: 5%
+```
+
+Dieses Beispiel zeigt das `primary_image` als Hintergrundbild und legt
+zwei Overlays darauf: einen kurzen Status/Label links oben und ein Badge
+mit der Entfernung rechts oben. Passen Sie `entity`-IDs an Ihre tatsächli
+chen Entity-Namen an.
+
+Dieser Template-Sensor liefert die URL des Hauptbildes als State und kann
+in Automationen oder weiteren Karten referenziert werden (z. B. für
+spezielle Custom Cards).
+
 
 ## Datenabruf (Coordinator)
 
@@ -230,12 +319,13 @@ Für jeden Hofladen werden folgende Entities bereitgestellt (jeweils dem
 zugehörigen Device zugeordnet, `unique_id` stabil aus `Hofladen.id`
 gebildet):
 
-| Plattform       | Entity                | Device Class | Attribute                     |
-|------------------|------------------------|--------------|--------------------------------|
-| `binary_sensor`  | Geöffnet               | –            | Sortiment & Eigenschaften (siehe unten) |
-| `sensor`         | Nächste Öffnung        | `timestamp`  | –                              |
-| `sensor`         | Nächste Schliessung    | `timestamp`  | –                              |
-| `sensor`         | Entfernung             | `distance`   | –                              |
+| Plattform       | Entity                | Device Class | Attribute                                         |
+|------------------|------------------------|--------------|--------------------------------------------------|
+| `binary_sensor`  | Geöffnet               | –            | Sortiment & Eigenschaften; `primary_image`, `images` |
+| `sensor`         | Nächste Öffnung        | `timestamp`  | –                                                |
+| `sensor`         | Nächste Schliessung    | `timestamp`  | –                                                |
+| `sensor`         | Entfernung             | `distance`   | –                                                |
+| `camera`         | Hauptbild              | –            | Zeigt `primary_image` als HA Camera              |
 
 Für den Binary Sensor wurde bewusst **keine** Device Class gesetzt: Es
 gibt keine passende Home-Assistant-Device-Class für „Geschäft geöffnet“
@@ -359,49 +449,7 @@ Berechnung erfolgt vollständig lokal.
   behandelt; einzelne Koordinaten `0.0` bleiben gültig.
 - Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
 
-## Actions (Einheit 10)
-
-Für Automationen und Skripte stellt HofKarte zwei Home-Assistant-Actions
-bereit. Sie duplizieren keine bestehenden Sensorwerte (Öffnungsstatus
-und Entfernung bleiben Entities).
-
-| Action | Zweck | Antwort |
-| --- | --- | --- |
-| `hofkarte.refresh` | Hofladen-Daten über den Coordinator neu laden | keine |
-| `hofkarte.search` | Hofläden nach Begriff und Fachfiltern durchsuchen | Trefferliste (`count`, `hoflaeden`) |
-
-`hofkarte.search` muss mit Antwort aufgerufen werden (`response_variable`
-in Automationen). Mehrere Filter gelten als UND-Verknüpfung. Leere
-Angaben werden ignoriert.
-
-Parameter von `hofkarte.search`:
-
-| Parameter | Bedeutung |
-| --- | --- |
-| `suchbegriff` | Freitext über ID, Name, Beschreibung, Adresse, PLZ, Ort, Land, Website und Sortiment |
-| `kategorie` | Filter nach Kategorie (Name oder ID; auch über Produktzuordnung) |
-| `produkt` | Filter nach Produkt |
-| `verkaufsart` | Filter nach Verkaufsart |
-| `zahlungsart` | Filter nach Zahlungsart |
-| `merkmal` | Filter nach Merkmal |
-| `geoeffnet` | `true` nur geöffnet, `false` nur geschlossen; ohne Öffnungszeiten kein Treffer |
-
-Beispiel:
-
-```yaml
-action: hofkarte.search
-data:
-  suchbegriff: Apfel
-  zahlungsart: TWINT
-  geoeffnet: true
-response_variable: hofkarte_treffer
-```
-
-Die Fachlogik liegt in `custom_components/hofkarte/search.py` und wird von
-der Action nur orchestriert. Die Öffnungszeitenberechnung kommt unverändert
-aus `opening_hours.py`.
-
-## Grafische Hofladenverwaltung
+## Entwicklung
 
 ### Tests ausführen
 
@@ -413,48 +461,3 @@ pytest custom_components/hofkarte/tests
 ## Lizenz
 
 Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
-
-## Grafische Hofladenverwaltung
-
-**Architekturentscheid:** Die Pflege (Anlegen, Bearbeiten, Löschen) der
-Hofläden erfolgt über ein **eigenes Sidebar-Panel** mit WebSocket-Backend.
-Suche und Filter für Automationen sind zusätzlich als Home-Assistant-
-Actions modelliert (siehe Abschnitt „Actions“ oben) – nicht als
-proprietäre REST-API.
-
-Nach der Einrichtung von HofKarte steht im Home-Assistant-Seitenmenü die
-Verwaltungsseite **HofKarte** zur Verfügung. Dort können Administratoren:
-
-- neue Hofläden erstellen,
-- bestehende Hofläden bearbeiten,
-- Stammdaten und Koordinaten ändern,
-- reguläre und Sonderöffnungszeiten bearbeiten,
-- Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale bearbeiten,
-- Hofläden kontrolliert löschen.
-
-Änderungen werden direkt im integrationsinternen Home-Assistant-Storage
-persistiert und ohne Neustart an Coordinator, Devices und Entities
-weitergegeben. Die Verwaltungsoberfläche verwendet ausschließlich lokale
-Home-Assistant-Mechanismen.
-
-### Technischer Aufbau
-
-- `frontend.py`: registriert das Sidebar-Panel
-  (`homeassistant.components.frontend`) sowie die statischen
-  JS-Assets unter `/api/hofkarte/static/` (`static/hofkarte-panel.js`).
-  Nur für Administratoren sichtbar (`require_admin=True`).
-- `management.py`: WebSocket-Befehle
-  (`hofkarte/management/list|save|delete`), require_admin-geschützt.
-  Greift ausschliesslich über den Coordinator bzw. den
-  `HofladenDataProvider` auf die Daten zu – keine eigene Datenhaltung.
-- Rückgabedaten werden über eine dedizierte Serialisierung
-  (`_serialize_hofladen`) in einfache, JSON-taugliche Typen überführt
-  (Zeiten/Daten als ISO-Strings, Tupel als Listen).
-
-**Manifest-Abhängigkeit:** `manifest.json` deklariert `"dependencies":
-["http"]`, damit Home Assistant `hass.http` garantiert initialisiert,
-bevor HofKarte es für die statischen Panel-Assets verwendet. Ohne diese
-Deklaration ist `hass.http` zum Setup-Zeitpunkt nicht zuverlässig
-verfügbar (`None`), was den Start der **gesamten Integration** zum
-Absturz bringen konnte – behoben und durch Tests abgesichert (siehe
-`tests/test_frontend.py`, `tests/test_management.py`).

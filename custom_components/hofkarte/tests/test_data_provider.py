@@ -199,19 +199,3 @@ async def test_storage_provider_aenderungen_ueber_instanzen_hinweg_sichtbar(
     raw_hoflaeden = await zweiter_provider.async_fetch_raw_hoflaeden()
 
     assert raw_hoflaeden[0]["plz"] == "8000"
-
-async def test_storage_provider_delete_removes_hofladen(hass: HomeAssistant) -> None:
-    """Ein Hofladen muss dauerhaft aus dem Store entfernt werden können."""
-    provider = StorageHofladenDataProvider(hass)
-    await provider.async_add_raw_hofladen({"id": "hof-1", "name": "Hofladen Eins"})
-
-    await provider.async_delete_raw_hofladen("hof-1")
-
-    assert await provider.async_fetch_raw_hoflaeden() == []
-
-
-async def test_storage_provider_delete_unknown_id(hass: HomeAssistant) -> None:
-    """Das Löschen einer unbekannten ID muss abgelehnt werden."""
-    provider = StorageHofladenDataProvider(hass)
-    with pytest.raises(HofladenNotFoundError):
-        await provider.async_delete_raw_hofladen("unbekannt")

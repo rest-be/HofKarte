@@ -15,45 +15,5 @@
     "abort": {
       "single_instance_allowed": "HofKarte ist bereits eingerichtet. Es wird nur eine Instanz unterstützt."
     }
-  },
-  "services": {
-    "refresh": {
-      "name": "Daten aktualisieren",
-      "description": "Lädt die Hofladen-Daten über den Coordinator neu."
-    },
-    "search": {
-      "name": "Hofläden suchen",
-      "description": "Durchsucht und filtert Hofläden. Mehrere Kriterien werden mit UND verknüpft.",
-      "fields": {
-        "suchbegriff": {
-          "name": "Suchbegriff",
-          "description": "Freitext über Name, Beschreibung, Adresse, Ort und Sortiment."
-        },
-        "kategorie": {
-          "name": "Kategorie",
-          "description": "Filter nach Kategorie (Name oder ID)."
-        },
-        "produkt": {
-          "name": "Produkt",
-          "description": "Filter nach Produkt (Name oder ID)."
-        },
-        "verkaufsart": {
-          "name": "Verkaufsart",
-          "description": "Filter nach Verkaufsart (z. B. Selbstbedienung)."
-        },
-        "zahlungsart": {
-          "name": "Zahlungsart",
-          "description": "Filter nach Zahlungsart (z. B. TWINT)."
-        },
-        "merkmal": {
-          "name": "Merkmal",
-          "description": "Filter nach Merkmal (z. B. Bio)."
-        },
-        "geoeffnet": {
-          "name": "Geöffnet",
-          "description": "Nur geöffnete oder nur geschlossene Hofläden. Ohne Öffnungszeiten kein Treffer."
-        }
-      }
-    }
   }
 }

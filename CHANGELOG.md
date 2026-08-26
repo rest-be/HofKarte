@@ -6,72 +6,7 @@ dokumentiert.
 Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
-## [0.11.0] – 2026-08-26
-
-### Hinzugefügt
-
-- Einheit 10: Home-Assistant-Actions `hofkarte.refresh` (Daten neu laden)
-  und `hofkarte.search` (Freitextsuche plus Filter nach Kategorie, Produkt,
-  Verkaufsart, Zahlungsart, Merkmal und optional geöffnet/geschlossen).
-- Fachmodul `search.py` mit testbarer UND-Verknüpfung der Kriterien.
-- `services.yaml` sowie Übersetzungen der Action-Beschreibungen (de/en).
-
-### Geändert
-
-- Die grafische Verwaltungsoberfläche bleibt für CRUD zuständig; Suche und
-  Filter für Automationen laufen über die neuen Actions statt über eine
-  eigene API.
-
-## 0.10.2
-- Stammdatenformular neu strukturiert: Name, Beschreibung, Adresse, PLZ/Ort, Land, Latitude/Longitude, Webseite.
-- Neues Feld `website` durchgängig im Datenmodell, Parsing und Management-UI.
-
-# Changelog
-
-Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei
-dokumentiert.
-
-Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
-die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
-
 ## [Unveröffentlicht]
-
-### Behoben
-
-- **Kritischer Bug in `frontend.py`:** `manifest.json` deklarierte keine
-  Abhängigkeit zu `http`. Dadurch war `hass.http` zum Zeitpunkt von
-  `async_setup_frontend_assets` nicht zuverlässig initialisiert (`None`)
-  und der Aufruf von `hass.http.async_register_static_paths(...)` konnte
-  mit `AttributeError` fehlschlagen – was den Start der **gesamten**
-  HofKarte-Integration verhindert hätte, nicht nur des Panels. Behoben
-  durch `"dependencies": ["http"]` in `manifest.json`.
-- `frontend.py`: ungenutzten Import (`const.DOMAIN`) entfernt
-  (pyflakes-Fund).
-
-### Hinzugefügt
-
-- Tests für das Sidebar-Panel (`tests/test_frontend.py`): statische
-  Asset-Registrierung, Panel-Registrierung inkl. Konfiguration
-  (Sidebar-Titel, `require_admin`, JS-URL), Idempotenz bei
-  Doppelregistrierung, korrektes Entfernen beim Entladen sowie
-  No-Op-Verhalten, wenn kein Panel registriert ist.
-- Tests für die WebSocket-Verwaltungs-API (`tests/test_management.py`):
-  JSON-Serialisierung verschachtelter Hofladen-Daten (Zeiten, Tupel),
-  Fehlerfall ohne eingerichtete Integration, Auflisten, Erstellen (mit
-  automatisch generierter ID), Aktualisieren, Ablehnen ungültiger Daten,
-  Löschen, Fehler bei unbekannter ID sowie bei einem nicht
-  schreibfähigen Data Provider, und Registrierung aller drei
-  WebSocket-Befehle.
-
-### Architekturentscheid: eigene grafische Verwaltungsoberfläche
-
-- Bestätigt und beibehalten: Abweichend vom ursprünglichen Plan für
-  Einheit 10 („Keine eigene UI“, „Keine proprietäre REST-API“) verwaltet
-  HofKarte Hofläden über ein eigenes Sidebar-Panel mit
-  WebSocket-Backend (`frontend.py`, `management.py`) statt über
-  Home-Assistant-Actions/Services. Diese Abweichung ist bewusst und
-  dokumentiert (siehe README, Abschnitt „Grafische
-  Hofladenverwaltung“).
 
 ### Abgleich Einheit 1–9
 
@@ -88,6 +23,29 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
   Standardpaar `0.0/0.0` wird als unbekannt behandelt; gültige einzelne
   `0.0`-Koordinaten bleiben zulässig.
 - Tests für die Positionsvalidierung ergänzt.
+
+### Einheit 11 – Bilder und Detailinformationen
+
+- Neues Modul `images.py` implementiert sichere Bild-URL-Validierung und
+  Bildattribute:
+  - `is_valid_image_url(url)`: whitelist-basierte Prüfung (nur `http`/`https`),
+    `file:`/`data:`/andere Protokolle werden abgelehnt.
+  - `get_main_image_url(bilder)`: ermittelt das erste valide Bild als
+    `primary_image`.
+  - `build_images_attribute(bilder)`: erzeugt die JSON-serialisierbare
+    Attributstruktur `{ "primary_image": ..., "images": [...] }`.
+- `attributes.py` erweitert: `build_sortiment_attributes` liefert nun
+  zusätzlich `primary_image` und `images` als stabile Attribute des Binary
+  Sensors (keine Verdopplung auf anderen Sensoren).
+- Neue Camera-Plattform (`camera.py`) mit `HofKarteMainImageCamera`:
+  bietet das `primary_image` als Home-Assistant-Camera an (aiohttp mit
+  Timeout, Fehlerbehandlung, HA-Caching genutzt).
+- Umfangreiche Tests hinzugefügt: `test_images.py`, `test_camera.py` und
+  Erweiterung von `test_attributes.py` zur Absicherung der neuen
+  Bildverarbeitung und Attribute.
+- README aktualisiert: Dokumentation der Bildregeln, Beispiele für
+  Lovelace Picture-Entity, Template-Sensor und ein Picture-Elements
+  Mockup-Beispiel; zusätzliches SVG-Mockup als `custom_components/hofkarte/static/lovelace_unit11_preview.svg`.
 
 
 ### Architekturentscheid
@@ -433,19 +391,3 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Grundlegende HACS-kompatible Repository-Struktur (`hacs.json`).
 - README mit Installations- und Entwicklungsgrundlagen.
 - Minimale Teststruktur (pytest + Home-Assistant-Testwerkzeuge).
-
-## [0.10.0] - Einheit 10
-
-### Hinzugefügt
-
-- Native Home-Assistant-Seitenleiste „HofKarte“ zur grafischen Verwaltung der Hofläden.
-- Hofläden können über die Oberfläche neu erstellt, bearbeitet und gelöscht werden.
-- Stammdaten, Koordinaten, reguläre und Sonderöffnungszeiten sowie Sortiment und Eigenschaften sind grafisch editierbar.
-- Änderungen werden ohne Neustart über den bestehenden Storage-Provider und Coordinator in Devices und Entities übernommen.
-- Neue WebSocket-Schnittstelle für die geschützte Verwaltungsoberfläche.
-- Persistentes Löschen von Hofläden im Storage-Provider.
-
-### Sicherheit
-
-- Verwaltungsoberfläche und Schreiboperationen erfordern Home-Assistant-Administratorrechte.
-- Keine externe Datenquelle, keine externe API und keine Standortübertragung.

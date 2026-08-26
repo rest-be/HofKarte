@@ -1,9 +1,10 @@
-"""Tests für ``attributes.py`` – Sortiment und Eigenschaften als Attribute."""
+"""Tests für ``attributes.py`` – Sortiment, Eigenschaften und Bilder als Attribute."""
 
 from __future__ import annotations
 
 from custom_components.hofkarte.attributes import build_sortiment_attributes
 from custom_components.hofkarte.models import (
+    Bild,
     Hofladen,
     Kategorie,
     Merkmal,
@@ -47,7 +48,10 @@ def test_vollstaendiges_mapping() -> None:
 
 
 def test_fehlende_werte_ergeben_leere_listen() -> None:
-    """Ohne hinterlegte Daten müssen alle Felder leere Listen sein, nicht None."""
+    """Ohne hinterlegte Daten müssen alle Felder leere Listen sein, nicht None.
+
+    Bilder müssen auch abwesend sein (primary_image=None, images=[]).
+    """
     hofladen = Hofladen(id="hof-2", name="Kleiner Hofladen")
 
     attribute = build_sortiment_attributes(hofladen)
@@ -58,6 +62,8 @@ def test_fehlende_werte_ergeben_leere_listen() -> None:
         "zahlungsarten": [],
         "verkaufsarten": [],
         "merkmale": [],
+        "primary_image": None,
+        "images": [],
     }
 
 
@@ -137,3 +143,114 @@ def test_produkte_werden_nach_name_sortiert() -> None:
     namen = [eintrag["name"] for eintrag in attribute["produkte"]]
     # Codepoint-basierte Sortierung: Karotten, Zucchetti vor Äpfel.
     assert namen == ["Karotten", "Zucchetti", "Äpfel"]
+
+
+def test_einzelnes_gültiges_bild_wird_als_primary_bild_gespeichert() -> None:
+    """Ein einziges gültiges Bild sollte als primary_image gespeichert werden."""
+    hofladen = Hofladen(
+        id="hof-mit-bild",
+        name="Hofladen mit Bild",
+        bilder=(
+            Bild(
+                url="https://example.com/hauptfoto.jpg",
+                beschreibung="Hofansicht von vorne",
+            ),
+        ),
+    )
+
+    attribute = build_sortiment_attributes(hofladen)
+
+    assert attribute["primary_image"] == "https://example.com/hauptfoto.jpg"
+    assert len(attribute["images"]) == 1
+    assert attribute["images"][0]["url"] == "https://example.com/hauptfoto.jpg"
+    assert attribute["images"][0]["description"] == "Hofansicht von vorne"
+
+
+def test_mehrere_gültige_bilder() -> None:
+    """Mehrere gültige Bilder sollten alle in der images Liste enthalten sein."""
+    hofladen = Hofladen(
+        id="hof-mehrbilder",
+        name="Hofladen mit mehreren Bildern",
+        bilder=(
+            Bild(url="https://example.com/bild1.jpg", beschreibung="Bild 1"),
+            Bild(url="https://example.com/bild2.jpg", beschreibung="Bild 2"),
+            Bild(url="https://example.com/bild3.jpg", beschreibung=None),
+        ),
+    )
+
+    attribute = build_sortiment_attributes(hofladen)
+
+    assert attribute["primary_image"] == "https://example.com/bild1.jpg"
+    assert len(attribute["images"]) == 3
+    assert [img["url"] for img in attribute["images"]] == [
+        "https://example.com/bild1.jpg",
+        "https://example.com/bild2.jpg",
+        "https://example.com/bild3.jpg",
+    ]
+
+
+def test_ungültige_bilder_werden_gefiltert() -> None:
+    """Ungültige Bilder (file://, data:, etc.) sollten aus den Attributen
+    entfernt werden, aber nicht zu einem Fehler führen."""
+    hofladen = Hofladen(
+        id="hof-mit-bad-bilder",
+        name="Hofladen mit unsicheren Bildern",
+        bilder=(
+            Bild(url="file:///etc/passwd", beschreibung="Sollte gefiltert werden"),
+            Bild(url="https://example.com/valid.jpg", beschreibung="Valide"),
+            Bild(url="data:image/png;base64,xxx", beschreibung="Data URI"),
+        ),
+    )
+
+    attribute = build_sortiment_attributes(hofladen)
+
+    # Nur das HTTPS Bild sollte vorhanden sein
+    assert attribute["primary_image"] == "https://example.com/valid.jpg"
+    assert len(attribute["images"]) == 1
+    assert attribute["images"][0]["url"] == "https://example.com/valid.jpg"
+
+
+def test_alle_bilder_ungültig() -> None:
+    """Wenn alle Bilder ungültig sind, sollten primary_image und images leer sein."""
+    hofladen = Hofladen(
+        id="hof-keine-gültigen-bilder",
+        name="Hofladen ohne gültige Bilder",
+        bilder=(
+            Bild(url="file:///local/image.jpg", beschreibung="Local File"),
+            Bild(url="", beschreibung="Empty URL"),
+        ),
+    )
+
+    attribute = build_sortiment_attributes(hofladen)
+
+    assert attribute["primary_image"] is None
+    assert attribute["images"] == []
+
+
+def test_bild_mit_beschreibung_enthält_description_feld() -> None:
+    """Bilder mit Beschreibung sollten ein description Feld enthalten."""
+    hofladen = Hofladen(
+        id="hof-beschreibung",
+        name="Hofladen",
+        bilder=(
+            Bild(url="https://example.com/img.jpg", beschreibung="Schönes Foto"),
+        ),
+    )
+
+    attribute = build_sortiment_attributes(hofladen)
+
+    assert "description" in attribute["images"][0]
+    assert attribute["images"][0]["description"] == "Schönes Foto"
+
+
+def test_bild_ohne_beschreibung_enthält_kein_description_feld() -> None:
+    """Bilder ohne Beschreibung sollten kein description Feld enthalten."""
+    hofladen = Hofladen(
+        id="hof-keine-beschreibung",
+        name="Hofladen",
+        bilder=(Bild(url="https://example.com/img.jpg", beschreibung=None),),
+    )
+
+    attribute = build_sortiment_attributes(hofladen)
+
+    assert "description" not in attribute["images"][0]
