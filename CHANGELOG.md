@@ -12,6 +12,43 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Kritischer Bug in `frontend.py`:** `manifest.json` deklarierte keine
+  Abhängigkeit zu `http`. Dadurch war `hass.http` zum Zeitpunkt von
+  `async_setup_frontend_assets` nicht zuverlässig initialisiert (`None`)
+  und der Aufruf von `hass.http.async_register_static_paths(...)` konnte
+  mit `AttributeError` fehlschlagen – was den Start der **gesamten**
+  HofKarte-Integration verhindert hätte, nicht nur des Panels. Behoben
+  durch `"dependencies": ["http"]` in `manifest.json`.
+- `frontend.py`: ungenutzten Import (`const.DOMAIN`) entfernt
+  (pyflakes-Fund).
+
+### Hinzugefügt
+
+- Tests für das Sidebar-Panel (`tests/test_frontend.py`): statische
+  Asset-Registrierung, Panel-Registrierung inkl. Konfiguration
+  (Sidebar-Titel, `require_admin`, JS-URL), Idempotenz bei
+  Doppelregistrierung, korrektes Entfernen beim Entladen sowie
+  No-Op-Verhalten, wenn kein Panel registriert ist.
+- Tests für die WebSocket-Verwaltungs-API (`tests/test_management.py`):
+  JSON-Serialisierung verschachtelter Hofladen-Daten (Zeiten, Tupel),
+  Fehlerfall ohne eingerichtete Integration, Auflisten, Erstellen (mit
+  automatisch generierter ID), Aktualisieren, Ablehnen ungültiger Daten,
+  Löschen, Fehler bei unbekannter ID sowie bei einem nicht
+  schreibfähigen Data Provider, und Registrierung aller drei
+  WebSocket-Befehle.
+
+### Architekturentscheid: eigene grafische Verwaltungsoberfläche
+
+- Bestätigt und beibehalten: Abweichend vom ursprünglichen Plan für
+  Einheit 10 („Keine eigene UI“, „Keine proprietäre REST-API“) verwaltet
+  HofKarte Hofläden über ein eigenes Sidebar-Panel mit
+  WebSocket-Backend (`frontend.py`, `management.py`) statt über
+  Home-Assistant-Actions/Services. Diese Abweichung ist bewusst und
+  dokumentiert (siehe README, Abschnitt „Grafische
+  Hofladenverwaltung“).
+
 ### Abgleich Einheit 1–9
 
 - Datenquelle als verbindliche Architekturentscheidung dokumentiert:

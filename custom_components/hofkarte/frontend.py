@@ -7,8 +7,6 @@ from homeassistant.components.frontend import async_register_built_in_panel, asy
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
-
 _PANEL_URL = "hofkarte"
 _STATIC_URL = "/api/hofkarte/static"
 

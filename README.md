@@ -3,13 +3,15 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Geosuche und Entfernung (Einheit 9), ergänzt um den
-> Architekturentscheid zur Datenquelle: Home Assistant ist sowohl
-> Laufzeit- als auch Verwaltungsoberfläche für HofKarte. Die vom
-> Benutzer gepflegten Hofläden werden in einem integrationsinternen,
-> persistenten Store gehalten (keine externe Datenbank, kein externer
-> Dienst). Die zuvor offene Architekturentscheidung zur Datenquelle ist
-> damit gelöst.
+> **Status:** Geosuche und Entfernung (Einheit 9), ergänzt um zwei
+> Architekturentscheide: (1) Home Assistant ist sowohl Laufzeit- als
+> auch Verwaltungsoberfläche für HofKarte – die vom Benutzer gepflegten
+> Hofläden werden in einem integrationsinternen, persistenten Store
+> gehalten (keine externe Datenbank, kein externer Dienst); (2) HofKarte
+> bietet zusätzlich zu den Home-Assistant-Entities eine **eigene grafische
+> Verwaltungsoberfläche** (Sidebar-Panel) für Administratoren – eine
+> bewusste, dokumentierte Abweichung vom ursprünglichen Plan, der für
+> spätere Einheiten „keine eigene UI“ vorsah.
 
 ## Über dieses Projekt
 
@@ -376,6 +378,14 @@ Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
 
 ## Grafische Hofladenverwaltung (Einheit 10)
 
+**Architekturentscheid:** Der ursprüngliche Umsetzungsplan sah für
+Einheit 10 „Suche, Filter und Home-Assistant Actions“ ohne eigene UI vor
+(„Keine proprietäre REST-API“, „Keine eigene UI“). Für HofKarte wurde
+davon bewusst abgewichen: Da Home Assistant sowohl Laufzeit- als auch
+Verwaltungsoberfläche ist (siehe Architekturentscheid oben), wird die
+Pflege der Hofladen-Daten über ein **eigenes Sidebar-Panel** mit
+WebSocket-Backend abgebildet statt über Home-Assistant-Actions/Services.
+
 Nach der Einrichtung von HofKarte steht im Home-Assistant-Seitenmenü die
 Verwaltungsseite **HofKarte** zur Verfügung. Dort können Administratoren:
 
@@ -390,3 +400,25 @@ Verwaltungsseite **HofKarte** zur Verfügung. Dort können Administratoren:
 persistiert und ohne Neustart an Coordinator, Devices und Entities
 weitergegeben. Die Verwaltungsoberfläche verwendet ausschließlich lokale
 Home-Assistant-Mechanismen.
+
+### Technischer Aufbau
+
+- `frontend.py`: registriert das Sidebar-Panel
+  (`homeassistant.components.frontend`) sowie die statischen
+  JS-Assets unter `/api/hofkarte/static/` (`static/hofkarte-panel.js`).
+  Nur für Administratoren sichtbar (`require_admin=True`).
+- `management.py`: WebSocket-Befehle
+  (`hofkarte/management/list|save|delete`), require_admin-geschützt.
+  Greift ausschliesslich über den Coordinator bzw. den
+  `HofladenDataProvider` auf die Daten zu – keine eigene Datenhaltung.
+- Rückgabedaten werden über eine dedizierte Serialisierung
+  (`_serialize_hofladen`) in einfache, JSON-taugliche Typen überführt
+  (Zeiten/Daten als ISO-Strings, Tupel als Listen).
+
+**Manifest-Abhängigkeit:** `manifest.json` deklariert `"dependencies":
+["http"]`, damit Home Assistant `hass.http` garantiert initialisiert,
+bevor HofKarte es für die statischen Panel-Assets verwendet. Ohne diese
+Deklaration ist `hass.http` zum Setup-Zeitpunkt nicht zuverlässig
+verfügbar (`None`), was den Start der **gesamten Integration** zum
+Absturz bringen konnte – behoben und durch Tests abgesichert (siehe
+`tests/test_frontend.py`, `tests/test_management.py`).
