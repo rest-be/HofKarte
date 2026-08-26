@@ -271,6 +271,7 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
     plz = _optional_str(raw, "plz")
     ort = _optional_str(raw, "ort")
     land = _optional_str(raw, "land")
+    website = _optional_str(raw, "website")
 
     latitude = _optional_float(raw, "latitude", _LATITUDE_MIN, _LATITUDE_MAX)
     longitude = _optional_float(raw, "longitude", _LONGITUDE_MIN, _LONGITUDE_MAX)
@@ -308,6 +309,7 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
         plz=plz,
         ort=ort,
         land=land,
+        website=website,
         latitude=latitude,
         longitude=longitude,
         oeffnungszeiten=oeffnungszeiten,

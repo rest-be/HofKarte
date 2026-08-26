@@ -5,8 +5,8 @@ Die Einrichtung erfolgt ausschliesslich über den Config Flow (siehe
 
 Diese Einheit richtet zusätzlich zu den Devices (Einheit 5) die
 Hofladen-Entities (Binary Sensor „Geöffnet“, Sensoren „Nächste
-Öffnung"/„Nächste Schliessung", Camera „Hauptbild") über die Plattformen
-``binary_sensor``, ``sensor`` und ``camera`` ein.
+Öffnung“/„Nächste Schliessung“) über die Plattformen ``binary_sensor``
+und ``sensor`` ein.
 """
 
 from __future__ import annotations
@@ -21,10 +21,27 @@ from .const import DOMAIN
 from .coordinator import HofKarteUpdateCoordinator
 from .data_provider import StorageHofladenDataProvider
 from .device import async_sync_devices
+from .frontend import async_register_frontend, async_remove_frontend, async_setup_frontend_assets
+from .management import async_register_websocket_commands
+from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR, Platform.CAMERA]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register global HofKarte frontend/WebSocket functionality.
+
+    Home Assistant calls integration ``async_setup`` with both ``hass`` and
+    the processed YAML configuration. HofKarte does not use YAML
+    configuration, but the second argument is part of the Home Assistant
+    integration setup contract.
+    """
+    async_register_websocket_commands(hass)
+    async_register_services(hass)
+    await async_setup_frontend_assets(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -58,6 +75,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             lambda: async_sync_devices(hass, entry, coordinator.data)
         )
     )
+
+    await async_register_frontend(hass)
+    entry.async_on_unload(lambda: async_remove_frontend(hass))
 
     if PLATFORMS:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

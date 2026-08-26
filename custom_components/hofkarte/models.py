@@ -121,6 +121,7 @@ class Hofladen:
     plz: str | None = None
     ort: str | None = None
     land: str | None = None
+    website: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     oeffnungszeiten: tuple[Oeffnungszeit, ...] = ()

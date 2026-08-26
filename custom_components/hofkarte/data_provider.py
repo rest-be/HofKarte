@@ -82,6 +82,10 @@ class MutableHofladenDataProvider(HofladenDataProvider):
         keine ``id`` mit diesem Wert existiert.
         """
 
+    @abstractmethod
+    async def async_delete_raw_hofladen(self, hofladen_id: str) -> None:
+        """Einen bestehenden Hofladen dauerhaft entfernen."""
+
 
 class DuplicateHofladenIdError(ValueError):
     """Es existiert bereits ein Hofladen mit der angegebenen ID."""
@@ -179,6 +183,19 @@ class StorageHofladenDataProvider(MutableHofladenDataProvider):
                 f"Kein Hofladen mit der ID '{hofladen_id}' gefunden."
             )
 
+    async def async_delete_raw_hofladen(self, hofladen_id: str) -> None:
+        """Einen Hofladen aus dem persistenten Store entfernen."""
+        async with self._lock:
+            daten = await self._async_geladene_daten()
+            for index, vorhanden in enumerate(daten):
+                if vorhanden.get("id") == hofladen_id:
+                    del daten[index]
+                    await self._store.async_save(daten)
+                    return
+            raise HofladenNotFoundError(
+                f"Kein Hofladen mit der ID '{hofladen_id}' gefunden."
+            )
+
 
 class StaticTestDataProvider(MutableHofladenDataProvider):
     """Reiner Testdaten-Provider ohne Persistenz und ohne externe Anbindung.
@@ -252,6 +269,17 @@ class StaticTestDataProvider(MutableHofladenDataProvider):
                 self._raw_hoflaeden[index] = {**vorhandener, **updates}
                 return
 
+        raise HofladenNotFoundError(
+            f"Kein Hofladen mit der ID '{hofladen_id}' gefunden."
+        )
+
+    async def async_delete_raw_hofladen(self, hofladen_id: str) -> None:
+        """Einen Hofladen aus dem Testspeicher entfernen."""
+        await asyncio.sleep(0)
+        for index, vorhanden in enumerate(self._raw_hoflaeden):
+            if vorhanden.get("id") == hofladen_id:
+                del self._raw_hoflaeden[index]
+                return
         raise HofladenNotFoundError(
             f"Kein Hofladen mit der ID '{hofladen_id}' gefunden."
         )
