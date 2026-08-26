@@ -23,7 +23,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import HofKarteUpdateCoordinator
 from .entity import HofKarteEntity, async_setup_hofladen_entities
-from .images import get_main_image_url
+from .images import get_main_image_url, is_valid_image_url
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from aiohttp import ClientTimeout, ClientError
+import asyncio
 
 
 async def async_setup_entry(
@@ -88,15 +91,21 @@ class HofKarteMainImageCamera(HofKarteEntity, Camera):
         return await self._async_fetch_image(image_url)
 
     async def _async_fetch_image(self, url: str) -> bytes | None:
-        """Image von einer Remote-URL abrufen."""
+        """Image von einer Remote-URL abrufen (HA shared session, safety checks)."""
+        session = async_get_clientsession(self.hass)
+        timeout = ClientTimeout(total=10)
         try:
-            import aiohttp
-
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status == 200:
-                        return await resp.read()
+            async with session.get(url, timeout=timeout) as resp:
+                # Nach Redirects: final host prüfen (SSRF-Schutz)
+                final_url = str(resp.url)
+                if not is_valid_image_url(final_url):
                     return None
-        except Exception:
+                content_type = (resp.headers.get("Content-Type") or "").lower()
+                if not content_type.startswith("image/"):
+                    return None
+                if resp.status == 200:
+                    return await resp.read()
+                return None
+        except (asyncio.TimeoutError, ClientError):
             # Netzwerkfehler, Timeout, etc. – robust handhaben
             return None

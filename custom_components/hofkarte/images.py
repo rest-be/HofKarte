@@ -17,8 +17,34 @@ from __future__ import annotations
 
 from typing import Any
 from urllib.parse import urlparse
+import socket
+import ipaddress
 
 from .models import Bild
+
+
+def _host_is_private(hostname: str) -> bool:
+    """True wenn hostname auf private/loopback/link-local/reserved/multicast IP zeigt."""
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except Exception:
+        # DNS nicht auflösbar -> treat as unsafe
+        return True
+    for _family, _type, _proto, _canon, sockaddr in infos:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except Exception:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+        ):
+            return True
+    return False
 
 
 def is_valid_image_url(url: str | None) -> bool:
@@ -45,15 +71,23 @@ def is_valid_image_url(url: str | None) -> bool:
 
     try:
         parsed = urlparse(url)
-        # Nur http und https erlaubt
-        if parsed.scheme not in ("http", "https"):
-            return False
-        # Zumindest ein Netzwerk-Location erforderlich
-        if not parsed.netloc:
-            return False
-        return True
     except Exception:
         return False
+
+    # Nur http und https erlaubt
+    if parsed.scheme not in ("http", "https"):
+        return False
+    # Keine Credentials in URL
+    if parsed.username or parsed.password:
+        return False
+    # Zumindest Host erforderlich
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+    # DNS -> IP prüfen; private/loopback/link-local/reserved/multicast ablehnen
+    if _host_is_private(hostname):
+        return False
+    return True
 
 
 def get_main_image_url(bilder: tuple[Bild, ...]) -> str | None:
