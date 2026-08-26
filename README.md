@@ -3,7 +3,7 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Geosuche und Entfernung (Einheit 9), ergänzt um den
+> **Status:** Bilder und Detailinformationen (Einheit 11), ergänzt um den
 > Architekturentscheid zur Datenquelle: Home Assistant ist sowohl
 > Laufzeit- als auch Verwaltungsoberfläche für HofKarte. Die vom
 > Benutzer gepflegten Hofläden werden in einem integrationsinternen,
