@@ -3,15 +3,11 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Geosuche und Entfernung (Einheit 9), ergänzt um zwei
-> Architekturentscheide: (1) Home Assistant ist sowohl Laufzeit- als
-> auch Verwaltungsoberfläche für HofKarte – die vom Benutzer gepflegten
-> Hofläden werden in einem integrationsinternen, persistenten Store
-> gehalten (keine externe Datenbank, kein externer Dienst); (2) HofKarte
-> bietet zusätzlich zu den Home-Assistant-Entities eine **eigene grafische
-> Verwaltungsoberfläche** (Sidebar-Panel) für Administratoren – eine
-> bewusste, dokumentierte Abweichung vom ursprünglichen Plan, der für
-> spätere Einheiten „keine eigene UI“ vorsah.
+> **Status:** Einheit 10 – Suche, Filter und Home-Assistant-Actions.
+> Hofläden werden über den integrationsinternen Store gepflegt. Die
+> grafische Verwaltungsoberfläche (Sidebar-Panel) bleibt für CRUD
+> zuständig. Automationen nutzen die Actions ``hofkarte.refresh`` und
+> ``hofkarte.search``.
 
 ## Über dieses Projekt
 
@@ -363,7 +359,49 @@ Berechnung erfolgt vollständig lokal.
   behandelt; einzelne Koordinaten `0.0` bleiben gültig.
 - Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
 
-## Entwicklung
+## Actions (Einheit 10)
+
+Für Automationen und Skripte stellt HofKarte zwei Home-Assistant-Actions
+bereit. Sie duplizieren keine bestehenden Sensorwerte (Öffnungsstatus
+und Entfernung bleiben Entities).
+
+| Action | Zweck | Antwort |
+| --- | --- | --- |
+| `hofkarte.refresh` | Hofladen-Daten über den Coordinator neu laden | keine |
+| `hofkarte.search` | Hofläden nach Begriff und Fachfiltern durchsuchen | Trefferliste (`count`, `hoflaeden`) |
+
+`hofkarte.search` muss mit Antwort aufgerufen werden (`response_variable`
+in Automationen). Mehrere Filter gelten als UND-Verknüpfung. Leere
+Angaben werden ignoriert.
+
+Parameter von `hofkarte.search`:
+
+| Parameter | Bedeutung |
+| --- | --- |
+| `suchbegriff` | Freitext über ID, Name, Beschreibung, Adresse, PLZ, Ort, Land, Website und Sortiment |
+| `kategorie` | Filter nach Kategorie (Name oder ID; auch über Produktzuordnung) |
+| `produkt` | Filter nach Produkt |
+| `verkaufsart` | Filter nach Verkaufsart |
+| `zahlungsart` | Filter nach Zahlungsart |
+| `merkmal` | Filter nach Merkmal |
+| `geoeffnet` | `true` nur geöffnet, `false` nur geschlossen; ohne Öffnungszeiten kein Treffer |
+
+Beispiel:
+
+```yaml
+action: hofkarte.search
+data:
+  suchbegriff: Apfel
+  zahlungsart: TWINT
+  geoeffnet: true
+response_variable: hofkarte_treffer
+```
+
+Die Fachlogik liegt in `custom_components/hofkarte/search.py` und wird von
+der Action nur orchestriert. Die Öffnungszeitenberechnung kommt unverändert
+aus `opening_hours.py`.
+
+## Grafische Hofladenverwaltung
 
 ### Tests ausführen
 
@@ -376,15 +414,13 @@ pytest custom_components/hofkarte/tests
 
 Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
 
-## Grafische Hofladenverwaltung (Einheit 10)
+## Grafische Hofladenverwaltung
 
-**Architekturentscheid:** Der ursprüngliche Umsetzungsplan sah für
-Einheit 10 „Suche, Filter und Home-Assistant Actions“ ohne eigene UI vor
-(„Keine proprietäre REST-API“, „Keine eigene UI“). Für HofKarte wurde
-davon bewusst abgewichen: Da Home Assistant sowohl Laufzeit- als auch
-Verwaltungsoberfläche ist (siehe Architekturentscheid oben), wird die
-Pflege der Hofladen-Daten über ein **eigenes Sidebar-Panel** mit
-WebSocket-Backend abgebildet statt über Home-Assistant-Actions/Services.
+**Architekturentscheid:** Die Pflege (Anlegen, Bearbeiten, Löschen) der
+Hofläden erfolgt über ein **eigenes Sidebar-Panel** mit WebSocket-Backend.
+Suche und Filter für Automationen sind zusätzlich als Home-Assistant-
+Actions modelliert (siehe Abschnitt „Actions“ oben) – nicht als
+proprietäre REST-API.
 
 Nach der Einrichtung von HofKarte steht im Home-Assistant-Seitenmenü die
 Verwaltungsseite **HofKarte** zur Verfügung. Dort können Administratoren:

@@ -1,3 +1,27 @@
+# Changelog
+
+Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei
+dokumentiert.
+
+Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
+die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+
+## [0.11.0] – 2026-08-26
+
+### Hinzugefügt
+
+- Einheit 10: Home-Assistant-Actions `hofkarte.refresh` (Daten neu laden)
+  und `hofkarte.search` (Freitextsuche plus Filter nach Kategorie, Produkt,
+  Verkaufsart, Zahlungsart, Merkmal und optional geöffnet/geschlossen).
+- Fachmodul `search.py` mit testbarer UND-Verknüpfung der Kriterien.
+- `services.yaml` sowie Übersetzungen der Action-Beschreibungen (de/en).
+
+### Geändert
+
+- Die grafische Verwaltungsoberfläche bleibt für CRUD zuständig; Suche und
+  Filter für Automationen laufen über die neuen Actions statt über eine
+  eigene API.
+
 ## 0.10.2
 - Stammdatenformular neu strukturiert: Name, Beschreibung, Adresse, PLZ/Ort, Land, Latitude/Longitude, Webseite.
 - Neues Feld `website` durchgängig im Datenmodell, Parsing und Management-UI.

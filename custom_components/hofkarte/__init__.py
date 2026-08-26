@@ -23,6 +23,7 @@ from .data_provider import StorageHofladenDataProvider
 from .device import async_sync_devices
 from .frontend import async_register_frontend, async_remove_frontend, async_setup_frontend_assets
 from .management import async_register_websocket_commands
+from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     integration setup contract.
     """
     async_register_websocket_commands(hass)
+    async_register_services(hass)
     await async_setup_frontend_assets(hass)
     return True
 

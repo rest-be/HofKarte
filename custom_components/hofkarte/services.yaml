@@ -1,0 +1,50 @@
+refresh:
+  name: Daten aktualisieren
+  description: Lädt die Hofladen-Daten über den Coordinator neu. Dupliziert keine Sensorwerte.
+  fields: {}
+
+search:
+  name: Hofläden suchen
+  description: Durchsucht und filtert Hofläden. Mehrere Kriterien werden mit UND verknüpft. Die Action liefert eine Trefferliste zurück.
+  fields:
+    suchbegriff:
+      name: Suchbegriff
+      description: Freitext über Name, Beschreibung, Adresse, Ort und Sortiment.
+      example: Apfel
+      selector:
+        text:
+    kategorie:
+      name: Kategorie
+      description: Filter nach Kategorie (Name oder ID, Teilstring, unabhängig von Gross-/Kleinschreibung).
+      example: Gemüse
+      selector:
+        text:
+    produkt:
+      name: Produkt
+      description: Filter nach Produkt (Name oder ID).
+      example: Kartoffeln
+      selector:
+        text:
+    verkaufsart:
+      name: Verkaufsart
+      description: Filter nach Verkaufsart (z. B. Hofladen, Selbstbedienung).
+      example: Selbstbedienung
+      selector:
+        text:
+    zahlungsart:
+      name: Zahlungsart
+      description: Filter nach Zahlungsart (z. B. TWINT, Bargeld).
+      example: TWINT
+      selector:
+        text:
+    merkmal:
+      name: Merkmal
+      description: Filter nach Merkmal (z. B. Bio, Parkplatz).
+      example: Bio
+      selector:
+        text:
+    geoeffnet:
+      name: Geöffnet
+      description: Nur geöffnete (an) oder nur geschlossene (aus) Hofläden. Hofläden ohne Öffnungszeiten werden von diesem Filter nicht getroffen.
+      selector:
+        boolean:
