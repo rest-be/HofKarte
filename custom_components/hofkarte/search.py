@@ -1,12 +1,14 @@
 """Suche und Filter über Hofladen-Daten.
 
-Reine Fachfunktionen ohne Home-Assistant-Abhängigkeit, damit Automationen
-(über Actions) und Tests dieselbe Logik verwenden. Die Auswertung des
-Öffnungsstatus erfolgt ausschliesslich über ``opening_hours.is_open``.
+Reine, testbare Fachfunktion ohne Home-Assistant-Abhängigkeit – analog zu
+``opening_hours.py``, ``distance.py`` und ``attributes.py``. ``services.py``
+kapselt ausschliesslich die Anbindung an Home-Assistant-Actions (Parsing
+des Service-Aufrufs, Validierung über das Schema, Aufbau der
+Rückgabedaten) und enthält selbst keine Such-/Filterlogik.
 
-Mehrere gesetzte Kriterien gelten als UND-Verknüpfung. Ein leerer oder
-nur aus Leerraum bestehender Filterwert wird ignoriert (kein Treffer-
-Ausschluss).
+Alle Filter werden UND-verknüpft: Ein Hofladen muss jedes gesetzte
+Filterkriterium erfüllen, um in das Ergebnis aufgenommen zu werden. Nicht
+gesetzte (``None``) Kriterien werden nicht angewendet.
 """
 
 from __future__ import annotations
@@ -18,81 +20,28 @@ from .models import Hofladen
 from .opening_hours import is_open
 
 
-def _norm(value: str) -> str:
-    return value.casefold().strip()
+def _enthaelt_suchbegriff(hofladen: Hofladen, suchbegriff: str) -> bool:
+    """Ob der Suchbegriff (case-insensitive) in Name, Beschreibung oder Ort
+    vorkommt."""
+    begriff = suchbegriff.casefold()
+    freitext_felder = (hofladen.name, hofladen.beschreibung, hofladen.ort)
+    return any(
+        feld is not None and begriff in feld.casefold() for feld in freitext_felder
+    )
 
 
-def _bereinigen(value: str | None) -> str | None:
-    """Leere bzw. nur-Leerraum-Angaben als «nicht gesetzt» behandeln."""
-    if value is None:
-        return None
-    bereinigt = value.strip()
-    return bereinigt if bereinigt else None
-
-
-def _enthaelt(haystack: str | None, nadel: str) -> bool:
-    if haystack is None:
-        return False
-    return _norm(nadel) in _norm(haystack)
-
-
-def _sammlung_trifft(
-    eintraege: Iterable[object], nadel: str, *, id_attr: str = "id", name_attr: str = "name"
+def _hat_eintrag_mit_namen(
+    eintraege: Iterable[object], gesuchter_name: str
 ) -> bool:
-    """Treffer, wenn ID oder Name eines Eintrags den Filter (Teilstring) enthält."""
-    nadel_norm = _norm(nadel)
-    for eintrag in eintraege:
-        eintrag_id = getattr(eintrag, id_attr, None)
-        eintrag_name = getattr(eintrag, name_attr, None)
-        if isinstance(eintrag_id, str) and nadel_norm in _norm(eintrag_id):
-            return True
-        if isinstance(eintrag_name, str) and nadel_norm in _norm(eintrag_name):
-            return True
-    return False
-
-
-def _kategorie_trifft(hofladen: Hofladen, nadel: str) -> bool:
-    """Kategorie-Filter: Treffer über Kategorie-Stammdaten oder Produktzuordnung."""
-    if _sammlung_trifft(hofladen.kategorien, nadel):
-        return True
-    nadel_norm = _norm(nadel)
-    passende_ids = {
-        kategorie.id
-        for kategorie in hofladen.kategorien
-        if nadel_norm in _norm(kategorie.id) or nadel_norm in _norm(kategorie.name)
-    }
-    for produkt in hofladen.produkte:
-        if any(kategorie_id in passende_ids for kategorie_id in produkt.kategorie_ids):
-            return True
-        if any(nadel_norm in _norm(kategorie_id) for kategorie_id in produkt.kategorie_ids):
-            return True
-    return False
-
-
-def _suchbegriff_trifft(hofladen: Hofladen, suchbegriff: str) -> bool:
-    """Freitext über Stammdaten, Sortiment und Eigenschaften."""
-    felder = (
-        hofladen.id,
-        hofladen.name,
-        hofladen.beschreibung,
-        hofladen.adresse,
-        hofladen.plz,
-        hofladen.ort,
-        hofladen.land,
-        hofladen.website,
-    )
-    if any(_enthaelt(feld, suchbegriff) for feld in felder):
-        return True
-    return (
-        _sammlung_trifft(hofladen.kategorien, suchbegriff)
-        or _sammlung_trifft(hofladen.produkte, suchbegriff)
-        or _sammlung_trifft(hofladen.zahlungsarten, suchbegriff)
-        or _sammlung_trifft(hofladen.verkaufsarten, suchbegriff)
-        or _sammlung_trifft(hofladen.merkmale, suchbegriff)
+    """Ob eine der Sammlungen (Kategorien, Produkte, ...) einen Eintrag mit
+    exakt diesem Namen (case-insensitive) enthält."""
+    gesucht = gesuchter_name.casefold()
+    return any(
+        getattr(eintrag, "name", "").casefold() == gesucht for eintrag in eintraege
     )
 
 
-def filter_hoflaeden(
+def find_hoflaeden(
     hoflaeden: Iterable[Hofladen],
     *,
     suchbegriff: str | None = None,
@@ -101,52 +50,55 @@ def filter_hoflaeden(
     verkaufsart: str | None = None,
     zahlungsart: str | None = None,
     merkmal: str | None = None,
-    geoeffnet: bool | None = None,
+    nur_geoeffnet: bool | None = None,
     now: datetime | None = None,
 ) -> list[Hofladen]:
-    """Hofläden nach Freitext und Fachfiltern eingrenzen.
+    """Hofläden anhand der gesetzten Kriterien filtern (logisches UND).
 
-    ``geoeffnet=True`` liefert nur nachweislich geöffnete Hofläden,
-    ``geoeffnet=False`` nur nachweislich geschlossene. Hofläden ohne
-    Öffnungszeiten (Status unbekannt) erfüllen keinen der beiden Filter.
+    - ``suchbegriff``: Freitextsuche (case-insensitive Teilstring) über
+      Name, Beschreibung und Ort.
+    - ``kategorie``/``produkt``/``verkaufsart``/``zahlungsart``/``merkmal``:
+      exakter, case-insensitiver Namensabgleich gegen die jeweilige
+      Sammlung des Hofladens (siehe ``models.Hofladen``).
+    - ``nur_geoeffnet``: Wenn ``True``, werden nur aktuell geöffnete
+      Hofläden geliefert (nutzt ``opening_hours.is_open`` – keine eigene
+      Berechnungslogik, siehe Einheit 6/7). Ein Hofladen ohne bekannten
+      Öffnungsstatus (``is_open`` liefert ``None``) gilt dabei als nicht
+      passend, da nicht bestätigt werden kann, dass er geöffnet ist.
+      ``now`` wird dafür benötigt; ist ``nur_geoeffnet`` gesetzt und
+      ``now`` fehlt, wird ein ``ValueError`` ausgelöst.
 
-    Ist ``geoeffnet`` gesetzt, muss ``now`` zeitzonenbewusst übergeben
-    werden – analog zu ``opening_hours.is_open``.
+    Gibt eine neue Liste zurück (Eingabereihenfolge bleibt erhalten);
+    ``hoflaeden`` selbst wird nicht verändert.
     """
-    suchbegriff = _bereinigen(suchbegriff)
-    kategorie = _bereinigen(kategorie)
-    produkt = _bereinigen(produkt)
-    verkaufsart = _bereinigen(verkaufsart)
-    zahlungsart = _bereinigen(zahlungsart)
-    merkmal = _bereinigen(merkmal)
-
-    if geoeffnet is not None and now is None:
+    if nur_geoeffnet is not None and now is None:
         raise ValueError(
-            "'now' muss gesetzt sein, wenn nach dem Öffnungsstatus gefiltert wird."
+            "'now' muss angegeben werden, wenn 'nur_geoeffnet' gesetzt ist."
         )
 
-    treffer: list[Hofladen] = []
+    ergebnis: list[Hofladen] = []
     for hofladen in hoflaeden:
-        if suchbegriff is not None and not _suchbegriff_trifft(hofladen, suchbegriff):
+        if suchbegriff and not _enthaelt_suchbegriff(hofladen, suchbegriff):
             continue
-        if kategorie is not None and not _kategorie_trifft(hofladen, kategorie):
+        if kategorie and not _hat_eintrag_mit_namen(hofladen.kategorien, kategorie):
             continue
-        if produkt is not None and not _sammlung_trifft(hofladen.produkte, produkt):
+        if produkt and not _hat_eintrag_mit_namen(hofladen.produkte, produkt):
             continue
-        if verkaufsart is not None and not _sammlung_trifft(
+        if verkaufsart and not _hat_eintrag_mit_namen(
             hofladen.verkaufsarten, verkaufsart
         ):
             continue
-        if zahlungsart is not None and not _sammlung_trifft(
+        if zahlungsart and not _hat_eintrag_mit_namen(
             hofladen.zahlungsarten, zahlungsart
         ):
             continue
-        if merkmal is not None and not _sammlung_trifft(hofladen.merkmale, merkmal):
+        if merkmal and not _hat_eintrag_mit_namen(hofladen.merkmale, merkmal):
             continue
-        if geoeffnet is not None:
-            status = is_open(hofladen, now)
-            if status is None or status is not geoeffnet:
+        if nur_geoeffnet:
+            assert now is not None  # durch die Prüfung oben sichergestellt
+            if is_open(hofladen, now) is not True:
                 continue
-        treffer.append(hofladen)
 
-    return treffer
+        ergebnis.append(hofladen)
+
+    return ergebnis

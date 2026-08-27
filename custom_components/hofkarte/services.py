@@ -1,19 +1,27 @@
-"""Home-Assistant-Actions für HofKarte (Einheit 10).
+"""Home-Assistant-Actions (Services) für HofKarte.
 
-Zwei Actions, die sich sinnvoll als Service darstellen lassen und
-bestehende Sensorwerte nicht duplizieren:
+Kapselt ausschliesslich die Anbindung der Fachfunktion aus ``search.py``
+an eine Home-Assistant-Action: Schema-Validierung des Service-Aufrufs,
+Ermittlung des (einzigen) Coordinators und Aufbau der Rückgabedaten.
+Enthält selbst keine Such-/Filterlogik.
 
-- ``hofkarte.refresh``: Hofladen-Daten über den Coordinator neu laden.
-- ``hofkarte.search``: Hofläden nach Begriff und Fachfiltern durchsuchen
-  (Antwort nur bei ``return_response``).
+Home Assistant stellt mit der eingebauten Action
+``homeassistant.update_entity`` bereits eine allgemeine Möglichkeit
+bereit, coordinator-basierte Entities (wie alle HofKarte-Entities, siehe
+``entity.py``) gezielt zu aktualisieren. Eine eigene
+„Hofladen-Daten aktualisieren“-Action würde dies nur unnötig
+duplizieren und wird daher bewusst **nicht** implementiert (Regeln
+dieser Einheit: „Keine Actions bauen, die ... unnötig duplizieren“).
 
-CRUD der Hofläden bleibt der grafischen Verwaltungsoberfläche vorbehalten
-(siehe ``management.py`` / ``frontend.py``).
+Analog wird auf separate Actions je Filterdimension (Kategorie, Produkt,
+Verkaufsart, Zahlungsart, Merkmal) verzichtet – eine einzige, klar
+strukturierte Such-Action mit mehreren optionalen, UND-verknüpften
+Filterparametern deckt alle in der Einheit genannten Fälle ab, ohne
+naheliegend redundanten Code zu erzeugen.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 import voluptuous as vol
@@ -22,129 +30,110 @@ from homeassistant.core import (
     ServiceCall,
     ServiceResponse,
     SupportsResponse,
-    callback,
 )
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
-from .attributes import build_sortiment_attributes
-from .const import (
-    ATTR_GEOEFFNET,
-    ATTR_KATEGORIE,
-    ATTR_MERKMAL,
-    ATTR_PRODUKT,
-    ATTR_SUCHBEGRIFF,
-    ATTR_VERKAUFSART,
-    ATTR_ZAHLUNGSART,
-    DOMAIN,
-    SERVICE_REFRESH,
-    SERVICE_SEARCH,
-)
-from .management import _get_coordinator
-from .models import Hofladen
+from .const import DOMAIN
+from .coordinator import HofKarteUpdateCoordinator
 from .opening_hours import is_open
-from .search import filter_hoflaeden
+from .search import find_hoflaeden
 
-SEARCH_SCHEMA = vol.Schema(
+SERVICE_HOFLAEDEN_SUCHEN = "hoflaeden_suchen"
+
+_SERVICE_HOFLAEDEN_SUCHEN_SCHEMA = vol.Schema(
     {
-        vol.Optional(ATTR_SUCHBEGRIFF): cv.string,
-        vol.Optional(ATTR_KATEGORIE): cv.string,
-        vol.Optional(ATTR_PRODUKT): cv.string,
-        vol.Optional(ATTR_VERKAUFSART): cv.string,
-        vol.Optional(ATTR_ZAHLUNGSART): cv.string,
-        vol.Optional(ATTR_MERKMAL): cv.string,
-        vol.Optional(ATTR_GEOEFFNET): cv.boolean,
-    },
-    extra=vol.PREVENT_EXTRA,
+        vol.Optional("suchbegriff"): cv.string,
+        vol.Optional("kategorie"): cv.string,
+        vol.Optional("produkt"): cv.string,
+        vol.Optional("verkaufsart"): cv.string,
+        vol.Optional("zahlungsart"): cv.string,
+        vol.Optional("merkmal"): cv.string,
+        vol.Optional("nur_geoeffnet"): cv.boolean,
+    }
 )
 
-REFRESH_SCHEMA = vol.Schema({}, extra=vol.PREVENT_EXTRA)
+
+def _get_coordinator(hass: HomeAssistant) -> HofKarteUpdateCoordinator:
+    """Den (einzigen) HofKarte-Coordinator ermitteln.
+
+    HofKarte ist als Single-Instance-Integration ausgelegt (siehe
+    Einheit 2); der Zugriff über den einzigen Eintrag ist daher
+    eindeutig – analog zu ``management._get_coordinator``.
+    """
+    entries = list(hass.data.get(DOMAIN, {}).values())
+    if len(entries) != 1:
+        raise HomeAssistantError("HofKarte ist nicht (oder mehrfach) eingerichtet.")
+    return entries[0]
 
 
-def _serialize_search_result(hofladen: Hofladen, now: datetime) -> dict[str, Any]:
-    """Kompakte, JSON-taugliche Trefferzeile für Automationen."""
-    status = is_open(hofladen, now)
+def _hofladen_zu_ergebnis_eintrag(hofladen: Any, now) -> dict[str, Any]:
+    """Ein Suchtreffer als knapper, JSON-tauglicher Datensatz.
+
+    Bewusst keine vollständige Kopie aller Hofladen-Felder – nur eine
+    kompakte, für Automationen unmittelbar nützliche Auswahl
+    (Identifikation, Anzeigename, aktueller Öffnungsstatus).
+    """
     return {
         "id": hofladen.id,
         "name": hofladen.name,
-        "beschreibung": hofladen.beschreibung,
-        "adresse": hofladen.adresse,
-        "plz": hofladen.plz,
-        "ort": hofladen.ort,
-        "land": hofladen.land,
-        "latitude": hofladen.latitude,
-        "longitude": hofladen.longitude,
-        "geoeffnet": status,
-        **build_sortiment_attributes(hofladen),
+        "geoeffnet": is_open(hofladen, now),
     }
 
 
-async def _async_handle_refresh(call: ServiceCall) -> None:
-    """Hofladen-Daten über den bestehenden Coordinator neu abrufen."""
-    try:
-        coordinator = _get_coordinator(call.hass)
-    except ValueError as err:
-        raise HomeAssistantError(str(err)) from err
+async def _async_hoflaeden_suchen(
+    hass: HomeAssistant, call: ServiceCall
+) -> ServiceResponse:
+    """Service-Handler für ``hofkarte.hoflaeden_suchen``."""
+    coordinator = _get_coordinator(hass)
 
-    await coordinator.async_refresh()
-    if not coordinator.last_update_success:
-        raise HomeAssistantError(
-            "Die Hofladen-Daten konnten nicht aktualisiert werden."
-        )
-
-
-async def _async_handle_search(call: ServiceCall) -> ServiceResponse:
-    """Hofläden anhand der Action-Parameter filtern und zurückgeben."""
-    try:
-        coordinator = _get_coordinator(call.hass)
-    except ValueError as err:
-        raise HomeAssistantError(str(err)) from err
-
-    if coordinator.data is None:
-        raise HomeAssistantError("Es sind noch keine Hofladen-Daten geladen.")
-
+    nur_geoeffnet = call.data.get("nur_geoeffnet")
     now = dt_util.now()
-    data = call.data
-    geoeffnet = data.get(ATTR_GEOEFFNET)
 
-    try:
-        treffer = filter_hoflaeden(
-            coordinator.data.values(),
-            suchbegriff=data.get(ATTR_SUCHBEGRIFF),
-            kategorie=data.get(ATTR_KATEGORIE),
-            produkt=data.get(ATTR_PRODUKT),
-            verkaufsart=data.get(ATTR_VERKAUFSART),
-            zahlungsart=data.get(ATTR_ZAHLUNGSART),
-            merkmal=data.get(ATTR_MERKMAL),
-            geoeffnet=geoeffnet,
-            now=now if geoeffnet is not None else None,
-        )
-    except ValueError as err:
-        raise ServiceValidationError(str(err)) from err
+    treffer = find_hoflaeden(
+        coordinator.data.values() if coordinator.data else [],
+        suchbegriff=call.data.get("suchbegriff"),
+        kategorie=call.data.get("kategorie"),
+        produkt=call.data.get("produkt"),
+        verkaufsart=call.data.get("verkaufsart"),
+        zahlungsart=call.data.get("zahlungsart"),
+        merkmal=call.data.get("merkmal"),
+        nur_geoeffnet=nur_geoeffnet,
+        now=now if nur_geoeffnet is not None else None,
+    )
 
     return {
-        "count": len(treffer),
-        "hoflaeden": [_serialize_search_result(hofladen, now) for hofladen in treffer],
+        "anzahl_treffer": len(treffer),
+        "hoflaeden": [
+            _hofladen_zu_ergebnis_eintrag(hofladen, now) for hofladen in treffer
+        ],
     }
 
 
-@callback
 def async_register_services(hass: HomeAssistant) -> None:
-    """Domain-weite Actions einmalig registrieren."""
-    if hass.services.has_service(DOMAIN, SERVICE_REFRESH):
-        return
+    """HofKarte-Actions registrieren.
+
+    Wird einmalig aus ``__init__.async_setup`` aufgerufen (Domain-Ebene,
+    analog zu ``management.async_register_websocket_commands`` –
+    Actions sind wie WebSocket-Befehle nicht an eine einzelne Config
+    Entry gebunden).
+    """
+
+    async def _service_handler(call: ServiceCall) -> ServiceResponse:
+        # Eine eigene async-Funktion (statt einer lambda, die lediglich
+        # eine Coroutine zurückgibt) ist hier notwendig: Home Assistant
+        # erkennt den Service-Handler nur dann korrekt als Koroutinen-
+        # funktion und awaitet ihn entsprechend, wenn er selbst mit
+        # ``async def`` definiert ist. Eine lambda-Hülle würde
+        # stattdessen die (nicht ausgeführte) Coroutine als Rückgabewert
+        # liefern.
+        return await _async_hoflaeden_suchen(hass, call)
 
     hass.services.async_register(
         DOMAIN,
-        SERVICE_REFRESH,
-        _async_handle_refresh,
-        schema=REFRESH_SCHEMA,
-    )
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_SEARCH,
-        _async_handle_search,
-        schema=SEARCH_SCHEMA,
+        SERVICE_HOFLAEDEN_SUCHEN,
+        _service_handler,
+        schema=_SERVICE_HOFLAEDEN_SUCHEN_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )

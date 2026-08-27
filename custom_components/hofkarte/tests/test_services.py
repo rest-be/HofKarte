@@ -1,8 +1,6 @@
-"""Tests für die Home-Assistant-Actions hofkarte.refresh und hofkarte.search."""
+"""Tests für services.py – die HofKarte-Home-Assistant-Actions."""
 
 from __future__ import annotations
-
-from unittest.mock import AsyncMock
 
 import pytest
 import voluptuous as vol
@@ -11,12 +9,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.hofkarte.const import DOMAIN, SERVICE_REFRESH, SERVICE_SEARCH
-from custom_components.hofkarte.coordinator import HofKarteUpdateCoordinator
-from custom_components.hofkarte.services import async_register_services
+from custom_components.hofkarte.const import DOMAIN
+from custom_components.hofkarte.services import (
+    SERVICE_HOFLAEDEN_SUCHEN,
+    _get_coordinator,
+)
 
 
-def _entry(hass: HomeAssistant) -> MockConfigEntry:
+def _make_entry(hass: HomeAssistant) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN, title="HofKarte", data={CONF_NAME: "HofKarte"}
     )
@@ -24,129 +24,223 @@ def _entry(hass: HomeAssistant) -> MockConfigEntry:
     return entry
 
 
-async def _setup(hass: HomeAssistant) -> HofKarteUpdateCoordinator:
-    entry = _entry(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
+async def _setup(hass: HomeAssistant) -> None:
+    entry = _make_entry(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    return hass.data[DOMAIN][entry.entry_id]
 
 
-def _antwort_payload(antwort: dict) -> dict:
-    """HA kann die Service-Antwort direkt oder um den Domain-Schlüssel legen."""
-    if "count" in antwort and "hoflaeden" in antwort:
-        return antwort
-    inner = antwort.get(DOMAIN, antwort)
-    if "count" in inner:
-        return inner
-    # Fallback: erste Mapping-Wertebene
-    for value in antwort.values():
-        if isinstance(value, dict) and "count" in value:
-            return value
-    return antwort
+# ---------------------------------------------------------------------------
+# Registrierung
+# ---------------------------------------------------------------------------
 
 
-async def test_services_werden_bei_setup_registriert(hass: HomeAssistant) -> None:
+async def test_service_wird_registriert(hass: HomeAssistant) -> None:
+    """Die Action muss nach dem Setup unter der Domain verfügbar sein."""
     await _setup(hass)
-    assert hass.services.has_service(DOMAIN, SERVICE_REFRESH)
-    assert hass.services.has_service(DOMAIN, SERVICE_SEARCH)
+
+    assert hass.services.has_service(DOMAIN, SERVICE_HOFLAEDEN_SUCHEN)
 
 
-async def test_refresh_ohne_config_entry_schlaegt_fehl(hass: HomeAssistant) -> None:
-    async_register_services(hass)
-
-    with pytest.raises(HomeAssistantError, match="nicht eingerichtet"):
-        await hass.services.async_call(DOMAIN, SERVICE_REFRESH, {}, blocking=True)
+# ---------------------------------------------------------------------------
+# _get_coordinator
+# ---------------------------------------------------------------------------
 
 
-async def test_refresh_stosst_coordinator_an(hass: HomeAssistant) -> None:
-    coordinator = await _setup(hass)
-    original = coordinator.async_refresh
-    coordinator.async_refresh = AsyncMock(wraps=original)
-
-    await hass.services.async_call(DOMAIN, SERVICE_REFRESH, {}, blocking=True)
-
-    coordinator.async_refresh.assert_awaited()
-
-
-async def test_refresh_lehnt_unbekannte_felder_ab(hass: HomeAssistant) -> None:
-    await _setup(hass)
-    with pytest.raises(vol.Invalid):
-        await hass.services.async_call(
-            DOMAIN, SERVICE_REFRESH, {"unnoetig": True}, blocking=True
-        )
-
-
-async def test_search_ohne_kriterien_liefert_alle(hass: HomeAssistant) -> None:
-    coordinator = await _setup(hass)
-    await coordinator.async_add_hofladen({"id": "hof-a", "name": "Hof A"})
-    await coordinator.async_add_hofladen({"id": "hof-b", "name": "Hof B"})
-
-    antwort = _antwort_payload(
-        await hass.services.async_call(
-            DOMAIN,
-            SERVICE_SEARCH,
-            {},
-            blocking=True,
-            return_response=True,
-        )
-    )
-
-    assert antwort["count"] == 2
-    assert {eintrag["id"] for eintrag in antwort["hoflaeden"]} == {"hof-a", "hof-b"}
-
-
-async def test_search_filtert_nach_begriff_und_fachfeldern(
+def test_get_coordinator_wirft_fehler_wenn_nicht_eingerichtet(
     hass: HomeAssistant,
 ) -> None:
-    coordinator = await _setup(hass)
+    with pytest.raises(HomeAssistantError):
+        _get_coordinator(hass)
+
+
+# ---------------------------------------------------------------------------
+# Aufruf mit Rückgabedaten
+# ---------------------------------------------------------------------------
+
+
+async def test_suche_ohne_filter_liefert_alle_hoflaeden(
+    hass: HomeAssistant,
+) -> None:
+    """Ohne Filter müssen alle vorhandenen Hofläden zurückkommen."""
+    await _setup(hass)
+    coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
+    await coordinator.async_add_hofladen({"id": "hof-1", "name": "Hofladen Eins"})
+
+    ergebnis = await hass.services.async_call(
+        DOMAIN, SERVICE_HOFLAEDEN_SUCHEN, {}, blocking=True, return_response=True
+    )
+
+    assert ergebnis["anzahl_treffer"] == 1
+    assert ergebnis["hoflaeden"][0]["id"] == "hof-1"
+    assert ergebnis["hoflaeden"][0]["name"] == "Hofladen Eins"
+    # Ohne Öffnungszeiten hinterlegt ist der Status bewusst unbekannt (None).
+    assert ergebnis["hoflaeden"][0]["geoeffnet"] is None
+
+
+async def test_suche_mit_suchbegriff_filtert_korrekt(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
+    await coordinator.async_add_hofladen({"id": "hof-1", "name": "Hofladen Müller"})
+    await coordinator.async_add_hofladen({"id": "hof-2", "name": "Hofladen Schmid"})
+
+    ergebnis = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_HOFLAEDEN_SUCHEN,
+        {"suchbegriff": "müller"},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert ergebnis["anzahl_treffer"] == 1
+    assert ergebnis["hoflaeden"][0]["id"] == "hof-1"
+
+
+async def test_suche_mit_kategorie_filter(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
     await coordinator.async_add_hofladen(
         {
-            "id": "bio-hof",
-            "name": "Bio-Hof",
-            "ort": "Bern",
+            "id": "hof-1",
+            "name": "Hofladen Eins",
             "kategorien": [{"id": "gemuese", "name": "Gemüse"}],
-            "produkte": [
-                {"id": "apfel", "name": "Äpfel", "kategorie_ids": ["gemuese"]}
-            ],
-            "zahlungsarten": [{"id": "twint", "name": "TWINT"}],
-            "verkaufsarten": [{"id": "sb", "name": "Selbstbedienung"}],
-            "merkmale": [{"id": "bio", "name": "Bio"}],
         }
     )
-    await coordinator.async_add_hofladen({"id": "anderes", "name": "Anderer Hof"})
+    await coordinator.async_add_hofladen({"id": "hof-2", "name": "Hofladen Zwei"})
 
-    antwort = _antwort_payload(
-        await hass.services.async_call(
-            DOMAIN,
-            SERVICE_SEARCH,
-            {
-                "suchbegriff": "bio",
-                "kategorie": "Gemüse",
-                "produkt": "Äpfel",
-                "zahlungsart": "TWINT",
-                "verkaufsart": "Selbstbedienung",
-                "merkmal": "Bio",
-            },
-            blocking=True,
-            return_response=True,
-        )
+    ergebnis = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_HOFLAEDEN_SUCHEN,
+        {"kategorie": "Gemüse"},
+        blocking=True,
+        return_response=True,
     )
 
-    assert antwort["count"] == 1
-    treffer = antwort["hoflaeden"][0]
-    assert treffer["id"] == "bio-hof"
-    assert treffer["ort"] == "Bern"
-    assert "Äpfel" in [produkt["name"] for produkt in treffer["produkte"]]
-    assert "geoeffnet" in treffer
+    assert ergebnis["anzahl_treffer"] == 1
+    assert ergebnis["hoflaeden"][0]["id"] == "hof-1"
 
 
-async def test_search_lehnt_ungueltige_parameter_ab(hass: HomeAssistant) -> None:
+async def test_suche_mit_mehreren_kombinierten_filtern(hass: HomeAssistant) -> None:
     await _setup(hass)
+    coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-1",
+            "name": "Hofladen Eins",
+            "kategorien": [{"id": "gemuese", "name": "Gemüse"}],
+            "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
+        }
+    )
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-2",
+            "name": "Hofladen Zwei",
+            "kategorien": [{"id": "gemuese", "name": "Gemüse"}],
+            "zahlungsarten": [{"id": "twint", "name": "TWINT"}],
+        }
+    )
+
+    ergebnis = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_HOFLAEDEN_SUCHEN,
+        {"kategorie": "Gemüse", "zahlungsart": "Bargeld"},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert ergebnis["anzahl_treffer"] == 1
+    assert ergebnis["hoflaeden"][0]["id"] == "hof-1"
+
+
+async def test_suche_ohne_treffer_liefert_leeres_ergebnis(
+    hass: HomeAssistant,
+) -> None:
+    await _setup(hass)
+    coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
+    await coordinator.async_add_hofladen({"id": "hof-1", "name": "Hofladen Eins"})
+
+    ergebnis = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_HOFLAEDEN_SUCHEN,
+        {"suchbegriff": "existiert-nicht"},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert ergebnis["anzahl_treffer"] == 0
+    assert ergebnis["hoflaeden"] == []
+
+
+async def test_suche_nur_geoeffnet(hass: HomeAssistant) -> None:
+    """Mit nur_geoeffnet=True dürfen nur aktuell geöffnete Hofläden erscheinen."""
+    await _setup(hass)
+    coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
+
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-immer-offen",
+            "name": "Rund-um-die-Uhr-Hofladen",
+            "oeffnungszeiten": [
+                {"wochentag": tag, "beginn": "00:00", "ende": "23:59"}
+                for tag in range(1, 8)
+            ],
+        }
+    )
+    await coordinator.async_add_hofladen(
+        {"id": "hof-ohne-zeiten", "name": "Hofladen ohne Öffnungszeiten"}
+    )
+
+    ergebnis = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_HOFLAEDEN_SUCHEN,
+        {"nur_geoeffnet": True},
+        blocking=True,
+        return_response=True,
+    )
+
+    treffer_ids = {eintrag["id"] for eintrag in ergebnis["hoflaeden"]}
+    assert "hof-immer-offen" in treffer_ids
+    assert "hof-ohne-zeiten" not in treffer_ids
+
+
+# ---------------------------------------------------------------------------
+# Validierung
+# ---------------------------------------------------------------------------
+
+
+async def test_suche_mit_ungueltigem_datentyp_wird_abgelehnt(
+    hass: HomeAssistant,
+) -> None:
+    """Ein strukturell falscher Datentyp (Liste statt Text) muss vom Schema
+    abgelehnt werden, bevor der Handler überhaupt aufgerufen wird.
+
+    Hinweis: Home Assistants ``cv.string`` konvertiert Zahlen/Bools
+    grosszügig in Strings (dokumentiertes Verhalten); Listen/Dicts lehnt
+    es hingegen ab – das prüft dieser Test.
+    """
+    await _setup(hass)
+
     with pytest.raises(vol.Invalid):
         await hass.services.async_call(
             DOMAIN,
-            SERVICE_SEARCH,
-            {"geoeffnet": "vielleicht"},
+            SERVICE_HOFLAEDEN_SUCHEN,
+            {"kategorie": ["nicht", "erlaubt"]},
+            blocking=True,
+            return_response=True,
+        )
+
+
+async def test_suche_mit_unbekanntem_feld_wird_abgelehnt(
+    hass: HomeAssistant,
+) -> None:
+    """Unbekannte Felder müssen vom Schema abgelehnt werden (kein 'anything goes')."""
+    await _setup(hass)
+
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_HOFLAEDEN_SUCHEN,
+            {"unbekanntes_feld": "wert"},
             blocking=True,
             return_response=True,
         )

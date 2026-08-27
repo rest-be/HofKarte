@@ -1,4 +1,4 @@
-"""Tests für die Such- und Filter-Fachlogik (search.py)."""
+"""Tests für search.py – Suche und Filter über Hofladen-Daten."""
 
 from __future__ import annotations
 
@@ -15,145 +15,214 @@ from custom_components.hofkarte.models import (
     Verkaufsart,
     Zahlungsart,
 )
-from custom_components.hofkarte.search import filter_hoflaeden
+from custom_components.hofkarte.search import find_hoflaeden
 
-_UTC = timezone.utc
+_MONTAG = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc)  # innerhalb 08-12 Uhr
 
 
-def _hof(**kwargs) -> Hofladen:
-    defaults = {"id": "hof-1", "name": "Hofladen Eins"}
+def _hofladen(**kwargs) -> Hofladen:
+    defaults = {"id": "hof", "name": "Hofladen"}
     defaults.update(kwargs)
     return Hofladen(**defaults)
 
 
-def _now(hour: int = 10) -> datetime:
-    # Montag, 2026-01-05
-    return datetime(2026, 1, 5, hour, 0, tzinfo=_UTC)
+_MUELLER = _hofladen(
+    id="hof-mueller",
+    name="Hofladen Müller",
+    beschreibung="Frisches Gemüse direkt ab Hof.",
+    ort="Bern",
+    kategorien=(Kategorie(id="gemuese", name="Gemüse"),),
+    produkte=(Produkt(id="kartoffeln", name="Kartoffeln"),),
+    verkaufsarten=(Verkaufsart(id="ab-hof", name="Ab-Hof-Verkauf"),),
+    zahlungsarten=(Zahlungsart(id="bar", name="Bargeld"),),
+    merkmale=(Merkmal(id="bio", name="Bio"),),
+    oeffnungszeiten=(
+        Oeffnungszeit(wochentag=1, beginn=time(8, 0), ende=time(12, 0)),
+    ),
+)
+_SCHMID = _hofladen(
+    id="hof-schmid",
+    name="Hofladen Schmid",
+    beschreibung="Käse und Milchprodukte.",
+    ort="Thun",
+    kategorien=(Kategorie(id="milch", name="Milchprodukte"),),
+    produkte=(Produkt(id="kaese", name="Käse"),),
+    verkaufsarten=(Verkaufsart(id="automat", name="Verkaufsautomat"),),
+    zahlungsarten=(Zahlungsart(id="twint", name="TWINT"),),
+    merkmale=(),
+    oeffnungszeiten=(),  # keine Öffnungszeiten -> is_open liefert None
+)
+
+_ALLE = [_MUELLER, _SCHMID]
 
 
-def test_ohne_kriterien_liefert_alle() -> None:
-    hoefen = [_hof(id="a", name="A"), _hof(id="b", name="B")]
-    assert [h.id for h in filter_hoflaeden(hoefen)] == ["a", "b"]
+# ---------------------------------------------------------------------------
+# Ohne Filter
+# ---------------------------------------------------------------------------
 
 
-def test_suchbegriff_findet_name_ort_und_produkt() -> None:
-    treffer_name = _hof(id="n", name="Apfelhof")
-    treffer_ort = _hof(id="o", name="Anderer", ort="Apfelingen")
-    treffer_produkt = _hof(
-        id="p",
-        name="Dritter",
-        produkte=(Produkt(id="kart", name="Kartoffeln"),),
-    )
-    daneben = _hof(id="x", name="Milchhof", ort="Zürich")
+def test_ohne_filter_liefert_alle_hoflaeden() -> None:
+    """Ohne gesetzte Kriterien müssen alle übergebenen Hofläden zurückkommen."""
+    ergebnis = find_hoflaeden(_ALLE)
 
-    nach_apfel = filter_hoflaeden(
-        [treffer_name, treffer_ort, treffer_produkt, daneben],
-        suchbegriff="apfel",
-    )
-    assert [h.id for h in nach_apfel] == ["n", "o"]
-
-    nach_kartoffel = filter_hoflaeden(
-        [treffer_name, treffer_ort, treffer_produkt, daneben],
-        suchbegriff="kartoffel",
-    )
-    assert [h.id for h in nach_kartoffel] == ["p"]
+    assert ergebnis == _ALLE
 
 
-def test_leerer_suchbegriff_wird_ignoriert() -> None:
-    hoefen = [_hof()]
-    assert filter_hoflaeden(hoefen, suchbegriff="   ") == hoefen
+def test_leere_eingabe_liefert_leeres_ergebnis() -> None:
+    """Eine leere Liste muss ein leeres Ergebnis liefern, kein Fehler."""
+    assert find_hoflaeden([]) == []
 
 
-def test_filter_kategorie_ueber_stamm_und_produktzuordnung() -> None:
-    gemuese = Kategorie(id="kat-gemuese", name="Gemüse")
-    mit_kategorie = _hof(id="k", name="A", kategorien=(gemuese,))
-    nur_produkt = _hof(
-        id="p",
-        name="B",
-        produkte=(Produkt(id="tom", name="Tomaten", kategorie_ids=("kat-gemuese",)),),
-    )
-    ohne = _hof(id="x", name="C", kategorien=(Kategorie(id="milch", name="Milch"),))
-
-    treffer = filter_hoflaeden(
-        [mit_kategorie, nur_produkt, ohne], kategorie="gemüse"
-    )
-    assert [h.id for h in treffer] == ["k", "p"]
+# ---------------------------------------------------------------------------
+# Freitextsuche
+# ---------------------------------------------------------------------------
 
 
-def test_filter_produkt_zahlungsart_verkaufsart_merkmal() -> None:
-    passend = _hof(
-        id="ok",
-        name="Passend",
-        produkte=(Produkt(id="apfel", name="Äpfel"),),
-        zahlungsarten=(Zahlungsart(id="twint", name="TWINT"),),
-        verkaufsarten=(Verkaufsart(id="sb", name="Selbstbedienung"),),
-        merkmale=(Merkmal(id="bio", name="Bio"),),
-    )
-    daneben = _hof(id="no", name="Daneben")
+def test_suchbegriff_findet_treffer_im_namen() -> None:
+    ergebnis = find_hoflaeden(_ALLE, suchbegriff="müller")
 
-    assert [h.id for h in filter_hoflaeden([passend, daneben], produkt="äpfel")] == [
-        "ok"
-    ]
-    assert [
-        h.id for h in filter_hoflaeden([passend, daneben], zahlungsart="twint")
-    ] == ["ok"]
-    assert [
-        h.id
-        for h in filter_hoflaeden([passend, daneben], verkaufsart="selbstbedienung")
-    ] == ["ok"]
-    assert [h.id for h in filter_hoflaeden([passend, daneben], merkmal="bio")] == [
-        "ok"
-    ]
+    assert ergebnis == [_MUELLER]
 
 
-def test_mehrere_filter_sind_und_verknuepft() -> None:
-    beide = _hof(
-        id="beide",
-        name="Beide",
-        produkte=(Produkt(id="apfel", name="Äpfel"),),
-        merkmale=(Merkmal(id="bio", name="Bio"),),
-    )
-    nur_produkt = _hof(
-        id="produkt",
-        name="Nur Produkt",
-        produkte=(Produkt(id="apfel", name="Äpfel"),),
-    )
-    treffer = filter_hoflaeden([beide, nur_produkt], produkt="äpfel", merkmal="bio")
-    assert [h.id for h in treffer] == ["beide"]
+def test_suchbegriff_findet_treffer_in_beschreibung() -> None:
+    ergebnis = find_hoflaeden(_ALLE, suchbegriff="käse")
+
+    assert ergebnis == [_SCHMID]
 
 
-def test_geoeffnet_filter_ohne_now_wirft() -> None:
-    with pytest.raises(ValueError, match="now"):
-        filter_hoflaeden([_hof()], geoeffnet=True)
+def test_suchbegriff_findet_treffer_im_ort() -> None:
+    ergebnis = find_hoflaeden(_ALLE, suchbegriff="thun")
+
+    assert ergebnis == [_SCHMID]
 
 
-def test_geoeffnet_true_false_und_unbekannt() -> None:
-    offen = _hof(
-        id="offen",
-        name="Offen",
-        oeffnungszeiten=(
-            Oeffnungszeit(wochentag=1, beginn=time(8, 0), ende=time(12, 0)),
-        ),
-    )
-    geschlossen = _hof(
-        id="zu",
-        name="Zu",
-        oeffnungszeiten=(
-            Oeffnungszeit(wochentag=1, beginn=time(14, 0), ende=time(18, 0)),
-        ),
-    )
-    unbekannt = _hof(id="?", name="Ohne Zeiten")
-    now = _now(10)
+def test_suchbegriff_ist_case_insensitiv() -> None:
+    ergebnis = find_hoflaeden(_ALLE, suchbegriff="MÜLLER")
 
-    assert [
-        h.id
-        for h in filter_hoflaeden(
-            [offen, geschlossen, unbekannt], geoeffnet=True, now=now
-        )
-    ] == ["offen"]
-    assert [
-        h.id
-        for h in filter_hoflaeden(
-            [offen, geschlossen, unbekannt], geoeffnet=False, now=now
-        )
-    ] == ["zu"]
+    assert ergebnis == [_MUELLER]
+
+
+def test_suchbegriff_ohne_treffer_liefert_leere_liste() -> None:
+    ergebnis = find_hoflaeden(_ALLE, suchbegriff="nicht-vorhanden")
+
+    assert ergebnis == []
+
+
+def test_suchbegriff_ignoriert_hofladen_ohne_beschreibung() -> None:
+    """Ein Hofladen ohne Beschreibung darf beim Durchsuchen nicht zum
+    Absturz führen (None-Feld)."""
+    hofladen_ohne_beschreibung = _hofladen(id="hof-x", name="Testhof")
+
+    ergebnis = find_hoflaeden([hofladen_ohne_beschreibung], suchbegriff="testhof")
+
+    assert ergebnis == [hofladen_ohne_beschreibung]
+
+
+# ---------------------------------------------------------------------------
+# Filter nach Kategorie / Produkt / Verkaufsart / Zahlungsart / Merkmal
+# ---------------------------------------------------------------------------
+
+
+def test_filter_nach_kategorie() -> None:
+    assert find_hoflaeden(_ALLE, kategorie="Gemüse") == [_MUELLER]
+
+
+def test_filter_nach_kategorie_case_insensitiv() -> None:
+    assert find_hoflaeden(_ALLE, kategorie="gemüse") == [_MUELLER]
+
+
+def test_filter_nach_produkt() -> None:
+    assert find_hoflaeden(_ALLE, produkt="Käse") == [_SCHMID]
+
+
+def test_filter_nach_verkaufsart() -> None:
+    assert find_hoflaeden(_ALLE, verkaufsart="Verkaufsautomat") == [_SCHMID]
+
+
+def test_filter_nach_zahlungsart() -> None:
+    assert find_hoflaeden(_ALLE, zahlungsart="Bargeld") == [_MUELLER]
+
+
+def test_filter_nach_merkmal() -> None:
+    assert find_hoflaeden(_ALLE, merkmal="Bio") == [_MUELLER]
+
+
+def test_filter_ist_exakter_abgleich_kein_teilstring() -> None:
+    """Filterkriterien (im Unterschied zum Suchbegriff) müssen exakt
+    übereinstimmen, kein Teilstring-Treffer."""
+    assert find_hoflaeden(_ALLE, kategorie="Gem") == []
+
+
+def test_filter_ohne_treffer_liefert_leere_liste() -> None:
+    assert find_hoflaeden(_ALLE, merkmal="Parkplatz") == []
+
+
+# ---------------------------------------------------------------------------
+# Kombinierte Filter (logisches UND)
+# ---------------------------------------------------------------------------
+
+
+def test_kombinierte_filter_werden_und_verknuepft() -> None:
+    """Beide Kriterien zusammen dürfen nur Hofläden liefern, die beide
+    erfüllen."""
+    ergebnis = find_hoflaeden(_ALLE, kategorie="Gemüse", zahlungsart="Bargeld")
+
+    assert ergebnis == [_MUELLER]
+
+
+def test_kombinierte_filter_ohne_gemeinsamen_treffer() -> None:
+    """Erfüllt kein Hofladen alle Kriterien gemeinsam, ist das Ergebnis leer."""
+    ergebnis = find_hoflaeden(_ALLE, kategorie="Gemüse", zahlungsart="TWINT")
+
+    assert ergebnis == []
+
+
+# ---------------------------------------------------------------------------
+# nur_geoeffnet
+# ---------------------------------------------------------------------------
+
+
+def test_nur_geoeffnet_filtert_auf_offene_hoflaeden() -> None:
+    """Nur der Hofladen mit passender Öffnungszeit darf zurückkommen."""
+    ergebnis = find_hoflaeden(_ALLE, nur_geoeffnet=True, now=_MONTAG)
+
+    assert ergebnis == [_MUELLER]
+
+
+def test_nur_geoeffnet_schliesst_unbekannten_status_aus() -> None:
+    """Ein Hofladen ohne hinterlegte Öffnungszeiten (Status unbekannt) darf
+    bei nur_geoeffnet=True nicht als Treffer gelten."""
+    ergebnis = find_hoflaeden([_SCHMID], nur_geoeffnet=True, now=_MONTAG)
+
+    assert ergebnis == []
+
+
+def test_nur_geoeffnet_false_wirkt_nicht_als_filter() -> None:
+    """``nur_geoeffnet=False`` bedeutet 'kein Filter', nicht 'nur geschlossene'."""
+    ergebnis = find_hoflaeden(_ALLE, nur_geoeffnet=False, now=_MONTAG)
+
+    assert ergebnis == _ALLE
+
+
+def test_nur_geoeffnet_ohne_now_wirft_fehler() -> None:
+    """Ohne 'now' kann der Öffnungsstatus nicht berechnet werden."""
+    with pytest.raises(ValueError):
+        find_hoflaeden(_ALLE, nur_geoeffnet=True)
+
+
+# ---------------------------------------------------------------------------
+# Reihenfolge / Unveränderlichkeit
+# ---------------------------------------------------------------------------
+
+
+def test_eingabereihenfolge_bleibt_erhalten() -> None:
+    ergebnis = find_hoflaeden([_SCHMID, _MUELLER])
+
+    assert ergebnis == [_SCHMID, _MUELLER]
+
+
+def test_eingabe_wird_nicht_veraendert() -> None:
+    eingabe = [_MUELLER, _SCHMID]
+    find_hoflaeden(eingabe, kategorie="Gemüse")
+
+    assert eingabe == [_MUELLER, _SCHMID]

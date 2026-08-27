@@ -17,43 +17,40 @@
     }
   },
   "services": {
-    "refresh": {
-      "name": "Refresh data",
-      "description": "Reload farm shop data from the integration store via the coordinator."
-    },
-    "search": {
+    "hoflaeden_suchen": {
       "name": "Search farm shops",
-      "description": "Search and filter farm shops. Multiple criteria are combined with AND. Returns a result list.",
+      "description": "Search and filter the farm shops managed in HofKarte. All given filters are combined with AND.",
       "fields": {
         "suchbegriff": {
           "name": "Search term",
-          "description": "Free text over name, description, address, city and assortment."
+          "description": "Free-text search (case-insensitive) across name, description and town."
         },
         "kategorie": {
           "name": "Category",
-          "description": "Filter by category name or ID."
+          "description": "Only farm shops offering this exact product category."
         },
         "produkt": {
           "name": "Product",
-          "description": "Filter by product name or ID."
+          "description": "Only farm shops offering this exact product."
         },
         "verkaufsart": {
-          "name": "Sales type",
-          "description": "Filter by sales type (for example self-service)."
+          "name": "Type of sale",
+          "description": "Only farm shops with this exact type of sale (e.g. self-service)."
         },
         "zahlungsart": {
           "name": "Payment method",
-          "description": "Filter by payment method (for example TWINT)."
+          "description": "Only farm shops accepting this exact payment method."
         },
         "merkmal": {
           "name": "Feature",
-          "description": "Filter by feature (for example organic)."
+          "description": "Only farm shops with this exact feature (e.g. organic)."
         },
-        "geoeffnet": {
-          "name": "Open",
-          "description": "Only currently open (on) or closed (off) shops. Shops without opening hours are excluded from this filter."
+        "nur_geoeffnet": {
+          "name": "Only currently open",
+          "description": "If set, only farm shops that are currently open are returned."
         }
       }
     }
   }
 }
+

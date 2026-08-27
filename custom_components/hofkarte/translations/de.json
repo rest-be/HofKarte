@@ -17,41 +17,37 @@
     }
   },
   "services": {
-    "refresh": {
-      "name": "Daten aktualisieren",
-      "description": "Lädt die Hofladen-Daten über den Coordinator neu."
-    },
-    "search": {
+    "hoflaeden_suchen": {
       "name": "Hofläden suchen",
-      "description": "Durchsucht und filtert Hofläden. Mehrere Kriterien werden mit UND verknüpft.",
+      "description": "Durchsucht und filtert die in HofKarte verwalteten Hofläden. Alle angegebenen Filter werden UND-verknüpft.",
       "fields": {
         "suchbegriff": {
           "name": "Suchbegriff",
-          "description": "Freitext über Name, Beschreibung, Adresse, Ort und Sortiment."
+          "description": "Freitextsuche (Gross-/Kleinschreibung egal) über Name, Beschreibung und Ort."
         },
         "kategorie": {
           "name": "Kategorie",
-          "description": "Filter nach Kategorie (Name oder ID)."
+          "description": "Nur Hofläden mit exakt dieser Produktkategorie."
         },
         "produkt": {
           "name": "Produkt",
-          "description": "Filter nach Produkt (Name oder ID)."
+          "description": "Nur Hofläden mit exakt diesem Produkt im Sortiment."
         },
         "verkaufsart": {
           "name": "Verkaufsart",
-          "description": "Filter nach Verkaufsart (z. B. Selbstbedienung)."
+          "description": "Nur Hofläden mit exakt dieser Verkaufsart (z. B. Selbstbedienung)."
         },
         "zahlungsart": {
           "name": "Zahlungsart",
-          "description": "Filter nach Zahlungsart (z. B. TWINT)."
+          "description": "Nur Hofläden, die exakt diese Zahlungsart akzeptieren."
         },
         "merkmal": {
           "name": "Merkmal",
-          "description": "Filter nach Merkmal (z. B. Bio)."
+          "description": "Nur Hofläden mit exakt diesem Merkmal (z. B. Bio)."
         },
-        "geoeffnet": {
-          "name": "Geöffnet",
-          "description": "Nur geöffnete oder nur geschlossene Hofläden. Ohne Öffnungszeiten kein Treffer."
+        "nur_geoeffnet": {
+          "name": "Nur aktuell geöffnete",
+          "description": "Wenn gesetzt, werden nur aktuell geöffnete Hofläden geliefert."
         }
       }
     }

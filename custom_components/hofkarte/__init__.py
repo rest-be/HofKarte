@@ -27,15 +27,11 @@ from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [
-    Platform.BINARY_SENSOR,
-    Platform.SENSOR,
-    Platform.CAMERA,
-]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register global HofKarte frontend/WebSocket functionality.
+    """Register global HofKarte frontend/WebSocket/Action functionality.
 
     Home Assistant calls integration ``async_setup`` with both ``hass`` and
     the processed YAML configuration. HofKarte does not use YAML
@@ -43,8 +39,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     integration setup contract.
     """
     async_register_websocket_commands(hass)
-    async_register_services(hass)
     await async_setup_frontend_assets(hass)
+    async_register_services(hass)
     return True
 
 

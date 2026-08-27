@@ -3,11 +3,17 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Einheit 10 – Suche, Filter und Home-Assistant-Actions.
-> Hofläden werden über den integrationsinternen Store gepflegt. Die
-> grafische Verwaltungsoberfläche (Sidebar-Panel) bleibt für CRUD
-> zuständig. Automationen nutzen die Actions ``hofkarte.refresh`` und
-> ``hofkarte.search``.
+> **Status:** Suche, Filter und Home-Assistant Actions (Einheit 10),
+> ergänzt um zwei vorangegangene Architekturentscheide: (1) Home
+> Assistant ist sowohl Laufzeit- als auch Verwaltungsoberfläche für
+> HofKarte – die vom Benutzer gepflegten Hofläden werden in einem
+> integrationsinternen, persistenten Store gehalten (keine externe
+> Datenbank, kein externer Dienst); (2) HofKarte bietet zusätzlich zu
+> den Home-Assistant-Entities eine **eigene grafische
+> Verwaltungsoberfläche** (Sidebar-Panel) für Administratoren – eine
+> bewusste, dokumentierte Abweichung vom ursprünglichen Plan. Für
+> Automationen und Skripte steht zusätzlich die Home-Assistant-Action
+> `hofkarte.hoflaeden_suchen` zur Verfügung.
 
 ## Über dieses Projekt
 
@@ -332,6 +338,66 @@ Personen- oder Geräteverfolgung). Die Integration speichert diese
 Position nicht selbst und überträgt sie nicht an externe Dienste – die
 Berechnung erfolgt vollständig lokal.
 
+## Suche und Filter (Home-Assistant Action)
+
+Für Automationen, Skripte und Dashboards steht die Action
+`hofkarte.hoflaeden_suchen` zur Verfügung
+(`custom_components/hofkarte/services.py`, Fachlogik in `search.py`):
+
+```yaml
+action: hofkarte.hoflaeden_suchen
+data:
+  kategorie: Gemüse
+  zahlungsart: TWINT
+  nur_geoeffnet: true
+```
+
+**Parameter** (alle optional, werden UND-verknüpft):
+
+| Parameter        | Typ     | Bedeutung                                              |
+|-------------------|---------|----------------------------------------------------------|
+| `suchbegriff`     | Text    | Freitextsuche (Gross-/Kleinschreibung egal) über Name, Beschreibung, Ort |
+| `kategorie`       | Text    | Exakter Name einer Produktkategorie                     |
+| `produkt`         | Text    | Exakter Produktname                                      |
+| `verkaufsart`     | Text    | Exakter Name einer Verkaufsart                            |
+| `zahlungsart`     | Text    | Exakter Name einer Zahlungsart                            |
+| `merkmal`         | Text    | Exakter Name eines Merkmals                               |
+| `nur_geoeffnet`   | Bool    | Nur aktuell geöffnete Hofläden (nutzt `opening_hours.py`, Einheit 7) |
+
+**Rückgabedaten** (`response_variable` in Skripten/Automationen nutzbar):
+
+```yaml
+anzahl_treffer: 1
+hoflaeden:
+  - id: hof-mueller
+    name: Hofladen Müller
+    geoeffnet: true
+```
+
+- Filter (`kategorie`, `produkt`, …) verlangen exakte Übereinstimmung
+  (case-insensitive); der `suchbegriff` erlaubt Teilstring-Treffer.
+- Ein Hofladen ohne bekannten Öffnungsstatus (keine Öffnungszeiten
+  hinterlegt) gilt bei `nur_geoeffnet: true` **nicht** als Treffer –
+  es wird nicht angenommen, dass er geöffnet ist, nur weil der Status
+  unbekannt ist.
+- Rückgabedaten sind bewusst knapp gehalten (ID, Name, Öffnungsstatus)
+  statt einer vollständigen Kopie aller Hofladen-Felder.
+
+**Bewusst nicht implementiert:**
+
+- Eine „Hofladen-Daten aktualisieren“-Action: Home Assistants
+  eingebaute Action `homeassistant.update_entity` deckt dies für alle
+  HofKarte-Entities bereits ab (sie basieren auf `CoordinatorEntity`).
+  Eine eigene Action hierfür würde bestehende Funktionalität lediglich
+  duplizieren.
+- Separate Actions je Filterdimension (eigene Action nur für Kategorie,
+  nur für Produkt, ...): eine einzige, klar strukturierte Such-Action
+  mit mehreren optionalen Parametern deckt alle genannten Fälle ab, ohne
+  naheliegend redundanten Code zu erzeugen.
+- Keine proprietäre REST-API, keine globale Suche über andere
+  Home-Assistant-Integrationen hinweg (ausserhalb des Geltungsbereichs
+  dieser Action).
+
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 
 - Nur eine Instanz pro Home-Assistant-Installation möglich (Single Instance).
@@ -357,51 +423,12 @@ Berechnung erfolgt vollständig lokal.
   Referenzpunkt. Das Standardpaar `0.0/0.0` einer frischen, noch nicht
   sinnvoll konfigurierten Installation wird als unbekannte Position
   behandelt; einzelne Koordinaten `0.0` bleiben gültig.
+- Die Action `hofkarte.hoflaeden_suchen` filtert case-insensitiv aber
+  exakt (kein Fuzzy-Matching, keine Tippfehler-Toleranz) – ausser beim
+  Freitext-`suchbegriff`, der Teilstrings erlaubt.
 - Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
 
-## Actions (Einheit 10)
-
-Für Automationen und Skripte stellt HofKarte zwei Home-Assistant-Actions
-bereit. Sie duplizieren keine bestehenden Sensorwerte (Öffnungsstatus
-und Entfernung bleiben Entities).
-
-| Action | Zweck | Antwort |
-| --- | --- | --- |
-| `hofkarte.refresh` | Hofladen-Daten über den Coordinator neu laden | keine |
-| `hofkarte.search` | Hofläden nach Begriff und Fachfiltern durchsuchen | Trefferliste (`count`, `hoflaeden`) |
-
-`hofkarte.search` muss mit Antwort aufgerufen werden (`response_variable`
-in Automationen). Mehrere Filter gelten als UND-Verknüpfung. Leere
-Angaben werden ignoriert.
-
-Parameter von `hofkarte.search`:
-
-| Parameter | Bedeutung |
-| --- | --- |
-| `suchbegriff` | Freitext über ID, Name, Beschreibung, Adresse, PLZ, Ort, Land, Website und Sortiment |
-| `kategorie` | Filter nach Kategorie (Name oder ID; auch über Produktzuordnung) |
-| `produkt` | Filter nach Produkt |
-| `verkaufsart` | Filter nach Verkaufsart |
-| `zahlungsart` | Filter nach Zahlungsart |
-| `merkmal` | Filter nach Merkmal |
-| `geoeffnet` | `true` nur geöffnet, `false` nur geschlossen; ohne Öffnungszeiten kein Treffer |
-
-Beispiel:
-
-```yaml
-action: hofkarte.search
-data:
-  suchbegriff: Apfel
-  zahlungsart: TWINT
-  geoeffnet: true
-response_variable: hofkarte_treffer
-```
-
-Die Fachlogik liegt in `custom_components/hofkarte/search.py` und wird von
-der Action nur orchestriert. Die Öffnungszeitenberechnung kommt unverändert
-aus `opening_hours.py`.
-
-## Grafische Hofladenverwaltung
+## Entwicklung
 
 ### Tests ausführen
 
@@ -414,13 +441,15 @@ pytest custom_components/hofkarte/tests
 
 Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
 
-## Grafische Hofladenverwaltung
+## Grafische Hofladenverwaltung (Einheit 10)
 
-**Architekturentscheid:** Die Pflege (Anlegen, Bearbeiten, Löschen) der
-Hofläden erfolgt über ein **eigenes Sidebar-Panel** mit WebSocket-Backend.
-Suche und Filter für Automationen sind zusätzlich als Home-Assistant-
-Actions modelliert (siehe Abschnitt „Actions“ oben) – nicht als
-proprietäre REST-API.
+**Architekturentscheid:** Der ursprüngliche Umsetzungsplan sah für
+Einheit 10 „Suche, Filter und Home-Assistant Actions“ ohne eigene UI vor
+(„Keine proprietäre REST-API“, „Keine eigene UI“). Für HofKarte wurde
+davon bewusst abgewichen: Da Home Assistant sowohl Laufzeit- als auch
+Verwaltungsoberfläche ist (siehe Architekturentscheid oben), wird die
+Pflege der Hofladen-Daten über ein **eigenes Sidebar-Panel** mit
+WebSocket-Backend abgebildet statt über Home-Assistant-Actions/Services.
 
 Nach der Einrichtung von HofKarte steht im Home-Assistant-Seitenmenü die
 Verwaltungsseite **HofKarte** zur Verfügung. Dort können Administratoren:

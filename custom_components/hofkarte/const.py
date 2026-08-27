@@ -34,14 +34,3 @@ STANDARD_MERKMALE: tuple[str, ...] = (
     "Parkplatz",
     "barrierefrei",
 )
-
-# Home-Assistant-Actions (Einheit 10)
-SERVICE_REFRESH = "refresh"
-SERVICE_SEARCH = "search"
-ATTR_SUCHBEGRIFF = "suchbegriff"
-ATTR_KATEGORIE = "kategorie"
-ATTR_PRODUKT = "produkt"
-ATTR_VERKAUFSART = "verkaufsart"
-ATTR_ZAHLUNGSART = "zahlungsart"
-ATTR_MERKMAL = "merkmal"
-ATTR_GEOEFFNET = "geoeffnet"

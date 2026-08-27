@@ -1,27 +1,3 @@
-# Changelog
-
-Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei
-dokumentiert.
-
-Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
-die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
-
-## [0.11.0] – 2026-08-26
-
-### Hinzugefügt
-
-- Einheit 10: Home-Assistant-Actions `hofkarte.refresh` (Daten neu laden)
-  und `hofkarte.search` (Freitextsuche plus Filter nach Kategorie, Produkt,
-  Verkaufsart, Zahlungsart, Merkmal und optional geöffnet/geschlossen).
-- Fachmodul `search.py` mit testbarer UND-Verknüpfung der Kriterien.
-- `services.yaml` sowie Übersetzungen der Action-Beschreibungen (de/en).
-
-### Geändert
-
-- Die grafische Verwaltungsoberfläche bleibt für CRUD zuständig; Suche und
-  Filter für Automationen laufen über die neuen Actions statt über eine
-  eigene API.
-
 ## 0.10.2
 - Stammdatenformular neu strukturiert: Name, Beschreibung, Adresse, PLZ/Ort, Land, Latitude/Longitude, Webseite.
 - Neues Feld `website` durchgängig im Datenmodell, Parsing und Management-UI.
@@ -35,6 +11,63 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
+
+### Hinzugefügt
+
+- Home-Assistant-Action `hofkarte.hoflaeden_suchen`
+  (`services.py`, Fachlogik in `search.py`): durchsucht und filtert die
+  verwalteten Hofläden. Parameter (alle optional, UND-verknüpft):
+  `suchbegriff` (Freitext über Name/Beschreibung/Ort, Teilstring),
+  `kategorie`, `produkt`, `verkaufsart`, `zahlungsart`, `merkmal`
+  (jeweils exakter, case-insensitiver Namensabgleich), `nur_geoeffnet`
+  (nutzt `opening_hours.is_open`, keine eigene Berechnungslogik). Liefert
+  Rückgabedaten (`SupportsResponse.ONLY`): Trefferanzahl sowie je
+  Treffer eine knappe Auswahl (`id`, `name`, `geoeffnet`).
+- `search.py`: reine, testbare Fachfunktion `find_hoflaeden` ohne
+  Home-Assistant-Abhängigkeit (analog zu `opening_hours.py`,
+  `distance.py`, `attributes.py`).
+- `services.yaml` sowie `strings.json`/`translations/{en,de}.json`:
+  Feldbeschreibungen für die Action (Titel, Beschreibung je Parameter),
+  sichtbar in Entwicklerwerkzeuge → Aktionen.
+- Umfangreiche Tests: `search.py` (Freitext, alle fünf Filterdimensionen
+  einzeln und kombiniert, `nur_geoeffnet` inkl. unbekanntem
+  Öffnungsstatus, Reihenfolge/Unveränderlichkeit der Eingabe) sowie
+  `services.py` (Registrierung, Rückgabedaten für verschiedene
+  Filterkombinationen, Schema-Validierung ungültiger Datentypen und
+  unbekannter Felder).
+
+### Geändert
+
+- `__init__.py`: `async_setup` registriert die neue Action zusätzlich zu
+  WebSocket-Befehlen und Frontend-Assets (Domain-Ebene, analog zum
+  bestehenden Muster – Actions sind nicht an eine einzelne Config Entry
+  gebunden).
+
+### Behoben (während der Implementierung)
+
+- **Bug in `services.py`:** Der Service-Handler war ursprünglich als
+  `lambda call: _async_hoflaeden_suchen(hass, call)` registriert. Eine
+  `lambda`-Hülle um eine `async def`-Funktion liefert beim Aufruf eine
+  nicht ausgeführte Coroutine zurück; Home Assistant erkennt eine
+  `lambda` nicht als Koroutinenfunktion und awaitet sie nicht,
+  wodurch die Coroutine selbst (statt eines Dicts) als Rückgabewert
+  ankam und `homeassistant.exceptions.HomeAssistantError:
+  service_reponse_invalid` auslöste. Behoben durch eine eigene
+  `async def _service_handler(call)`-Funktion. Durch die Tests dieser
+  Einheit gefunden und sofort behoben.
+
+### Bewusst nicht implementiert
+
+- Eigene „Hofladen-Daten aktualisieren“-Action: Home Assistants
+  eingebaute Action `homeassistant.update_entity` deckt dies für alle
+  HofKarte-Entities (basierend auf `CoordinatorEntity`) bereits ab –
+  eine eigene Action würde dies nur duplizieren.
+- Separate Actions je Filterdimension: eine einzige Such-Action mit
+  mehreren optionalen Parametern deckt alle geforderten Fälle ab.
+- Keine proprietäre REST-API, keine globale Suche über andere
+  Home-Assistant-Integrationen hinweg (Grenzen dieser Einheit).
+
+## [0.10.3] - Unveröffentlicht
 
 ### Behoben
 
