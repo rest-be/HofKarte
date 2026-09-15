@@ -10,6 +10,60 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- **Read-only Detailansicht** je Hofladen in der Verwaltungsoberfläche
+  (`static/hofkarte-panel.js`): zeigt Stammdaten, Adresse, Koordinaten,
+  Öffnungszeiten, Sortiment und Bilder kompakt an, ohne editierbare
+  Felder – erreichbar über einen neuen „Details“-Button in der Liste.
+  Kein neuer Backend-Endpunkt nötig (nutzt die bereits über
+  `hofkarte/management/list` geladenen Daten).
+- **Koordinaten-Eingabe im Schweizer System LV95/EPSG:2056**
+  (`custom_components/hofkarte/lv95.py`, referenzimplementierte und
+  gegen einen amtlichen swisstopo-Referenzpunkt verifizierte
+  Näherungsformeln; identische Formeln clientseitig in
+  `hofkarte-panel.js`). Ein Infobutton (ⓘ) neben den Koordinatenfeldern
+  erklärt LV95 direkt im Formular. **Keine Datenmodell-Änderung und
+  keine Migration nötig:** intern wird weiterhin WGS84 gespeichert
+  (siehe Architekturentscheid in `lv95.py`/`docs/architecture.md`);
+  bestehende Koordinaten werden beim Öffnen der Bearbeitungsansicht
+  automatisch als LV95 angezeigt.
+- **Öffnungszeiten-Editor überarbeitet:** pro Wochentag ein
+  übersichtlicher Block mit den Modi „Geschlossen“ / „24 Stunden
+  geöffnet“ / „Zeiten festlegen“ (mit beliebig vielen Intervallen je
+  Tag), statt eines `prompt()`-Dialogs zum Hinzufügen neuer Intervalle.
+  „24 Stunden geöffnet“ wird als Intervall 00:00–23:59 gespeichert
+  (bereits zuvor an anderer Stelle im Projekt verwendete Konvention,
+  keine neue Datenmodell-Änderung).
+- **Webseite als anklickbarer Link** in der Detailansicht: wird nur
+  angezeigt, wenn eine plausible `http(s)`-Adresse hinterlegt ist
+  (kein leerer UI-Bereich bei fehlender Webseite; ungültige Adressen
+  werden als Text mit Hinweis statt als Link angezeigt).
+- Validierung in der Verwaltungsoberfläche erweitert: LV95-Koordinaten
+  werden auf Plausibilität geprüft (grobe Bounding Box
+  Schweiz/Liechtenstein) und Webseiten-Eingaben auf ein gültiges
+  `http(s)`-Format.
+- Tests: `tests/test_lv95.py` (10 Tests: amtlicher Referenzpunkt,
+  Rundreise-Konsistenz, Plausibilitätsprüfung, End-zu-End-Test über den
+  echten Coordinator, der exakt den Workflow des Panels nachbildet).
+
+### Geändert
+
+- `static/hofkarte-panel.js`: vollständig überarbeitet (Detailansicht,
+  LV95-Koordinatenfelder, neuer Öffnungszeiten-Editor). Bestehende
+  Funktionen (Liste, Erstellen, Bearbeiten, Löschen, Sortiment-Textfelder,
+  Sonderöffnungszeiten-Editor) unverändert erhalten.
+
+### Ausdrücklich unverändert (keine Architekturänderung)
+
+- `models.py`, `parsing.py`, `distance.py`, `data_provider.py`,
+  `coordinator.py`, `management.py`: keine Änderungen. Der
+  WebSocket-Vertrag (`hofkarte/management/list|save|delete`) und das
+  gespeicherte Datenformat sind identisch zu vorher – bestehende
+  Hofladen-Daten funktionieren ohne jede Migration unverändert weiter.
+
+## [0.13.3] - Unveröffentlicht
+
+### Hinzugefügt
+
 - `CONTRIBUTING.md`: Entwicklungsumgebung, Code-Stil/Linting/Typisierung,
   Tests ausführen, Branch-/Commit-Konventionen, Pull-Request-Ablauf,
   Umgang mit Übersetzungen.

@@ -132,23 +132,58 @@ sichtbar). Dort können Administratoren:
 
 - neue Hofläden erstellen,
 - bestehende Hofläden bearbeiten,
-- Stammdaten und Koordinaten ändern,
-- reguläre und Sonderöffnungszeiten bearbeiten,
+- Stammdaten und Koordinaten ändern (Koordinateneingabe im Schweizer
+  System **LV95/EPSG:2056**, siehe unten),
+- reguläre und Sonderöffnungszeiten bearbeiten (pro Wochentag:
+  Geschlossen / 24 Stunden geöffnet / Zeiten festlegen, mit beliebig
+  vielen Intervallen),
 - Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale
   bearbeiten,
 - Hofläden kontrolliert löschen.
+
+Zusätzlich gibt es eine **read-only Detailansicht** je Hofladen
+(„Details“-Button in der Liste): zeigt alle Stammdaten, Öffnungszeiten,
+Sortiment und Bilder kompakt und übersichtlich an, **ohne** editierbare
+Felder – gedacht für den schnellen Überblick, getrennt von der
+Bearbeitung.
 
 Änderungen werden direkt im integrationsinternen Home-Assistant-Storage
 persistiert und ohne Neustart an Coordinator, Devices und Entities
 weitergegeben. Die Verwaltungsoberfläche verwendet ausschliesslich
 lokale Home-Assistant-Mechanismen (kein externer Dienst).
 
+### Koordinaten (LV95/EPSG:2056)
+
+Die Verwaltungsoberfläche erfasst und zeigt Koordinaten im Schweizer
+Landeskoordinatensystem **LV95** (Ostwert E / Nordwert N, z. B. von
+[map.geo.admin.ch](https://map.geo.admin.ch) übernehmbar), statt der
+bisherigen WGS84-Dezimalgrad-Eingabe. Ein Infobutton (ⓘ) neben den
+Eingabefeldern erklärt LV95 kurz direkt im Formular.
+
+**Wichtig – keine Datenmodell-Änderung:** Intern speichert HofKarte
+Koordinaten weiterhin als WGS84-Dezimalgrad
+(`Hofladen.latitude`/`longitude`, siehe `docs/architecture.md`) – das
+ist zwingend, da Home Assistants eigene Mechanismen (Positionsangabe,
+`distance`-Sensor, Kartenkarten) ausschliesslich WGS84 verstehen. Die
+Umrechnung LV95 ↔ WGS84 erfolgt ausschliesslich im Browser
+(`custom_components/hofkarte/lv95.py` dokumentiert dieselben, dort
+referenzimplementierten Formeln). **Es ist daher keine Migration
+bestehender Daten nötig** – bereits gespeicherte Hofläden werden beim
+Öffnen der Bearbeitungsansicht automatisch von WGS84 nach LV95
+umgerechnet angezeigt; bleiben die Koordinatenfelder unverändert, wird
+beim Speichern der ursprüngliche WGS84-Wert unverändert beibehalten
+(kein wiederholtes Runden bei jedem Speichern).
+
 **Technischer Aufbau:** `frontend.py` registriert das Sidebar-Panel
 sowie die statischen JS-Assets; `management.py` stellt dafür
 WebSocket-Befehle bereit (`hofkarte/management/list|save|delete`,
 require_admin-geschützt) und delegiert alle Schreibzugriffe an den
 Coordinator (`async_save_hofladen`/`async_delete_hofladen`) – keine
-eigene Datenhaltung neben dem Coordinator.
+eigene Datenhaltung neben dem Coordinator. Die Detailansicht benötigt
+keinen eigenen Backend-Endpunkt: Sie zeigt read-only die über
+`hofkarte/management/list` bereits geladenen Daten des jeweiligen
+Hofladens an. Die LV95-Umrechnung findet ausschliesslich clientseitig
+in `static/hofkarte-panel.js` statt.
 
 ## Bereitgestellte Devices
 
@@ -541,6 +576,11 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
   Adresse auflöst, wird nicht erkannt.
 - Keine eigene SQL-Datenbank – Persistenz erfolgt über Home Assistants
   `helpers.storage.Store` (JSON-Datei unter `.storage/`).
+- Die LV95-Umrechnung (`lv95.py`) nutzt die von swisstopo
+  veröffentlichten Näherungsformeln (Genauigkeit ca. 1–5 Meter im
+  Mittelland) – ausreichend für die Gebäudezuordnung eines Hofladens,
+  nicht vermessungstechnisch exakt. Für Liechtenstein/Grenzgebiete kann
+  die Genauigkeit geringfügig abweichen.
 
 ## Datenschutz- und Standort-Hinweise
 

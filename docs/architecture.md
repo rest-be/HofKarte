@@ -138,6 +138,26 @@ Koordinaten eines Hofladens. Reine, HA-unabhängige Fachfunktionen;
 `is_valid_home_position` behandelt das Standardpaar `0.0/0.0` einer
 unkonfigurierten Installation als unbekannt.
 
+### LV95/EPSG:2056 (Koordinaten-Eingabeformat)
+
+`lv95.py` implementiert die swisstopo-Näherungsformeln zur Umrechnung
+zwischen WGS84 und dem Schweizer Landeskoordinatensystem LV95.
+**Wichtig:** Das interne Datenmodell (`models.Hofladen.latitude`/
+`longitude`) bleibt WGS84 – LV95 ist ausschliesslich ein
+Eingabe-/Anzeigeformat der Verwaltungsoberfläche
+(`static/hofkarte-panel.js`, dort dieselben Formeln dupliziert, siehe
+Docstring in `lv95.py` für die Begründung). Diese Trennung bedeutet:
+
+- Keine Änderung an `models.py`, `parsing.py` oder `distance.py`.
+- Keine Migration bestehender Hofladen-Daten nötig.
+- Home-Assistant-Kompatibilität (Standortangabe, Kartenkarten,
+  `distance`-Sensor) bleibt vollständig erhalten.
+
+`lv95.py` wird vom Python-Code aktuell nicht direkt aufgerufen (die
+Umrechnung geschieht im Browser); es dient als getestete
+Referenzimplementierung und für mögliche künftige serverseitige
+Validierung.
+
 ## Sortiment-Logik
 
 `attributes.py` überführt Kategorien/Produkte/Zahlungsarten/
@@ -172,6 +192,13 @@ native, in HA integrierte Verwaltungsseite konsistent mit diesem
 Prinzip. Alle Schreibzugriffe der Oberfläche laufen über die
 öffentlichen Coordinator-Methoden (siehe oben), nicht über eine eigene
 Datenhaltung.
+
+Das Panel (`static/hofkarte-panel.js`) trennt drei Ansichten
+(client-seitiger Zustand, kein serverseitiges Routing): Liste,
+Bearbeiten und eine reine **Detailansicht** (read-only). Die
+Detailansicht benötigt keinen eigenen WebSocket-Befehl – sie zeigt die
+bereits über `hofkarte/management/list` geladenen Daten an, ohne
+Bearbeitungsmöglichkeit.
 
 ## Diagnostics
 

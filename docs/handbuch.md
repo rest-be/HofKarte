@@ -102,6 +102,11 @@ können Hofläden verwaltet werden:
   Öffnungszeiten, Sortiment, Bilder).
 - **Bearbeiten:** bestehenden Hofladen in der Liste auswählen, Felder
   ändern, speichern.
+- **Details ansehen:** über den Button „Details“ eine **reine
+  Anzeigeansicht** öffnen – übersichtlich strukturiert, ohne
+  editierbare Felder. Gedacht für den schnellen Überblick, ohne
+  versehentlich etwas zu verändern. Über den Button „Bearbeiten“ in der
+  Detailansicht gelangt man bei Bedarf gezielt in den Bearbeitungsmodus.
 - **Löschen:** Hofladen kontrolliert entfernen (inklusive des
   zugehörigen Geräts und aller Entities in Home Assistant).
 
@@ -168,7 +173,17 @@ HofKarte unterscheidet **reguläre Öffnungszeiten** und
   **Sonderöffnungszeiten überschreiben reguläre Zeiten für ihren
   Zeitraum vollständig.**
 
-Beide werden über die Verwaltungsoberfläche gepflegt (Kapitel 4).
+Beide werden über die Verwaltungsoberfläche gepflegt (Kapitel 4). Für
+reguläre Öffnungszeiten wählt man pro Wochentag einen von drei Modi:
+
+- **Geschlossen** – kein Intervall für diesen Tag.
+- **24 Stunden geöffnet** – ganztägig geöffnet.
+- **Zeiten festlegen** – ein oder mehrere „Von–Bis“-Intervalle, über
+  „+ weiteres Intervall“ erweiterbar (z. B. für eine Mittagspause).
+
+In der Detailansicht (Kapitel 4) werden die Wochentage stets in fester
+Reihenfolge Montag–Sonntag angezeigt, mit „Geschlossen“, „24 Stunden
+geöffnet“ oder den konkreten Zeiten je nach hinterlegtem Modus.
 
 **Mitternachtsüberschreitung:** Ein Intervall, dessen Ende vor seinem
 Beginn liegt (z. B. „22:00–02:00“), wird korrekt als über Mitternacht
@@ -188,6 +203,32 @@ Bereich beim Zurückstellen der Uhr wird keine explizite
 Mehrdeutigkeits-Auflösung vorgenommen (seltener Grenzfall).
 
 ## 7. Standort und Entfernung
+
+### Koordinaten eingeben (LV95/EPSG:2056)
+
+In der Verwaltungsoberfläche werden Hofladen-Koordinaten im Schweizer
+Landeskoordinatensystem **LV95** erfasst (Ostwert **E** und Nordwert
+**N**, jeweils in Metern, z. B. E ≈ 2'600'000–2'700'000, N ≈
+1'150'000–1'250'000 im Mittelland). Ein Klick auf den Infobutton (ⓘ)
+neben den Feldern zeigt eine kurze Erklärung direkt im Formular.
+
+**Woher bekomme ich die LV95-Koordinaten eines Hofladens?**
+Auf [map.geo.admin.ch](https://map.geo.admin.ch) den gewünschten Ort
+suchen, mit der rechten Maustaste auf den genauen Standort klicken –
+die Koordinaten werden dort direkt als LV95 (E/N) angezeigt und können
+kopiert werden.
+
+Intern speichert HofKarte die Koordinaten weiterhin im international
+gebräuchlichen WGS84-Format (wie von Home Assistant selbst verwendet);
+die Umrechnung geschieht automatisch beim Speichern bzw. Anzeigen –
+das ist für die normale Nutzung nicht relevant.
+
+**Genauigkeit der Umrechnung:** Die LV95-Umrechnung nutzt die von
+swisstopo veröffentlichten Näherungsformeln (Genauigkeit ca. 1–5 Meter)
+– ausreichend, um einen Hofladen einem Gebäude zuzuordnen, aber nicht
+vermessungstechnisch exakt.
+
+### Entfernung berechnen
 
 Der Sensor „Entfernung“ berechnet die **Luftlinien-Entfernung**
 (nicht die Strassenentfernung) zwischen der in Home Assistant
