@@ -1,51 +1,72 @@
 # HofKarte
 
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
-und Darstellung von Hofläden.
+und Darstellung von Hofläden (Direktvermarkter, Selbstbedienungsläden,
+Hofläden mit und ohne Personal).
 
-> **Status:** Diagnostics, Fehlerbehandlung, Performance und Qualität
-> (Einheit 12). Die Integration wurde auf Robustheit für den
-> Dauerbetrieb geprüft: Config-Entry-Fehler, Reload/Unload,
-> Netzwerkfehler und ungültige Daten werden sauber behandelt, eine
-> Diagnose-Ausgabe steht zur Verfügung, und mehrere während der Prüfung
-> gefundene Qualitätsmängel wurden behoben (siehe Abschnitt
-> „Diagnostics, Fehlerbehandlung und Qualität“ unten). Ergänzt um zwei
-> vorangegangene Architekturentscheide: (1) Home Assistant ist sowohl
-> Laufzeit- als auch Verwaltungsoberfläche für HofKarte – die vom
-> Benutzer gepflegten Hofläden werden in einem integrationsinternen,
-> persistenten Store gehalten (keine externe Datenbank, kein externer
-> Dienst); (2) HofKarte bietet zusätzlich zu den Home-Assistant-Entities
-> eine **eigene grafische Verwaltungsoberfläche** (Sidebar-Panel) für
-> Administratoren – eine bewusste, dokumentierte Abweichung vom
-> ursprünglichen Plan. Für Automationen und Skripte steht zusätzlich die
-> Home-Assistant-Action `hofkarte.hoflaeden_suchen` zur Verfügung.
+> **Status:** Übersetzungen, Dokumentation und HACS (Einheit 13). Die
+> Integration ist funktional vollständig und technisch robust (siehe
+> Einheiten 1–12) und wurde für Benutzer und HACS vorbereitet: sauberere
+> Repository-Struktur, vollständige README, konsistente Versionierung.
+> Ergänzt um zwei vorangegangene Architekturentscheide: (1) Home
+> Assistant ist sowohl Laufzeit- als auch Verwaltungsoberfläche für
+> HofKarte – die vom Benutzer gepflegten Hofläden werden in einem
+> integrationsinternen, persistenten Store gehalten (keine externe
+> Datenbank, kein externer Dienst); (2) HofKarte bietet zusätzlich zu
+> den Home-Assistant-Entities eine **eigene grafische
+> Verwaltungsoberfläche** (Sidebar-Panel) für Administratoren – eine
+> bewusste, dokumentierte Abweichung vom ursprünglichen Plan.
 
-## Über dieses Projekt
+## Zweck
 
-Home Assistant ist die Laufzeitumgebung. Es gibt keine eigenständige
-Webanwendung, kein eigenes Backend und keine eigene Datenbank. Die
-Integration nutzt ausschliesslich Home-Assistant-eigene Mechanismen
-(Config Flow, ConfigEntry, DataUpdateCoordinator, Device- und Entity-Registry).
+HofKarte verwaltet Hofläden lokal in Home Assistant: Stammdaten,
+Öffnungszeiten, Sortiment (Kategorien, Produkte, Zahlungsarten,
+Verkaufsarten, Merkmale) und Bilder. Jeder Hofladen erscheint als Device
+mit Entities für Öffnungsstatus, nächste Öffnung/Schliessung, Entfernung
+zum eigenen Zuhause und Hauptbild. Eine Home-Assistant-Action erlaubt
+das Durchsuchen und Filtern aus Automationen und Skripten heraus. Es
+gibt keine eigenständige Webanwendung, kein externes Backend und keine
+externe Datenbank – Home Assistant ist Laufzeit- **und**
+Verwaltungsumgebung zugleich.
 
-## Installation über HACS
+## Voraussetzungen
+
+- Eine laufende Home-Assistant-Installation, Version **2025.1 oder
+  neuer** (getestet gegen 2025.1.4; siehe `hacs.json`).
+- [HACS](https://hacs.xyz/) für die empfohlene Installation (nicht
+  zwingend – manuelle Installation ist möglich, siehe unten).
+- Kein Cloud-Konto, kein externer Dienst und keine zusätzlichen
+  Python-Pakete nötig (`requirements: []` in `manifest.json`).
+- Für den Entfernungs-Sensor: eine sinnvoll gesetzte Position der
+  Home-Assistant-Installation (**Einstellungen → System → Allgemein**).
+  Ohne diese bleibt der Sensor auf „unbekannt“.
+
+## Installation
+
+### Über HACS (empfohlen)
 
 1. HACS öffnen.
-2. Über die Drei-Punkte-Menü-Schaltfläche **Benutzerdefinierte Repositories**
-   auswählen.
-3. Dieses Repository als **Integration** hinzufügen.
-4. "HofKarte" in HACS suchen und installieren.
+2. Über die Drei-Punkte-Menü-Schaltfläche **Benutzerdefinierte
+   Repositories** auswählen.
+3. Dieses Repository (`https://github.com/rest-be/HofKarte`) als
+   **Integration** hinzufügen.
+4. „HofKarte“ in HACS suchen und installieren.
 5. Home Assistant neu starten.
 
-*Hinweis: Solange dieses Projekt nicht im HACS-Default-Store gelistet ist,
-ist Schritt 2–3 (benutzerdefiniertes Repository) erforderlich.*
+*Hinweis: Solange dieses Projekt nicht im HACS-Default-Store gelistet
+ist, sind die Schritte 2–3 (benutzerdefiniertes Repository) nötig.*
 
-## Manuelle Installation (Entwicklung)
+### Manuelle Installation
+
+Nur nötig, wenn HACS nicht zur Verfügung steht oder eine
+Entwicklungsversion getestet werden soll:
 
 1. Den Ordner `custom_components/hofkarte/` in das
-   `custom_components`-Verzeichnis der Home-Assistant-Konfiguration kopieren.
+   `custom_components`-Verzeichnis der Home-Assistant-Konfiguration
+   kopieren.
 2. Home Assistant neu starten.
 3. Prüfen, dass beim Start keine Fehler zur Domain `hofkarte` im Log
-   erscheinen (siehe Abschnitt „Prüfanleitung“ unten).
+   erscheinen (siehe „Fehlerbehebung“ unten).
 
 ## Einrichtung
 
@@ -56,189 +77,79 @@ Nach der Installation:
 3. Im Einrichtungsdialog einen Anzeigenamen für die Integration vergeben
    (z. B. „HofKarte“) und bestätigen.
 
-HofKarte ist als Single-Instance-Integration konzipiert: Es kann nur eine
-Instanz pro Home-Assistant-Installation eingerichtet werden, da sie eine
-zentrale, HA-weite Hofladen-Verwaltung darstellt. Ein erneuter
+HofKarte ist als Single-Instance-Integration konzipiert: Es kann nur
+eine Instanz pro Home-Assistant-Installation eingerichtet werden, da sie
+eine zentrale, HA-weite Hofladen-Verwaltung darstellt. Ein erneuter
 Einrichtungsversuch wird entsprechend abgelehnt.
 
-## Entitäten
+## Konfiguration
 
-Die Integration stellt für jeden Hofladen einen Binary Sensor und drei
-Sensoren bereit: „Geöffnet“, „Nächste Öffnung“, „Nächste Schliessung“ und
-„Entfernung“.
+HofKarte unterscheidet zwei Arten von „Konfiguration“:
 
-## Internes Datenmodell
+- **Die Integration selbst:** Der Config Flow fragt ausschliesslich
+  einen Anzeigenamen ab (siehe „Einrichtung“). Es gibt aktuell keinen
+  Options Flow – Update-Intervall und Abruf-Timeout des Coordinators
+  sind nur auf Code-Ebene änderbar (siehe „Bekannte Einschränkungen“).
+- **Die Hofladen-Daten:** Hofläden, ihre Stammdaten, Öffnungszeiten und
+  ihr Sortiment werden **nicht** über die Home-Assistant-Konfiguration
+  gepflegt, sondern über die grafische Verwaltungsoberfläche (siehe
+  nächster Abschnitt) bzw. programmatisch über den Coordinator.
 
-Intern verwaltet HofKarte einen Hofladen als typisierte, unveränderliche
-Datenstruktur (`custom_components/hofkarte/models.py`) mit u. a.:
+## Grafische Hofladenverwaltung
 
-- Stammdaten (ID, Name, Beschreibung, Adresse, PLZ, Ort, Land, Koordinaten)
-- regelmässigen Öffnungszeiten und datumsbezogenen Sonderöffnungszeiten
-- Produkten, Kategorien, Zahlungsarten, Verkaufsarten und Merkmalen
-- optionalen Bildern
+**Architekturentscheid:** Der ursprüngliche Umsetzungsplan sah für
+Suche/Filter/Actions ohne eigene UI vor („Keine proprietäre REST-API“,
+„Keine eigene UI“). Für HofKarte wurde davon bewusst abgewichen: Da Home
+Assistant sowohl Laufzeit- als auch Verwaltungsoberfläche ist, wird die
+Pflege der Hofladen-Daten über ein **eigenes Sidebar-Panel** mit
+WebSocket-Backend abgebildet statt ausschliesslich über
+Home-Assistant-Actions.
 
-Rohdaten (z. B. künftig aus einer lokalen Datenquelle) werden über
-`custom_components/hofkarte/parsing.py` in dieses Modell überführt und
-dabei validiert. Ungültige oder unvollständige Pflichtfelder führen zu
-einer klaren Fehlermeldung (`HofladenValidationError`); fehlende optionale
-Felder werden robust auf `None` bzw. leere Sammlungen abgebildet.
+Nach der Einrichtung steht im Home-Assistant-Seitenmenü die
+Verwaltungsseite **HofKarte** zur Verfügung (nur für Administratoren
+sichtbar). Dort können Administratoren:
 
-Für Öffnungszeiten und Sonderöffnungszeiten gilt: `ende == beginn` ist
-ungültig (keine definierbare Dauer). `ende` **vor** `beginn` ist hingegen
-gültig und bedeutet ein Intervall, das die Mitternacht überschreitet
-(z. B. 22:00–02:00). Diese Regel wurde in Einheit 7 bewusst gelockert, um
-Mitternachtsüberschreitung überhaupt abbilden zu können.
+- neue Hofläden erstellen,
+- bestehende Hofläden bearbeiten,
+- Stammdaten und Koordinaten ändern,
+- reguläre und Sonderöffnungszeiten bearbeiten,
+- Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale
+  bearbeiten,
+- Hofläden kontrolliert löschen.
 
-Dieses Datenmodell ist rein intern und nicht direkt an Home-Assistant-
-Entities gebunden.
+Änderungen werden direkt im integrationsinternen Home-Assistant-Storage
+persistiert und ohne Neustart an Coordinator, Devices und Entities
+weitergegeben. Die Verwaltungsoberfläche verwendet ausschliesslich
+lokale Home-Assistant-Mechanismen (kein externer Dienst).
 
-## Datenabruf (Coordinator)
+**Technischer Aufbau:** `frontend.py` registriert das Sidebar-Panel
+sowie die statischen JS-Assets; `management.py` stellt dafür
+WebSocket-Befehle bereit (`hofkarte/management/list|save|delete`,
+require_admin-geschützt) und delegiert alle Schreibzugriffe an den
+Coordinator (`async_save_hofladen`/`async_delete_hofladen`) – keine
+eigene Datenhaltung neben dem Coordinator.
 
-Ein zentraler `HofKarteUpdateCoordinator`
-(`custom_components/hofkarte/coordinator.py`) ruft die Hofladen-Rohdaten
-asynchron ab, validiert sie über `parsing.parse_hofladen` und stellt das
-Ergebnis als `dict[str, Hofladen]` für die gesamte Integration bereit.
-Künftige Entities lesen ausschliesslich aus dem Coordinator – es gibt
-keine Mehrfachabfragen pro Entity.
+## Bereitgestellte Devices
 
-Eigenschaften:
-
-- Asynchroner Abruf mit konfigurierbarem Timeout (Standard: 30 Sekunden)
-- Konfigurierbares Update-Intervall (Standard: 15 Minuten)
-- Initialer Datenabruf beim Einrichten der Config Entry; schlägt dieser
-  fehl, versucht Home Assistant die Einrichtung automatisch später erneut
-  (`ConfigEntryNotReady`)
-- Einzelne ungültige Datensätze werden übersprungen und geloggt, statt den
-  gesamten Abruf scheitern zu lassen
-- Bei einem späteren Fehlversuch bleiben die zuletzt erfolgreich
-  abgerufenen Daten erhalten; `coordinator.last_update_success` zeigt die
-  Verfügbarkeit an
-
-### Data Provider und Architekturentscheid zur Datenquelle
-
-**Architekturentscheid:** Home Assistant ist sowohl Laufzeitumgebung als
-auch Verwaltungsoberfläche für HofKarte. Die vom Benutzer gepflegten
-Hofläden werden in einem integrationsinternen, persistenten Store
-gehalten – keine externe Datenbank, kein externer Dienst. Der
-`HofladenDataProvider` kapselt diesen Store vollständig; Coordinator und
-Entities greifen ausschliesslich über diese Abstraktion darauf zu und
-kennen die konkrete Speicherform nicht.
-
-`custom_components/hofkarte/data_provider.py` definiert dazu:
-
-- **`HofladenDataProvider`** / **`MutableHofladenDataProvider`**: die
-  abstrakten Schnittstellen (unverändert seit den früheren Einheiten).
-- **`StorageHofladenDataProvider`**: die produktive Implementierung,
-  verwendet in `__init__.py`. Kapselt Home Assistants
-  `helpers.storage.Store` (JSON-Datei unter `.storage/` im
-  Konfigurationsverzeichnis). Startet leer – keine erfundenen
-  Beispieldaten; Hofläden werden vollständig von der Nutzerin/dem
-  Nutzer über `async_add_hofladen`/`async_update_hofladen_sortiment`
-  gepflegt. Daten überstehen Neustarts und Reloads.
-- **`StaticTestDataProvider`**: reiner In-Memory-Provider ausschliesslich
-  für die Testsuite (keine Persistenz).
-
-### Neuen Hofladen hinzufügen
-
-Provider, die Schreibzugriffe unterstützen (`StorageHofladenDataProvider`
-in der Produktion, `StaticTestDataProvider` in Tests), implementieren
-zusätzlich `MutableHofladenDataProvider.async_add_raw_hofladen`. Der
-empfohlene Aufrufweg ist
-`HofKarteUpdateCoordinator.async_add_hofladen(raw_hofladen)`:
-
-1. Validiert die Rohdaten über `parsing.parse_hofladen` (Fail-Fast: bei
-   ungültigen Daten wird nichts geschrieben).
-2. Lehnt doppelte IDs ab (`DuplicateHofladenIdError`).
-3. Reicht die Daten an den Provider weiter und stösst einen regulären
-   Coordinator-Refresh an, sodass `coordinator.data` **und** die Device
-   Registry (siehe unten) automatisch konsistent aktualisiert werden.
-
-Unterstützt der konfigurierte Provider keine Schreibzugriffe (z. B. ein
-künftiger, rein lesender externer Dienst), wirft die Funktion einen
-`NotImplementedError`. Eine Home-Assistant-Oberfläche (Service/UI) für
-diese Funktion ist nicht Teil dieser Einheit.
-
-### Sortiment und Eigenschaften eines Hofladens bearbeiten
-
-Analog dazu unterstützt `MutableHofladenDataProvider` auch das teilweise
-Bearbeiten eines **bestehenden** Hofladens über
-`async_update_raw_hofladen(hofladen_id, updates)`. Der empfohlene
-Aufrufweg ist
-`HofKarteUpdateCoordinator.async_update_hofladen_sortiment(hofladen_id, ...)`
-– bewusst beschränkt auf genau die fünf Fachbereiche aus dem Abschnitt
-„Sortiment und Eigenschaften“ unten (Kategorien, Produkte,
-Zahlungsarten, Verkaufsarten, Merkmale). Andere Felder (Name, Adresse,
-Öffnungszeiten, ...) werden über diese Funktion nicht verändert.
-
-```python
-await coordinator.async_update_hofladen_sortiment(
-    "hof-1",
-    zahlungsarten=[{"id": "twint", "name": "TWINT"}],
-)
-```
-
-- Jeder gesetzte Parameter ersetzt die entsprechende Sammlung
-  vollständig; `None` (Standard) bedeutet „unverändert lassen“. Eine
-  bewusst leere Liste `[]` leert die Sammlung.
-- Fail-Fast: Der zusammengeführte Datensatz wird vor jedem Schreibzugriff
-  vollständig über `parsing.parse_hofladen` validiert.
-- Wirft `HofladenNotFoundError`, falls die `id` nicht existiert, sowie
-  `NotImplementedError` bei einem nicht-schreibfähigen Provider.
-- Löst wie beim Hinzufügen einen regulären Refresh aus – Änderungen
-  erscheinen ohne Reload in `coordinator.data` und den abhängigen
-  Sortiment-Attributen (siehe unten).
-
-**Standardkatalog:** `custom_components/hofkarte/sortiment_katalog.py`
-sowie `const.STANDARD_ZAHLUNGSARTEN`/`STANDARD_VERKAUFSARTEN`/
-`STANDARD_MERKMALE` bieten vorgefertigte, gültige Rohdaten für gängige
-Werte:
-
-| Zahlungsarten | Verkaufsarten     | Merkmale        |
-|---------------|-------------------|-----------------|
-| Bargeld       | Hofladen          | Bio             |
-| Debitkarte    | Selbstbedienung   | eigener Anbau   |
-| Kreditkarte   | Verkaufsautomat   | Parkplatz       |
-| TWINT         | Ab-Hof-Verkauf    | barrierefrei    |
-
-```python
-from custom_components.hofkarte.sortiment_katalog import (
-    standard_zahlungsarten_rohdaten,
-)
-
-await coordinator.async_update_hofladen_sortiment(
-    "hof-1", zahlungsarten=standard_zahlungsarten_rohdaten()
-)
-```
-
-Dies ist ein **Vorschlagskatalog** – Nutzer sind nicht auf diese Werte
-beschränkt; jeder beliebige Name ist zulässig.
-
-## Hofladen als Device
-
-Jeder vom Coordinator gelieferte Hofladen wird als logisches Device in der
+Jeder Hofladen wird als logisches Device in der
 Home-Assistant-Geräteverwaltung abgebildet
 (`custom_components/hofkarte/device.py`) – **kein physisches Gerät**.
 
 - Der Device-Identifier basiert ausschliesslich auf der stabilen
-  `Hofladen.id` und ändert sich nie zwischen Neustarts oder Reloads.
-- Es werden bewusst **keine** `manufacturer`- oder `model`-Angaben
-  gesetzt: Ein Hofladen hat fachlich weder Hersteller noch Modell: Diese
-  Angaben werden nicht erfunden.
+  Hofladen-ID und ändert sich nie zwischen Neustarts oder Reloads.
+- Es werden bewusst **keine** Hersteller- oder Modell-Angaben gesetzt:
+  Ein Hofladen hat fachlich weder Hersteller noch Modell.
 - Die Device Registry wird beim Einrichten und bei jedem weiteren
-  Coordinator-Update synchronisiert: neu hinzugekommene Hofläden erhalten
-  ein Device, entfernte Hofläden verlieren ihres. Wiederholte Syncs (z. B.
-  bei einem Reload) erzeugen keine Duplikate.
+  Coordinator-Update synchronisiert: neu hinzugekommene Hofläden
+  erhalten ein Device, entfernte Hofläden verlieren ihres. Wiederholte
+  Synchronisationen (z. B. bei einem Reload) erzeugen keine Duplikate.
 - Mehrere Hofläden sind durch ihre eindeutigen Identifiers sauber
   voneinander getrennt.
 
-Diese Einheit enthält bewusst noch keine vollständige Sensorlandschaft,
-keine Öffnungsstatuslogik und keine Actions – diese folgen in späteren
-Einheiten.
-
-## Entities
+## Bereitgestellte Entities
 
 Für jeden Hofladen werden folgende Entities bereitgestellt (jeweils dem
-zugehörigen Device zugeordnet, `unique_id` stabil aus `Hofladen.id`
+zugehörigen Device zugeordnet, `unique_id` stabil aus der Hofladen-ID
 gebildet):
 
 | Plattform       | Entity                | Device Class | Attribute                     |
@@ -254,18 +165,18 @@ gibt keine passende Home-Assistant-Device-Class für „Geschäft geöffnet“
 (vorhandene Klassen wie `opening` beziehen sich auf physische Öffnungen
 wie Türen/Fenster).
 
-Neu über den Coordinator hinzukommende Hofläden (siehe
-„Neuen Hofladen hinzufügen“ unten) erhalten automatisch alle fünf
-Entities, ohne dass ein Reload nötig ist. Entities werden „unavailable“,
-sobald der letzte Coordinator-Abruf fehlgeschlagen ist oder der Hofladen
-aus den Daten verschwunden ist.
+Neu über die Verwaltungsoberfläche hinzukommende Hofläden erhalten
+automatisch alle fünf Entities, ohne dass ein Reload nötig ist. Entities
+werden „unavailable“, sobald der letzte Coordinator-Abruf fehlgeschlagen
+ist oder der Hofladen aus den Daten verschwunden ist.
 
 ### Öffnungsstatus
 
-Die drei zeit-/öffnungsbezogenen Entities beziehen ihren Wert ausschliesslich aus dem dafür
-vorgesehenen Modul `custom_components/hofkarte/opening_hours.py`. Dieses
-Modul berechnet den Öffnungsstatus deterministisch anhand der
-regulären Öffnungszeiten und Sonderöffnungszeiten:
+Die drei zeit-/öffnungsbezogenen Entities beziehen ihren Wert
+ausschliesslich aus dem dafür vorgesehenen Modul
+`custom_components/hofkarte/opening_hours.py`. Dieses Modul berechnet
+den Öffnungsstatus deterministisch anhand der regulären Öffnungszeiten
+und Sonderöffnungszeiten:
 
 - Montag bis Sonntag, mehrere Intervalle pro Tag
 - Sonderöffnungszeiten überschreiben reguläre Zeiten vollständig,
@@ -277,8 +188,8 @@ regulären Öffnungszeiten und Sonderöffnungszeiten:
   statt naiver Datums-/Uhrzeit-Arithmetik)
 
 Hat ein Hofladen überhaupt keine Öffnungszeiten hinterlegt, liefern die
-Funktionen bewusst `None` (Zustand „unbekannt“) statt fälschlich
-„geschlossen“ zu behaupten.
+Funktionen bewusst „unbekannt“ statt fälschlich „geschlossen“ zu
+behaupten.
 
 **Bekannte Grenze:** Bei Uhrzeiten, die exakt in eine
 Sommerzeit-Umstellungslücke fallen oder im doppelt vorkommenden Bereich
@@ -286,14 +197,14 @@ beim Zurückstellen liegen, wird die von Python/`zoneinfo` standardmässig
 gewählte Auflösung verwendet (keine explizite Disambiguierung für diese
 seltenen Grenzfälle).
 
-## Sortiment und Eigenschaften
+### Sortiment und Eigenschaften
 
 Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale sind
 fachlich keine Messwerte und rechtfertigen keine eigenen Sensoren. Sie
-werden daher als `extra_state_attributes` **ausschliesslich** am Binary
-Sensor „Geöffnet“ bereitgestellt (`custom_components/hofkarte/attributes.py`).
-Nutzer können diese fünf Fachbereiche pro Hofladen bearbeiten – siehe
-„Sortiment und Eigenschaften eines Hofladens bearbeiten“ oben.
+werden daher als Zusatzattribute **ausschliesslich** am Binary Sensor
+„Geöffnet“ bereitgestellt (`custom_components/hofkarte/attributes.py`).
+Diese fünf Fachbereiche können pro Hofladen über die Verwaltungsseite
+bearbeitet werden.
 
 ```yaml
 kategorien: ["Gemüse", "Milchprodukte"]
@@ -305,58 +216,56 @@ verkaufsarten: ["Ab-Hof-Verkauf"]
 merkmale: ["Bio"]
 ```
 
-- Fehlende Sammlungen ergeben stets eine leere Liste, nie `None` oder
-  einen fehlenden Schlüssel (stabile Struktur unabhängig vom
+- Fehlende Sammlungen ergeben stets eine leere Liste, nie einen
+  fehlenden Wert (stabile Struktur unabhängig vom
   Vollständigkeitsgrad der Daten).
 - Namen werden für eine deterministische Darstellung sortiert
-  (`str.casefold`, Unicode-Codepoint-Reihenfolge – **keine** lokalisierte
-  deutsche Kollation; Umlaute landen dadurch nach „Z“ statt bei
-  A/O/U einsortiert).
-- Verweist ein Produkt auf eine Kategorie-ID, die im Hofladen nicht
-  existiert, wird ersatzweise die rohe ID gezeigt statt die Zuordnung zu
-  verwerfen.
+  (Unicode-Codepoint-Reihenfolge – **keine** lokalisierte deutsche
+  Kollation; Umlaute landen dadurch nach „Z“ statt bei A/O/U
+  einsortiert).
 - Diese Attribute werden bewusst **nicht** auf die beiden
   Zeitpunkt-Sensoren dupliziert, um dieselben (teils umfangreichen)
   Daten nicht mehrfach über mehrere Entities hinweg zu wiederholen.
 
-## Entfernung
+### Entfernung
 
 Der Sensor „Entfernung“ zeigt die Luftlinien-Entfernung eines Hofladens
-zur konfigurierten Home-Assistant-Position
-(`hass.config.latitude`/`longitude`) in Kilometern
-(`custom_components/hofkarte/distance.py`):
+zur konfigurierten Home-Assistant-Position in Kilometern
+(`custom_components/hofkarte/distance.py`), berechnet über die
+Haversine-Formel. Zustand „unbekannt“, wenn der Hofladen keine
+Koordinaten hinterlegt hat oder die Home-Assistant-Position nicht
+bekannt ist – es wird kein Wert erfunden oder geschätzt (siehe
+„Datenschutz- und Standort-Hinweise“ unten).
 
-- Berechnung über die Haversine-Formel (Grosskreisdistanz), inklusive
-  korrekter Behandlung der Datumsgrenze.
-- Device Class `distance`, Einheit Kilometer, `state_class: measurement`.
-- Der volle, ungerundete Wert bleibt für Verlauf/Statistik erhalten; Home
-  Assistant rundet die Anzeige über `suggested_display_precision`
-  (1 Nachkommastelle). Für Kontexte ausserhalb von Entities steht
-  zusätzlich die eigenständig testbare Funktion `round_distance_km` zur
-  Verfügung.
-- Zustand „unbekannt“, wenn der Hofladen keine Koordinaten hinterlegt hat
-  oder die Home-Assistant-Position nicht bekannt ist – es wird kein Wert
-  erfunden oder geschätzt.
+### Bilder
 
-**Keine Standortverfolgung:** Es wird ausschliesslich die statische,
-konfigurierte Home-Position gelesen (kein `device_tracker`, keine
-Personen- oder Geräteverfolgung). Die Integration speichert diese
-Position nicht selbst und überträgt sie nicht an externe Dienste – die
-Berechnung erfolgt vollständig lokal.
+Jeder Hofladen zeigt sein Hauptbild über eine native
+Home-Assistant-`image`-Entity (`custom_components/hofkarte/image.py`,
+Sicherheitsprüfung in `images.py`):
 
-## Suche und Filter (Home-Assistant Action)
+- **Hauptbild:** das erste Bild mit einer sicheren, ladbaren URL.
+  Reihenfolge der hinterlegten Bilder bestimmt die Priorität.
+- **Weitere Bilder:** stehen als Zusatzattribut (`weitere_bilder`) an
+  derselben Entity zur Verfügung, nicht als eigene Entities oder
+  Galerie.
+- **Sicherheitsprüfung:** Nur `http`/`https`-URLs werden akzeptiert
+  (kein `file://`, `data:`, keine rohen Dateisystempfade), keine
+  eingebetteten Zugangsdaten, keine literale private/interne
+  IP-Adresse. Diese Prüfung ist rein syntaktisch (keine DNS-Auflösung,
+  um den Home-Assistant-Event-Loop nicht zu blockieren) – ein
+  Domainname, der erst später auf eine private Adresse auflöst, wird
+  dadurch nicht erkannt.
+- **Fehlende/ungültige Bilder** werden robust behandelt (leeres
+  Hauptbild statt Fehler).
+- **Kein eigener Bildabruf:** Home Assistants `image`-Entity-Plattform
+  übernimmt Abruf und Zwischenspeicherung selbst; HofKarte lädt und
+  speichert keine Bilddateien selbst.
+
+## Actions/Services
 
 Für Automationen, Skripte und Dashboards steht die Action
 `hofkarte.hoflaeden_suchen` zur Verfügung
 (`custom_components/hofkarte/services.py`, Fachlogik in `search.py`):
-
-```yaml
-action: hofkarte.hoflaeden_suchen
-data:
-  kategorie: Gemüse
-  zahlungsart: TWINT
-  nur_geoeffnet: true
-```
 
 **Parameter** (alle optional, werden UND-verknüpft):
 
@@ -368,9 +277,10 @@ data:
 | `verkaufsart`     | Text    | Exakter Name einer Verkaufsart                            |
 | `zahlungsart`     | Text    | Exakter Name einer Zahlungsart                            |
 | `merkmal`         | Text    | Exakter Name eines Merkmals                               |
-| `nur_geoeffnet`   | Bool    | Nur aktuell geöffnete Hofläden (nutzt `opening_hours.py`, Einheit 7) |
+| `nur_geoeffnet`   | Bool    | Nur aktuell geöffnete Hofläden                            |
 
-**Rückgabedaten** (`response_variable` in Skripten/Automationen nutzbar):
+**Rückgabedaten** (`response_variable` in Skripten/Automationen
+nutzbar):
 
 ```yaml
 anzahl_treffer: 1
@@ -382,60 +292,128 @@ hoflaeden:
 
 - Filter (`kategorie`, `produkt`, …) verlangen exakte Übereinstimmung
   (case-insensitive); der `suchbegriff` erlaubt Teilstring-Treffer.
-- Ein Hofladen ohne bekannten Öffnungsstatus (keine Öffnungszeiten
-  hinterlegt) gilt bei `nur_geoeffnet: true` **nicht** als Treffer –
-  es wird nicht angenommen, dass er geöffnet ist, nur weil der Status
-  unbekannt ist.
+- Ein Hofladen ohne bekannten Öffnungsstatus gilt bei
+  `nur_geoeffnet: true` **nicht** als Treffer.
 - Rückgabedaten sind bewusst knapp gehalten (ID, Name, Öffnungsstatus)
   statt einer vollständigen Kopie aller Hofladen-Felder.
 
-**Bewusst nicht implementiert:**
+**Bewusst nicht implementiert:** eine „Daten aktualisieren“-Action
+(deckt Home Assistants eingebaute Action `homeassistant.update_entity`
+bereits ab), separate Actions je Filterdimension, sowie eine
+proprietäre REST-API oder eine Suche über andere Integrationen hinweg.
 
-- Eine „Hofladen-Daten aktualisieren“-Action: Home Assistants
-  eingebaute Action `homeassistant.update_entity` deckt dies für alle
-  HofKarte-Entities bereits ab (sie basieren auf `CoordinatorEntity`).
-  Eine eigene Action hierfür würde bestehende Funktionalität lediglich
-  duplizieren.
-- Separate Actions je Filterdimension (eigene Action nur für Kategorie,
-  nur für Produkt, ...): eine einzige, klar strukturierte Such-Action
-  mit mehreren optionalen Parametern deckt alle genannten Fälle ab, ohne
-  naheliegend redundanten Code zu erzeugen.
-- Keine proprietäre REST-API, keine globale Suche über andere
-  Home-Assistant-Integrationen hinweg (ausserhalb des Geltungsbereichs
-  dieser Action).
+## Beispiele für Automationen
 
-## Bilder
+**Benachrichtigung, wenn ein Lieblings-Hofladen öffnet:**
 
-Jeder Hofladen zeigt sein Hauptbild über eine native
-Home-Assistant-`image`-Entity (`custom_components/hofkarte/image.py`,
-Validierung in `images.py`):
+```yaml
+alias: "Hofladen Müller ist offen"
+trigger:
+  - trigger: state
+    entity_id: binary_sensor.hofladen_mueller_geoeffnet
+    to: "on"
+action:
+  - action: notify.mobile_app
+    data:
+      message: "Hofladen Müller hat gerade geöffnet."
+```
 
-- **Hauptbild:** definiert als das erste Bild in `Hofladen.bilder` mit
-  einer sicheren, ladbaren URL. Reihenfolge in `bilder` bestimmt die
-  Priorität – es gibt bewusst kein zusätzliches „ist Hauptbild“-Feld im
-  Datenmodell.
-- **Weitere Bilder:** stehen als `extra_state_attributes`
-  (`weitere_bilder`, eine Liste aus `{"url": ..., "beschreibung": ...}`)
-  an derselben Entity zur Verfügung, nicht als eigene Entities oder
-  Galerie.
-- **Sicherheitsprüfung:** Nur `http`/`https`-URLs werden akzeptiert
-  (kein `file://`, `data:`, keine rohen Dateisystempfade), keine
-  eingebetteten Zugangsdaten, keine literale private/interne
-  IP-Adresse (z. B. `127.0.0.1`, `192.168.x.x`, `169.254.169.254`).
-  Diese Prüfung ist rein syntaktisch (keine DNS-Auflösung, um den
-  Home-Assistant-Event-Loop nicht durch einen blockierenden
-  `socket.getaddrinfo`-Aufruf zu blockieren) – ein Domainname, der erst
-  später auf eine private Adresse auflöst, wird dadurch nicht erkannt.
-- **Fehlende/ungültige Bilder:** werden robust behandelt – kein Bild
-  vorhanden oder alle Bilder ungültig ergibt ein leeres Hauptbild
-  (`image_url: None`), kein Fehler.
-- **Kein eigener Bildabruf:** Home Assistants `image`-Entity-Plattform
-  übernimmt Abruf und Zwischenspeicherung des Bildes selbst; HofKarte
-  lädt und speichert keine Bilddateien selbst.
-- **Diagnostics:** Die in dieser Einheit als optional genannten
-  Diagnostics/Zusatzinformationen wurden bewusst nicht umgesetzt –
-  „Diagnostics, Fehlerbehandlung, Performance und Qualität“ ist
-  Gegenstand einer eigenen, kommenden Einheit.
+**Abendliche Ansage geöffneter Bio-Hofläden in der Nähe:**
+
+```yaml
+alias: "Bio-Hofläden Abendübersicht"
+trigger:
+  - trigger: time
+    at: "17:30:00"
+action:
+  - action: hofkarte.hoflaeden_suchen
+    data:
+      merkmal: Bio
+      nur_geoeffnet: true
+    response_variable: treffer
+  - action: notify.mobile_app
+    data:
+      message: >-
+        {% if treffer.anzahl_treffer > 0 %}
+          {{ treffer.anzahl_treffer }} Bio-Hofladen/-läden noch geöffnet:
+          {{ treffer.hoflaeden | map(attribute='name') | join(', ') }}
+        {% else %}
+          Aktuell ist kein Bio-Hofladen geöffnet.
+        {% endif %}
+```
+
+**Dashboard-Karte für einen Hofladen** (Beispiel, nicht Teil der
+Integration): Da `image`-Entities in Lovelace-Bildkarten funktionieren,
+kann eine Picture-Entity-Karte direkt `image.hofladen_mueller_hauptbild`
+verwenden.
+
+## Unter der Haube (technische Referenz)
+
+Dieser Abschnitt richtet sich an technisch interessierte
+Nutzer:innen/Entwickler:innen und ist für den normalen Betrieb nicht
+nötig.
+
+### Internes Datenmodell
+
+Intern verwaltet HofKarte einen Hofladen als typisierte, unveränderliche
+Datenstruktur (`custom_components/hofkarte/models.py`) mit u. a.
+Stammdaten (Name, Beschreibung, Adresse, PLZ/Ort, Land, Koordinaten,
+Webseite), regelmässigen Öffnungszeiten und datumsbezogenen
+Sonderöffnungszeiten, Produkten/Kategorien/Zahlungsarten/
+Verkaufsarten/Merkmalen sowie optionalen Bildern. Rohdaten werden über
+`custom_components/hofkarte/parsing.py` in dieses Modell überführt und
+dabei validiert (`HofladenValidationError` bei ungültigen
+Pflichtfeldern; fehlende optionale Felder werden robust auf leere
+Werte abgebildet).
+
+Für Öffnungszeiten und Sonderöffnungszeiten gilt: Ende gleich Beginn ist
+ungültig; Ende **vor** Beginn ist hingegen gültig und bedeutet ein
+Intervall, das die Mitternacht überschreitet (z. B. 22:00–02:00).
+
+### Datenabruf (Coordinator)
+
+Ein zentraler `HofKarteUpdateCoordinator`
+(`custom_components/hofkarte/coordinator.py`) ruft die Hofladen-Rohdaten
+asynchron ab, validiert sie und stellt das Ergebnis für die gesamte
+Integration bereit. Alle Entities lesen ausschliesslich aus dem
+Coordinator – es gibt keine Mehrfachabfragen pro Entity.
+
+- Asynchroner Abruf mit konfigurierbarem Timeout (Standard: 30 Sekunden)
+- Konfigurierbares Update-Intervall (Standard: 15 Minuten)
+- Initialer Datenabruf beim Einrichten der Config Entry; schlägt dieser
+  fehl, versucht Home Assistant die Einrichtung automatisch später
+  erneut
+- Einzelne ungültige Datensätze werden übersprungen und geloggt, statt
+  den gesamten Abruf scheitern zu lassen
+- Bei einem späteren Fehlversuch bleiben die zuletzt erfolgreich
+  abgerufenen Daten erhalten
+
+### Data Provider und Architekturentscheid zur Datenquelle
+
+**Architekturentscheid:** Die vom Benutzer gepflegten Hofläden werden in
+einem integrationsinternen, persistenten Store gehalten – keine externe
+Datenbank, kein externer Dienst. Der `HofladenDataProvider` kapselt
+diesen Store vollständig; Coordinator und Entities greifen
+ausschliesslich über diese Abstraktion darauf zu.
+
+- **`StorageHofladenDataProvider`** (produktiv): kapselt Home
+  Assistants `helpers.storage.Store` (JSON-Datei unter `.storage/` im
+  Konfigurationsverzeichnis). Startet leer; Hofläden werden vollständig
+  über die Verwaltungsoberfläche gepflegt. Daten überstehen Neustarts
+  und Reloads.
+- **`StaticTestDataProvider`**: reiner In-Memory-Provider ausschliesslich
+  für die Testsuite (keine Persistenz).
+
+Für programmatischen Zugriff (z. B. eigene Skripte) stehen
+`HofKarteUpdateCoordinator.async_add_hofladen`,
+`async_update_hofladen_sortiment`, `async_save_hofladen` und
+`async_delete_hofladen` zur Verfügung; alle validieren Fail-Fast und
+lösen danach einen Refresh aus. `custom_components/hofkarte/sortiment_katalog.py`
+bietet ausserdem vorgefertigte, gültige Rohdaten für gängige
+Zahlungsarten, Verkaufsarten und Merkmale (Bargeld/Debitkarte/
+Kreditkarte/TWINT, Hofladen/Selbstbedienung/Verkaufsautomat/
+Ab-Hof-Verkauf, Bio/eigener Anbau/Parkplatz/barrierefrei) – ein
+Vorschlagskatalog, keine Einschränkung.
 
 ## Diagnostics, Fehlerbehandlung und Qualität
 
@@ -443,115 +421,127 @@ Validierung in `images.py`):
 
 Über **Einstellungen → Geräte & Dienste → HofKarte → Diagnose
 herunterladen** steht eine technische Übersicht zur Fehlersuche zur
-Verfügung (`custom_components/hofkarte/diagnostics.py`):
-
-- Status des letzten Datenabrufs (erfolgreich/fehlgeschlagen, Typ des
-  letzten Fehlers)
-- Zeitpunkt der letzten erfolgreichen Aktualisierung
-- konfiguriertes Update-Intervall
-- Typ des aktuell verwendeten Data Providers und ob dieser
-  Schreibzugriffe unterstützt
-- Anzahl der verwalteten Hofläden
+Verfügung (`custom_components/hofkarte/diagnostics.py`): Status des
+letzten Datenabrufs, Zeitpunkt der letzten erfolgreichen
+Aktualisierung, konfiguriertes Update-Intervall, Typ des Data Providers
+und dessen Schreibfähigkeit sowie die Anzahl verwalteter Hofläden.
 
 **Bewusst nicht enthalten:** Hofladen-Inhalte (Namen, Adressen,
-Koordinaten, Bild-URLs) sowie die Home-Assistant-Standortdaten
-(`hass.config.latitude`/`longitude`). Auch wenn diese Daten fachlich
-nicht „geheim“ sind (öffentliche Hofladen-Informationen), handelt es
-sich um nutzerspezifische Daten, die in einer zur Fehlersuche geteilten
-und damit potenziell öffentlich einsehbaren Diagnosedatei nichts
-verloren haben.
+Koordinaten, Bild-URLs) sowie die Home-Assistant-Standortdaten. Auch
+wenn diese Daten fachlich nicht „geheim“ sind, handelt es sich um
+nutzerspezifische Daten, die in einer zur Fehlersuche geteilten und
+damit potenziell öffentlich einsehbaren Diagnosedatei nichts verloren
+haben.
 
 ### Fehlerbehandlung
 
 - **Netzwerk-/Datenquellenfehler und Timeouts:** werden im Coordinator
-  in `UpdateFailed` übersetzt (siehe Einheit 4); Home Assistant zeigt
-  betroffene Entities als „unavailable“ an und versucht es beim
-  nächsten Intervall erneut.
+  sauber abgefangen; Home Assistant zeigt betroffene Entities als
+  „unavailable“ an und versucht es beim nächsten Intervall erneut.
 - **Ungültige/fehlende Pflichtfelder:** einzelne ungültige
   Hofladen-Datensätze werden übersprungen und geloggt, statt den
-  gesamten Abruf abzubrechen (siehe Einheit 4).
+  gesamten Abruf abzubrechen.
 - **Config-Entry-Fehler:** Schlägt der initiale Datenabruf beim
-  Einrichten fehl, löst Home Assistant automatisch `ConfigEntryNotReady`
-  aus und versucht die Einrichtung später erneut.
+  Einrichten fehl, löst Home Assistant automatisch eine
+  Wiederholung aus.
 - **Reload/Unload:** mehrfache Reloads erzeugen keine doppelten Devices
-  oder Entities; das Sidebar-Panel wird beim Entladen der Config Entry
-  korrekt entfernt (durch Tests abgesichert).
-- **WebSocket-Verwaltungsbefehle** (`management.py`) unterscheiden
-  Fehler klar: `not_ready` (HofKarte nicht eingerichtet), `invalid_data`
-  (Validierungsfehler), `not_supported` (Data Provider unterstützt
-  keine Schreibzugriffe), `not_found` (unbekannte Hofladen-ID).
+  oder Entities; das Sidebar-Panel wird beim Entladen korrekt entfernt.
+- **Verwaltungsoberfläche:** unterscheidet Fehler klar (nicht
+  eingerichtet, ungültige Daten, nicht unterstützt, unbekannte ID).
 
 ### Performance
 
 - Ein gemeinsamer Coordinator verhindert Mehrfachabfragen einzelner
-  Entities (seit Einheit 4).
-- Update-Intervall 15 Minuten (konfigurierbar auf Code-Ebene) – für
-  Öffnungszeiten-Aktualität angemessen, ohne unnötige Last zu erzeugen.
-- Keine blockierenden Aufrufe (siehe auch Abschnitt „Bilder“ zur
-  bewusst nicht-blockierenden URL-Sicherheitsprüfung).
-- **Bewusst geprüft und verworfen:** `always_update=False` am
-  Coordinator (unterdrückt State-Updates, wenn sich die Rohdaten nicht
-  geändert haben) würde einen echten Fehler einführen: Der
-  Öffnungsstatus und die Entfernung werden bei jedem Abruf dynamisch aus
-  der aktuellen Uhrzeit berechnet, nicht aus gespeicherten Werten. Ohne
-  die Zustandsaktualisierung bei jedem Coordinator-Update würde
-  „Geöffnet“ nicht zur richtigen Zeit umschalten, auch wenn sich die
-  Hofladen-Daten selbst nicht geändert haben.
+  Entities.
+- Update-Intervall 15 Minuten – für Öffnungszeiten-Aktualität
+  angemessen, ohne unnötige Last zu erzeugen.
+- Keine blockierenden Aufrufe (auch die Bild-URL-Sicherheitsprüfung ist
+  bewusst rein syntaktisch, siehe oben).
 
-### Qualität – während dieser Einheit behobene Mängel
+## Fehlerbehebung
 
-- **`coordinator.py`:** Die Config Entry wurde nicht explizit an die
-  Home-Assistant-Basisklasse übergeben. Ohne diese Angabe ermittelt
-  `DataUpdateCoordinator` die Config Entry über einen von Home Assistant
-  selbst als veraltet markierten Kontextvariablen-Fallback, der laut
-  Warnhinweis im Home-Assistant-Kern **ab Version 2025.11 nicht mehr
-  unterstützt wird**. Behoben durch expliziten `config_entry`-Parameter.
-- **`management.py`:** Griff bisher direkt auf `coordinator._provider`
-  zu (Kapselungsbruch) und liess `ValueError` aus `_get_coordinator`
-  unbehandelt durch die WebSocket-Handler durchsickern. Ausserdem wurde
-  ein nicht schreibfähiger Data Provider fälschlich als „ungültige
-  Daten“ statt als eigener Fehlerfall gemeldet. Behoben durch zwei neue,
-  öffentliche Coordinator-Methoden (`async_save_hofladen`,
-  `async_delete_hofladen`) sowie konsistente Fehlerbehandlung in allen
-  drei WebSocket-Befehlen.
-- **`camera.py`:** wiederholt wieder aufgetauchte, unverdrahtete und der
-  getroffenen Architekturentscheidung (natives `image`-Entity, siehe
-  Einheit 11) widersprechende Implementierung erneut entfernt.
-- Logging ergänzt: Device-Entfernung sowie Hofladen-Hinzufügen/
-  -Aktualisieren/-Löschen werden auf Debug-Ebene protokolliert
-  (nachvollziehbar bei Fehlersuche, aber nicht spammig – Home Assistant
-  selbst protokolliert Coordinator-Fehler bereits deduplizierend beim
-  Zustandsübergang, siehe Performance-Abschnitt).
+**Die Integration erscheint nicht in „Integration hinzufügen“:**
+Home Assistant neu starten; bei manueller Installation den Pfad
+`custom_components/hofkarte/` prüfen.
 
-## Bekannte Einschränkungen (Stand dieser Einheit)
+**„HofKarte ist bereits eingerichtet“ beim erneuten Hinzufügen:**
+Erwartetes Verhalten – HofKarte ist eine Single-Instance-Integration
+(siehe „Einrichtung“). Die bestehende Instanz unter **Einstellungen →
+Geräte & Dienste** verwenden.
 
-- Nur eine Instanz pro Home-Assistant-Installation möglich (Single Instance).
-- Kein Options Flow (folgt erst, sobald eine sinnvolle Option existiert).
-  Update-Intervall und Timeout des Coordinators sind aktuell nur auf
-  Code-Ebene konfigurierbar (Konstruktorparameter), nicht über die
-  Home-Assistant-Oberfläche.
-- Der Binary Sensor „Geöffnet“ sowie die Sensoren „Nächste Öffnung“ und
-  „Nächste Schliessung“ liefern jetzt echte berechnete Werte (siehe
-  Abschnitt „Öffnungsstatus“ oben). Bei Uhrzeiten in einer
-  Sommerzeit-Umstellungslücke bzw. im doppelt vorkommenden Bereich beim
-  Zurückstellen wird die von `zoneinfo` standardmässig gewählte
-  Auflösung verwendet, ohne explizite Disambiguierung.
+**Das Verwaltungs-Panel erscheint nicht im Seitenmenü:** Nur
+Administratoren sehen das Panel. Home Assistant neu laden
+(Browser-Cache leeren, falls das Panel nach einem Update von HofKarte
+nicht aktualisiert erscheint).
+
+**Entity „Geöffnet“ zeigt dauerhaft „unbekannt“:** Für den Hofladen sind
+keine Öffnungszeiten hinterlegt. Über die Verwaltungsoberfläche
+reguläre Öffnungszeiten ergänzen.
+
+**Sensor „Entfernung“ zeigt „unbekannt“:** Entweder fehlen dem Hofladen
+Koordinaten, oder die Home-Assistant-Position ist nicht sinnvoll
+konfiguriert (**Einstellungen → System → Allgemein**).
+
+**Hauptbild wird nicht angezeigt:** Die hinterlegte Bild-URL ist
+entweder leer, kein `http(s)`-Link, oder zeigt auf eine private/interne
+IP-Adresse (wird aus Sicherheitsgründen abgelehnt, siehe Abschnitt
+„Bilder“). URL in der Verwaltungsoberfläche prüfen.
+
+**Diagnose zur Fehlersuche:** Unter **Einstellungen → Geräte & Dienste →
+HofKarte → Diagnose herunterladen** steht eine technische Übersicht zur
+Verfügung (siehe oben). Für tiefergehende Logs das Logging für
+`custom_components.hofkarte` in **Einstellungen → System → Logs** auf
+„Debug“ stellen.
+
+**Fehler melden:** über den Issue-Tracker des Repositories
+(`manifest.json` → `issue_tracker`).
+
+## Bekannte Einschränkungen
+
+- Nur eine Instanz pro Home-Assistant-Installation möglich (Single
+  Instance).
+- Kein Options Flow; Update-Intervall und Timeout des Coordinators sind
+  aktuell nur auf Code-Ebene konfigurierbar.
+- Bei Uhrzeiten in einer Sommerzeit-Umstellungslücke bzw. im doppelt
+  vorkommenden Bereich beim Zurückstellen wird die von `zoneinfo`
+  standardmässig gewählte Auflösung verwendet, ohne explizite
+  Disambiguierung.
 - Verschwindet ein Hofladen dauerhaft aus den Daten, wird sein Device
-  entfernt (siehe Einheit 5), seine Entities bleiben jedoch als
-  „unavailable“ in der Entity Registry bestehen, statt automatisch entfernt
-  zu werden – eine bekannte Einschränkung, die bei Bedarf in einer
-  späteren Einheit adressiert werden kann.
-- Keine eigene SQL-Datenbank – Persistenz erfolgt über Home Assistants
-  `helpers.storage.Store` (JSON-Datei unter `.storage/`), siehe
-  Architekturentscheid oben.
-- Der Entfernungs-Sensor nutzt `hass.config.latitude`/`longitude` als
-  Referenzpunkt. Das Standardpaar `0.0/0.0` einer frischen, noch nicht
-  sinnvoll konfigurierten Installation wird als unbekannte Position
-  behandelt; einzelne Koordinaten `0.0` bleiben gültig.
+  entfernt, seine Entities bleiben jedoch als „unavailable“ in der
+  Entity Registry bestehen, statt automatisch entfernt zu werden.
+- Der Entfernungs-Sensor behandelt das Standardpaar `0.0/0.0` einer
+  frischen, noch nicht sinnvoll konfigurierten Installation als
+  unbekannte Position; einzelne Koordinaten `0.0` bleiben gültig.
 - Die Action `hofkarte.hoflaeden_suchen` filtert case-insensitiv aber
   exakt (kein Fuzzy-Matching, keine Tippfehler-Toleranz) – ausser beim
   Freitext-`suchbegriff`, der Teilstrings erlaubt.
-- Keine HACS-Veröffentlichung/Release im Detail vorbereitet.
+- Die Bild-URL-Sicherheitsprüfung ist rein syntaktisch (keine
+  DNS-Auflösung); ein Domainname, der erst später auf eine private
+  Adresse auflöst, wird nicht erkannt.
+- Keine eigene SQL-Datenbank – Persistenz erfolgt über Home Assistants
+  `helpers.storage.Store` (JSON-Datei unter `.storage/`).
+
+## Datenschutz- und Standort-Hinweise
+
+- **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
+  externen Servern (ausser dem Laden von Hofladen-Bildern über die vom
+  Benutzer hinterlegten Bild-URLs, siehe „Bilder“). Es findet keine
+  Telemetrie und keine Datenübertragung an Dritte statt.
+- **Standort:** Der Entfernungs-Sensor liest ausschliesslich die
+  statische, in Home Assistant konfigurierte Position
+  (`hass.config.latitude`/`longitude`) – kein `device_tracker`, keine
+  Personen- oder Geräteverfolgung. Diese Position wird von HofKarte
+  nicht gespeichert und nicht an externe Dienste übertragen; die
+  Berechnung erfolgt vollständig lokal.
+- **Persistenz:** Alle Hofladen-Daten liegen ausschliesslich lokal im
+  Home-Assistant-Storage (`.storage/`-Verzeichnis der
+  Konfiguration) – keine Cloud-Synchronisation.
+- **Diagnostics:** Die herunterladbare Diagnose enthält bewusst keine
+  Hofladen-Inhalte und keine Standortdaten (siehe oben).
+- **Bilder:** Bild-URLs werden vor der Nutzung auf ein sicheres Format
+  geprüft (siehe „Bilder“); dennoch lädt Home Assistant beim Anzeigen
+  eines Hauptbilds das Bild von der hinterlegten externen URL – wer
+  Bild-URLs pflegt, sollte nur vertrauenswürdige Quellen verwenden.
 
 ## Entwicklung
 
@@ -562,53 +552,19 @@ pip install -r requirements_test.txt
 pytest custom_components/hofkarte/tests
 ```
 
+### Release-Prozess und Versionierung
+
+- Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/)
+  (`MAJOR.MINOR.PATCH`), siehe `manifest.json` → `version`.
+- Ein Release besteht aus: `manifest.json`-Version erhöhen,
+  `CHANGELOG.md` mit den nutzerrelevanten Änderungen ergänzen, Commit,
+  und ein GitHub Release mit **exakt demselben Versions-String** als
+  Tag erstellen (z. B. `0.13.0`). HACS erkennt neue Versionen über die
+  GitHub-Releases-API.
+- `hacs.json` deklariert die minimal unterstützte Home-Assistant-Version
+  (`homeassistant`). Diese sollte bei Verwendung neuerer
+  Home-Assistant-APIs entsprechend angehoben werden.
+
 ## Lizenz
 
 Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
-
-## Grafische Hofladenverwaltung (Einheit 10)
-
-**Architekturentscheid:** Der ursprüngliche Umsetzungsplan sah für
-Einheit 10 „Suche, Filter und Home-Assistant Actions“ ohne eigene UI vor
-(„Keine proprietäre REST-API“, „Keine eigene UI“). Für HofKarte wurde
-davon bewusst abgewichen: Da Home Assistant sowohl Laufzeit- als auch
-Verwaltungsoberfläche ist (siehe Architekturentscheid oben), wird die
-Pflege der Hofladen-Daten über ein **eigenes Sidebar-Panel** mit
-WebSocket-Backend abgebildet statt über Home-Assistant-Actions/Services.
-
-Nach der Einrichtung von HofKarte steht im Home-Assistant-Seitenmenü die
-Verwaltungsseite **HofKarte** zur Verfügung. Dort können Administratoren:
-
-- neue Hofläden erstellen,
-- bestehende Hofläden bearbeiten,
-- Stammdaten und Koordinaten ändern,
-- reguläre und Sonderöffnungszeiten bearbeiten,
-- Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale bearbeiten,
-- Hofläden kontrolliert löschen.
-
-Änderungen werden direkt im integrationsinternen Home-Assistant-Storage
-persistiert und ohne Neustart an Coordinator, Devices und Entities
-weitergegeben. Die Verwaltungsoberfläche verwendet ausschließlich lokale
-Home-Assistant-Mechanismen.
-
-### Technischer Aufbau
-
-- `frontend.py`: registriert das Sidebar-Panel
-  (`homeassistant.components.frontend`) sowie die statischen
-  JS-Assets unter `/api/hofkarte/static/` (`static/hofkarte-panel.js`).
-  Nur für Administratoren sichtbar (`require_admin=True`).
-- `management.py`: WebSocket-Befehle
-  (`hofkarte/management/list|save|delete`), require_admin-geschützt.
-  Greift ausschliesslich über den Coordinator bzw. den
-  `HofladenDataProvider` auf die Daten zu – keine eigene Datenhaltung.
-- Rückgabedaten werden über eine dedizierte Serialisierung
-  (`_serialize_hofladen`) in einfache, JSON-taugliche Typen überführt
-  (Zeiten/Daten als ISO-Strings, Tupel als Listen).
-
-**Manifest-Abhängigkeit:** `manifest.json` deklariert `"dependencies":
-["http"]`, damit Home Assistant `hass.http` garantiert initialisiert,
-bevor HofKarte es für die statischen Panel-Assets verwendet. Ohne diese
-Deklaration ist `hass.http` zum Setup-Zeitpunkt nicht zuverlässig
-verfügbar (`None`), was den Start der **gesamten Integration** zum
-Absturz bringen konnte – behoben und durch Tests abgesichert (siehe
-`tests/test_frontend.py`, `tests/test_management.py`).

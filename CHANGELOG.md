@@ -1,7 +1,3 @@
-## 0.10.2
-- Stammdatenformular neu strukturiert: Name, Beschreibung, Adresse, PLZ/Ort, Land, Latitude/Longitude, Webseite.
-- Neues Feld `website` durchgängig im Datenmodell, Parsing und Management-UI.
-
 # Changelog
 
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei
@@ -11,6 +7,49 @@ Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
+
+### Geändert
+
+- **README komplett neu strukturiert** für Benutzer statt nur
+  Entwickler: neue Abschnitte „Voraussetzungen“, „Konfiguration“,
+  „Beispiele für Automationen“, „Fehlerbehebung“ und „Datenschutz- und
+  Standort-Hinweise“ ergänzt (vorher gar nicht bzw. nur verstreut
+  vorhanden). Reihenfolge der Abschnitte an den typischen
+  Benutzerpfad angepasst (Installation → Einrichtung → Nutzung →
+  technische Details → Fehlerbehebung). Technisch-detaillierte Inhalte
+  (Internes Datenmodell, Coordinator, Data Provider) in einen
+  eigenen Abschnitt „Unter der Haube“ verschoben, damit sie normale
+  Benutzer:innen nicht von den eigentlichen Bedienungsinformationen
+  ablenken.
+- `hacs.json`: minimale unterstützte Home-Assistant-Version
+  (`"homeassistant": "2025.1.0"`) ergänzt, entsprechend der Version, gegen
+  die die Testsuite tatsächlich läuft.
+
+### Behoben
+
+- **CHANGELOG-Konsistenz:** Mehrere strukturelle Fehler bereinigt, die
+  durch frühere, teils externe Bearbeitungen entstanden waren: ein
+  Eintrag stand oberhalb der eigentlichen Dateiüberschrift (Änderungen
+  am Stammdatenformular/`website`-Feld, jetzt in `[0.10.3]`
+  zusammengeführt); ein weiterer Eintrag (`[0.10.0] - Einheit 10`, native
+  Seitenleiste/WebSocket-API) stand fälschlich nach `[0.1.0]` statt in
+  chronologischer Reihenfolge – Inhalt ebenfalls verlustfrei in
+  `[0.10.3]` zusammengeführt. Die Versionsliste ist jetzt durchgehend
+  absteigend sortiert ohne Duplikate oder verwaiste Einträge.
+- `camera.py` (inkl. zugehöriger Tests) erneut entfernt – wiederholt
+  aufgetauchte, unverdrahtete Implementierung, die der getroffenen
+  Architekturentscheidung (natives `image`-Entity, siehe Einheit 11)
+  widerspricht.
+- Fehlendes `.gitignore` am Repository-Root ergänzt (bisher gelangten
+  `__pycache__`-Ordner ins Repository).
+
+### Hinweis zur Dokumentation
+
+- Das neu im Datenmodell vorhandene Feld `Hofladen.website` (bislang nur
+  in einem verwaisten CHANGELOG-Eintrag erwähnt) ist jetzt auch im
+  README dokumentiert.
+
+## [0.13.0] - Unveröffentlicht
 
 ### Hinzugefügt
 
@@ -223,20 +262,19 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [0.10.3] - Unveröffentlicht
 
-### Behoben
-
-- **Kritischer Bug in `frontend.py`:** `manifest.json` deklarierte keine
-  Abhängigkeit zu `http`. Dadurch war `hass.http` zum Zeitpunkt von
-  `async_setup_frontend_assets` nicht zuverlässig initialisiert (`None`)
-  und der Aufruf von `hass.http.async_register_static_paths(...)` konnte
-  mit `AttributeError` fehlschlagen – was den Start der **gesamten**
-  HofKarte-Integration verhindert hätte, nicht nur des Panels. Behoben
-  durch `"dependencies": ["http"]` in `manifest.json`.
-- `frontend.py`: ungenutzten Import (`const.DOMAIN`) entfernt
-  (pyflakes-Fund).
-
 ### Hinzugefügt
 
+- Natives Home-Assistant-Sidebar-Panel „HofKarte“ zur grafischen
+  Verwaltung der Hofläden (`frontend.py`, `management.py`): Hofläden
+  können über die Oberfläche neu erstellt, bearbeitet und dauerhaft
+  gelöscht werden. Stammdaten, Koordinaten, reguläre und
+  Sonderöffnungszeiten sowie Sortiment und Eigenschaften sind grafisch
+  editierbar. Änderungen werden ohne Neustart über den bestehenden
+  Storage-Provider und Coordinator in Devices und Entities übernommen.
+  Nur für Home-Assistant-Administratoren sichtbar/nutzbar.
+- Stammdatenformular um die Felder Name, Beschreibung, Adresse, PLZ/Ort,
+  Land, Koordinaten und **Webseite** (`Hofladen.website`, neu im
+  Datenmodell und in `parsing.py`) vervollständigt.
 - Tests für das Sidebar-Panel (`tests/test_frontend.py`): statische
   Asset-Registrierung, Panel-Registrierung inkl. Konfiguration
   (Sidebar-Titel, `require_admin`, JS-URL), Idempotenz bei
@@ -250,6 +288,25 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
   schreibfähigen Data Provider, und Registrierung aller drei
   WebSocket-Befehle.
 
+### Behoben
+
+- **Kritischer Bug in `frontend.py`:** `manifest.json` deklarierte keine
+  Abhängigkeit zu `http`. Dadurch war `hass.http` zum Zeitpunkt von
+  `async_setup_frontend_assets` nicht zuverlässig initialisiert (`None`)
+  und der Aufruf von `hass.http.async_register_static_paths(...)` konnte
+  mit `AttributeError` fehlschlagen – was den Start der **gesamten**
+  HofKarte-Integration verhindert hätte, nicht nur des Panels. Behoben
+  durch `"dependencies": ["http"]` in `manifest.json`.
+- `frontend.py`: ungenutzten Import (`const.DOMAIN`) entfernt
+  (pyflakes-Fund).
+
+### Sicherheit
+
+- Verwaltungsoberfläche und alle Schreiboperationen erfordern
+  Home-Assistant-Administratorrechte (`require_admin`).
+- Keine externe Datenquelle, keine externe API und keine
+  Standortübertragung durch die Verwaltungsoberfläche.
+
 ### Architekturentscheid: eigene grafische Verwaltungsoberfläche
 
 - Bestätigt und beibehalten: Abweichend vom ursprünglichen Plan für
@@ -260,52 +317,42 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
   dokumentiert (siehe README, Abschnitt „Grafische
   Hofladenverwaltung“).
 
-### Abgleich Einheit 1–9
+### Architekturentscheid: Datenquelle final festgelegt
 
-- Datenquelle als verbindliche Architekturentscheidung dokumentiert:
-  Home Assistant `helpers.storage.Store` ist der persistente,
-  integrationsinterne Speicher; keine externe Datenbank, kein externer Dienst
-  und keine eigene REST-API.
-- Veraltete Dokumentation im Config Flow und Parsing zum inzwischen
-  festgelegten Data Provider entfernt.
-- Verhalten bei entfernten Hofläden dokumentiert: Das Device wird entfernt,
-  bereits registrierte Entities bleiben mit stabiler `unique_id` bestehen und
-  werden `unavailable`.
-- Home-Assistant-Position für den Distance Sensor plausibilisiert: Das
-  Standardpaar `0.0/0.0` wird als unbekannt behandelt; gültige einzelne
-  `0.0`-Koordinaten bleiben zulässig.
-- Tests für die Positionsvalidierung ergänzt.
-
-
-### Architekturentscheid
-
-- **Datenquelle final festgelegt** (löst die seit Einheit 4 offene
-  Architekturentscheidung): Home Assistant ist sowohl Laufzeitumgebung
-  als auch Verwaltungsoberfläche für HofKarte. Die vom Benutzer
-  gepflegten Hofläden werden in einem integrationsinternen, persistenten
-  Store gehalten – keine externe Datenbank, kein externer Dienst. Der
-  `HofladenDataProvider` kapselt diesen Store; Coordinator und Entities
-  greifen ausschliesslich über diese Abstraktion darauf zu.
-
-### Hinzugefügt
-
+- Löst die seit Einheit 4 offene Architekturentscheidung: Home Assistant
+  ist sowohl Laufzeitumgebung als auch Verwaltungsoberfläche für
+  HofKarte. Die vom Benutzer gepflegten Hofläden werden in einem
+  integrationsinternen, persistenten Store gehalten (Home Assistants
+  `helpers.storage.Store`) – keine externe Datenbank, kein externer
+  Dienst, keine eigene REST-API. Der `HofladenDataProvider` kapselt
+  diesen Store; Coordinator und Entities greifen ausschliesslich über
+  diese Abstraktion darauf zu.
 - `data_provider.py`: neue produktive Implementierung
-  `StorageHofladenDataProvider`, basierend auf Home Assistants
-  `helpers.storage.Store` (JSON-Datei unter `.storage/`). Startet leer
-  (keine erfundenen Beispieldaten), lädt Daten einmalig (Lazy Load,
-  In-Memory-Cache) und schreibt bei jeder Mutation sowohl in den Cache
-  als auch persistent in den Store. Ein `asyncio.Lock` schützt vor
-  verlorenen Schreibzugriffen bei gleichzeitigen Änderungen.
+  `StorageHofladenDataProvider`. Startet leer (keine erfundenen
+  Beispieldaten), lädt Daten einmalig (Lazy Load, In-Memory-Cache) und
+  schreibt bei jeder Mutation sowohl in den Cache als auch persistent in
+  den Store. Ein `asyncio.Lock` schützt vor verlorenen Schreibzugriffen
+  bei gleichzeitigen Änderungen.
 - Tests für `StorageHofladenDataProvider`: leerer Start, Kopie bei
   `fetch`, Hinzufügen/Abrufen, doppelte ID abgelehnt, Update mit
   Feld-Merge, unbekannte ID abgelehnt, sowie zwei Tests, die *echte*
   Persistenz über eine neue Provider-Instanz hinweg verifizieren
   (simuliert einen Neustart/Reload).
 - `test_init.py`: neuer Test, der bestätigt, dass ein frischer Eintrag
-  ohne Hofläden startet (`coordinator.data == {}`), sowie ein
-  End-zu-End-Test, der einen echten `hass.config_entries.async_reload`
-  durchführt und bestätigt, dass ein zuvor hinzugefügter Hofladen den
-  Reload übersteht.
+  ohne Hofläden startet, sowie ein End-zu-End-Test, der einen echten
+  Reload durchführt und bestätigt, dass ein zuvor hinzugefügter Hofladen
+  diesen übersteht.
+
+### Weitere Korrekturen (Abgleich Einheit 1–9)
+
+- Veraltete Dokumentation im Config Flow und Parsing zum inzwischen
+  festgelegten Data Provider entfernt.
+- Verhalten bei entfernten Hofläden dokumentiert: Das Device wird
+  entfernt, bereits registrierte Entities bleiben mit stabiler
+  `unique_id` bestehen und werden `unavailable`.
+- Home-Assistant-Position für den Distance Sensor plausibilisiert: Das
+  Standardpaar `0.0/0.0` wird als unbekannt behandelt; gültige einzelne
+  `0.0`-Koordinaten bleiben zulässig. Tests dafür ergänzt.
 
 ### Geändert
 
@@ -620,19 +667,3 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Grundlegende HACS-kompatible Repository-Struktur (`hacs.json`).
 - README mit Installations- und Entwicklungsgrundlagen.
 - Minimale Teststruktur (pytest + Home-Assistant-Testwerkzeuge).
-
-## [0.10.0] - Einheit 10
-
-### Hinzugefügt
-
-- Native Home-Assistant-Seitenleiste „HofKarte“ zur grafischen Verwaltung der Hofläden.
-- Hofläden können über die Oberfläche neu erstellt, bearbeitet und gelöscht werden.
-- Stammdaten, Koordinaten, reguläre und Sonderöffnungszeiten sowie Sortiment und Eigenschaften sind grafisch editierbar.
-- Änderungen werden ohne Neustart über den bestehenden Storage-Provider und Coordinator in Devices und Entities übernommen.
-- Neue WebSocket-Schnittstelle für die geschützte Verwaltungsoberfläche.
-- Persistentes Löschen von Hofläden im Storage-Provider.
-
-### Sicherheit
-
-- Verwaltungsoberfläche und Schreiboperationen erfordern Home-Assistant-Administratorrechte.
-- Keine externe Datenquelle, keine externe API und keine Standortübertragung.
