@@ -10,6 +10,80 @@ dokumentiert.
 Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unveröffentlicht]
+
+### Hinzugefügt
+
+- `diagnostics.py`: `async_get_config_entry_diagnostics` liefert Status
+  des letzten Datenabrufs, Zeitpunkt der letzten erfolgreichen
+  Aktualisierung, konfiguriertes Update-Intervall, Typ des Data
+  Providers und dessen Schreibfähigkeit sowie die Anzahl verwalteter
+  Hofläden. Bewusst keine Hofladen-Inhalte oder Standortdaten (durch
+  Test explizit abgesichert).
+- `coordinator.py`: neue öffentliche Properties
+  `letzte_erfolgreiche_aktualisierung`, `provider_type_name`,
+  `provider_unterstuetzt_schreibzugriffe` sowie zwei neue
+  Schreibmethoden `async_save_hofladen` (beliebige Felder, für die
+  Verwaltungsoberfläche) und `async_delete_hofladen`.
+- Debug-Logging für Device-Entfernung (`device.py`) sowie
+  Hofladen-Hinzufügen/-Aktualisieren/-Löschen/-Speichern
+  (`coordinator.py`).
+- Tests: `test_diagnostics.py` (neu), weitere Tests für die neuen
+  Coordinator-Properties/-Methoden, Reload/Unload-Robustheit
+  (Panel-Entfernung bei Unload, keine Duplikate über mehrere
+  Reload-Zyklen hinweg), sowie Fehlerbehandlungstests für
+  `management.py` (`not_ready`-Fehlercode, korrekte Trennung von
+  `invalid_data`/`not_supported`).
+
+### Geändert
+
+- `coordinator.py`: `config_entry` wird jetzt explizit an
+  `DataUpdateCoordinator` übergeben (siehe „Behoben“ unten).
+- `management.py`: `ws_save`/`ws_delete` delegieren jetzt vollständig an
+  `coordinator.async_save_hofladen`/`async_delete_hofladen` statt direkt
+  auf `coordinator._provider` zuzugreifen. Alle drei WebSocket-Handler
+  behandeln jetzt eine nicht eingerichtete Integration sauber
+  (`not_ready`) statt eine unbehandelte `ValueError` durchzureichen.
+
+### Behoben
+
+- **Zukunftsrelevanter Bug in `coordinator.py`:** Ohne explizite
+  Übergabe von `config_entry` ermittelt `DataUpdateCoordinator` die
+  Config Entry über einen von Home Assistant selbst als veraltet
+  markierten Kontextvariablen-Fallback
+  (`config_entries.current_entry`), der laut Warnhinweis im
+  Home-Assistant-Kern **ab Version 2025.11 nicht mehr unterstützt
+  wird**. Behoben durch expliziten `config_entry`-Parameter im
+  Coordinator-Konstruktor.
+- **Kapselungsbruch und Fehlerbehandlung in `management.py`:**
+  Direkter Zugriff auf `coordinator._provider` (private Attribute) von
+  aussen; `ValueError` aus `_get_coordinator` konnte unbehandelt aus
+  `ws_save`/`ws_delete` entkommen; ein nicht schreibfähiger Data
+  Provider wurde in `ws_save` fälschlich als `"invalid_data"` statt als
+  eigener Fehlerfall (`"not_supported"`) gemeldet. Alle drei Punkte
+  behoben.
+
+### Entfernt
+
+- `camera.py` (inkl. `test_camera.py`, `test_camera_fetch.py`): erneut
+  aufgetauchte, unverdrahtete Implementierung, die der in Einheit 11
+  getroffenen Architekturentscheidung (natives `image`-Entity)
+  widerspricht.
+
+### Bewusst geprüft und nicht umgesetzt
+
+- `always_update=False` am Coordinator (würde State-Updates bei
+  unveränderten Rohdaten unterdrücken): abgelehnt, da „Geöffnet“ und
+  „Entfernung“ dynamisch aus der aktuellen Uhrzeit berechnet werden –
+  ohne Zustandsaktualisierung bei jedem Coordinator-Update würde der
+  Öffnungsstatus nicht zur richtigen Zeit umschalten, selbst wenn sich
+  die Hofladen-Daten nicht geändert haben.
+- Zeitpunktgenaue, zusätzliche Status-Aktualisierung exakt bei
+  Öffnungs-/Schliesszeitpunkten (statt nur alle 15 Minuten): wäre neue
+  Funktionalität ohne klaren Bedarf (Grenzen dieser Einheit: „Keine neue
+  Funktionalität ohne Bedarf“); das bestehende, konfigurierbare
+  Update-Intervall gilt als angemessen für diesen Anwendungsfall.
+
 ## [0.12.0] - Unveröffentlicht
 
 ### Hinzugefügt

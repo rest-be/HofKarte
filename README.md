@@ -3,19 +3,22 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Bilder und Detailinformationen (Einheit 11). Hofläden mit
-> hinterlegten Bild-URLs zeigen ihr Hauptbild über eine native
-> Home-Assistant-Image-Entity; weitere Bilder stehen als Attribut zur
-> Verfügung. Ergänzt um zwei vorangegangene Architekturentscheide: (1)
-> Home Assistant ist sowohl Laufzeit- als auch Verwaltungsoberfläche für
-> HofKarte – die vom Benutzer gepflegten Hofläden werden in einem
-> integrationsinternen, persistenten Store gehalten (keine externe
-> Datenbank, kein externer Dienst); (2) HofKarte bietet zusätzlich zu
-> den Home-Assistant-Entities eine **eigene grafische
-> Verwaltungsoberfläche** (Sidebar-Panel) für Administratoren – eine
-> bewusste, dokumentierte Abweichung vom ursprünglichen Plan. Für
-> Automationen und Skripte steht zusätzlich die Home-Assistant-Action
-> `hofkarte.hoflaeden_suchen` zur Verfügung.
+> **Status:** Diagnostics, Fehlerbehandlung, Performance und Qualität
+> (Einheit 12). Die Integration wurde auf Robustheit für den
+> Dauerbetrieb geprüft: Config-Entry-Fehler, Reload/Unload,
+> Netzwerkfehler und ungültige Daten werden sauber behandelt, eine
+> Diagnose-Ausgabe steht zur Verfügung, und mehrere während der Prüfung
+> gefundene Qualitätsmängel wurden behoben (siehe Abschnitt
+> „Diagnostics, Fehlerbehandlung und Qualität“ unten). Ergänzt um zwei
+> vorangegangene Architekturentscheide: (1) Home Assistant ist sowohl
+> Laufzeit- als auch Verwaltungsoberfläche für HofKarte – die vom
+> Benutzer gepflegten Hofläden werden in einem integrationsinternen,
+> persistenten Store gehalten (keine externe Datenbank, kein externer
+> Dienst); (2) HofKarte bietet zusätzlich zu den Home-Assistant-Entities
+> eine **eigene grafische Verwaltungsoberfläche** (Sidebar-Panel) für
+> Administratoren – eine bewusste, dokumentierte Abweichung vom
+> ursprünglichen Plan. Für Automationen und Skripte steht zusätzlich die
+> Home-Assistant-Action `hofkarte.hoflaeden_suchen` zur Verfügung.
 
 ## Über dieses Projekt
 
@@ -433,6 +436,92 @@ Validierung in `images.py`):
   Diagnostics/Zusatzinformationen wurden bewusst nicht umgesetzt –
   „Diagnostics, Fehlerbehandlung, Performance und Qualität“ ist
   Gegenstand einer eigenen, kommenden Einheit.
+
+## Diagnostics, Fehlerbehandlung und Qualität
+
+### Diagnostics
+
+Über **Einstellungen → Geräte & Dienste → HofKarte → Diagnose
+herunterladen** steht eine technische Übersicht zur Fehlersuche zur
+Verfügung (`custom_components/hofkarte/diagnostics.py`):
+
+- Status des letzten Datenabrufs (erfolgreich/fehlgeschlagen, Typ des
+  letzten Fehlers)
+- Zeitpunkt der letzten erfolgreichen Aktualisierung
+- konfiguriertes Update-Intervall
+- Typ des aktuell verwendeten Data Providers und ob dieser
+  Schreibzugriffe unterstützt
+- Anzahl der verwalteten Hofläden
+
+**Bewusst nicht enthalten:** Hofladen-Inhalte (Namen, Adressen,
+Koordinaten, Bild-URLs) sowie die Home-Assistant-Standortdaten
+(`hass.config.latitude`/`longitude`). Auch wenn diese Daten fachlich
+nicht „geheim“ sind (öffentliche Hofladen-Informationen), handelt es
+sich um nutzerspezifische Daten, die in einer zur Fehlersuche geteilten
+und damit potenziell öffentlich einsehbaren Diagnosedatei nichts
+verloren haben.
+
+### Fehlerbehandlung
+
+- **Netzwerk-/Datenquellenfehler und Timeouts:** werden im Coordinator
+  in `UpdateFailed` übersetzt (siehe Einheit 4); Home Assistant zeigt
+  betroffene Entities als „unavailable“ an und versucht es beim
+  nächsten Intervall erneut.
+- **Ungültige/fehlende Pflichtfelder:** einzelne ungültige
+  Hofladen-Datensätze werden übersprungen und geloggt, statt den
+  gesamten Abruf abzubrechen (siehe Einheit 4).
+- **Config-Entry-Fehler:** Schlägt der initiale Datenabruf beim
+  Einrichten fehl, löst Home Assistant automatisch `ConfigEntryNotReady`
+  aus und versucht die Einrichtung später erneut.
+- **Reload/Unload:** mehrfache Reloads erzeugen keine doppelten Devices
+  oder Entities; das Sidebar-Panel wird beim Entladen der Config Entry
+  korrekt entfernt (durch Tests abgesichert).
+- **WebSocket-Verwaltungsbefehle** (`management.py`) unterscheiden
+  Fehler klar: `not_ready` (HofKarte nicht eingerichtet), `invalid_data`
+  (Validierungsfehler), `not_supported` (Data Provider unterstützt
+  keine Schreibzugriffe), `not_found` (unbekannte Hofladen-ID).
+
+### Performance
+
+- Ein gemeinsamer Coordinator verhindert Mehrfachabfragen einzelner
+  Entities (seit Einheit 4).
+- Update-Intervall 15 Minuten (konfigurierbar auf Code-Ebene) – für
+  Öffnungszeiten-Aktualität angemessen, ohne unnötige Last zu erzeugen.
+- Keine blockierenden Aufrufe (siehe auch Abschnitt „Bilder“ zur
+  bewusst nicht-blockierenden URL-Sicherheitsprüfung).
+- **Bewusst geprüft und verworfen:** `always_update=False` am
+  Coordinator (unterdrückt State-Updates, wenn sich die Rohdaten nicht
+  geändert haben) würde einen echten Fehler einführen: Der
+  Öffnungsstatus und die Entfernung werden bei jedem Abruf dynamisch aus
+  der aktuellen Uhrzeit berechnet, nicht aus gespeicherten Werten. Ohne
+  die Zustandsaktualisierung bei jedem Coordinator-Update würde
+  „Geöffnet“ nicht zur richtigen Zeit umschalten, auch wenn sich die
+  Hofladen-Daten selbst nicht geändert haben.
+
+### Qualität – während dieser Einheit behobene Mängel
+
+- **`coordinator.py`:** Die Config Entry wurde nicht explizit an die
+  Home-Assistant-Basisklasse übergeben. Ohne diese Angabe ermittelt
+  `DataUpdateCoordinator` die Config Entry über einen von Home Assistant
+  selbst als veraltet markierten Kontextvariablen-Fallback, der laut
+  Warnhinweis im Home-Assistant-Kern **ab Version 2025.11 nicht mehr
+  unterstützt wird**. Behoben durch expliziten `config_entry`-Parameter.
+- **`management.py`:** Griff bisher direkt auf `coordinator._provider`
+  zu (Kapselungsbruch) und liess `ValueError` aus `_get_coordinator`
+  unbehandelt durch die WebSocket-Handler durchsickern. Ausserdem wurde
+  ein nicht schreibfähiger Data Provider fälschlich als „ungültige
+  Daten“ statt als eigener Fehlerfall gemeldet. Behoben durch zwei neue,
+  öffentliche Coordinator-Methoden (`async_save_hofladen`,
+  `async_delete_hofladen`) sowie konsistente Fehlerbehandlung in allen
+  drei WebSocket-Befehlen.
+- **`camera.py`:** wiederholt wieder aufgetauchte, unverdrahtete und der
+  getroffenen Architekturentscheidung (natives `image`-Entity, siehe
+  Einheit 11) widersprechende Implementierung erneut entfernt.
+- Logging ergänzt: Device-Entfernung sowie Hofladen-Hinzufügen/
+  -Aktualisieren/-Löschen werden auf Debug-Ebene protokolliert
+  (nachvollziehbar bei Fehlersuche, aber nicht spammig – Home Assistant
+  selbst protokolliert Coordinator-Fehler bereits deduplizierend beim
+  Zustandsübergang, siehe Performance-Abschnitt).
 
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 

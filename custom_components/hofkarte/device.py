@@ -9,12 +9,16 @@ Entities (folgen in einer späteren Einheit).
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN
 from .models import Hofladen
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def build_device_identifier(hofladen: Hofladen) -> tuple[str, str]:
@@ -82,4 +86,9 @@ def async_sync_devices(
             if identifier[0] == DOMAIN
         }
         if hofkarte_identifiers and not hofkarte_identifiers & current_identifiers:
+            _LOGGER.debug(
+                "Entferne Device %s (Hofladen nicht mehr in den Daten enthalten): %s",
+                device_entry.id,
+                hofkarte_identifiers,
+            )
             device_registry.async_remove_device(device_entry.id)

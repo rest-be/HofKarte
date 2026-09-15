@@ -303,3 +303,110 @@ async def test_async_register_websocket_commands_registriert_alle_drei(
     assert "hofkarte/management/list" in ws_handlers
     assert "hofkarte/management/save" in ws_handlers
     assert "hofkarte/management/delete" in ws_handlers
+
+
+# ---------------------------------------------------------------------------
+# Fehlerbehandlung: HofKarte nicht (mehr) eingerichtet (Einheit 12)
+# ---------------------------------------------------------------------------
+
+
+def test_ws_list_ohne_eingerichtete_integration_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    """Ohne eingerichtetes HofKarte darf keine unbehandelte ValueError aus
+    dem WebSocket-Handler entkommen – ein sauberer Fehler muss zurückkommen."""
+    connection = _FakeConnection()
+
+    ws_list(hass, connection, {"id": 10, "type": "hofkarte/management/list"})
+
+    assert len(connection.results) == 0
+    assert len(connection.errors) == 1
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 10
+    assert code == "not_ready"
+
+
+async def test_ws_save_ohne_eingerichtete_integration_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    connection = _FakeConnection()
+
+    ws_save(
+        hass,
+        connection,
+        {
+            "id": 11,
+            "type": "hofkarte/management/save",
+            "hofladen": {"name": "Hofladen"},
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    assert len(connection.errors) == 1
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 11
+    assert code == "not_ready"
+
+
+async def test_ws_delete_ohne_eingerichtete_integration_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    connection = _FakeConnection()
+
+    ws_delete(
+        hass,
+        connection,
+        {"id": 12, "type": "hofkarte/management/delete", "hofladen_id": "hof-1"},
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    assert len(connection.errors) == 1
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 12
+    assert code == "not_ready"
+
+
+async def test_ws_save_nicht_unterstuetzt_ergibt_eigenen_fehlercode(
+    hass: HomeAssistant,
+) -> None:
+    """Ein nicht schreibfähiger Provider muss als 'not_supported' gemeldet
+    werden, nicht als 'invalid_data' (Einheit 12: Fehler klar unterscheiden)."""
+    provider = _ReadOnlyFakeProvider()
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN]["fake-entry"] = coordinator
+
+    connection = _FakeConnection()
+    ws_save(
+        hass,
+        connection,
+        {
+            "id": 13,
+            "type": "hofkarte/management/save",
+            "hofladen": {"id": "hof-neu", "name": "Neuer Hofladen"},
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    assert len(connection.errors) == 1
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 13
+    assert code == "not_supported"
+
+
+async def test_management_greift_nicht_mehr_direkt_auf_provider_zu() -> None:
+    """Qualitätssicherung: management.py darf nicht mehr über
+    ``coordinator._provider`` auf den Data Provider zugreifen (Kapselung
+    über die öffentliche Coordinator-API, siehe Einheit 12)."""
+    import inspect
+
+    from custom_components.hofkarte import management
+
+    quelltext = inspect.getsource(management)
+    assert "coordinator._provider" not in quelltext
+    assert "._provider" not in quelltext
+

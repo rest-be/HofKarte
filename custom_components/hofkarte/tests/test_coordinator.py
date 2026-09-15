@@ -329,3 +329,193 @@ async def test_update_sortiment_nicht_unterstuetzt_bei_read_only_provider(
         await coordinator.async_update_hofladen_sortiment(
             "hof-1", merkmale=[{"id": "bio", "name": "Bio"}]
         )
+
+
+# ---------------------------------------------------------------------------
+# async_save_hofladen (Einheit 12: Kapselung für management.py)
+# ---------------------------------------------------------------------------
+
+
+async def test_save_hofladen_legt_neuen_hofladen_an(hass: HomeAssistant) -> None:
+    """Eine unbekannte ID muss einen neuen Hofladen anlegen."""
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    ergebnis = await coordinator.async_save_hofladen(
+        {"id": "hof-neu", "name": "Neuer Hofladen"}
+    )
+
+    assert ergebnis.id == "hof-neu"
+    assert "hof-neu" in coordinator.data
+
+
+async def test_save_hofladen_aktualisiert_bestehenden_hofladen(
+    hass: HomeAssistant,
+) -> None:
+    """Eine bereits vorhandene ID muss aktualisiert werden, kein Duplikatfehler."""
+    provider = StaticTestDataProvider(
+        raw_hoflaeden=[{"id": "hof-1", "name": "Alter Name"}]
+    )
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    ergebnis = await coordinator.async_save_hofladen(
+        {"id": "hof-1", "name": "Neuer Name"}
+    )
+
+    assert ergebnis.name == "Neuer Name"
+    assert coordinator.data["hof-1"].name == "Neuer Name"
+
+
+async def test_save_hofladen_kann_beliebige_felder_setzen(
+    hass: HomeAssistant,
+) -> None:
+    """Im Unterschied zu async_update_hofladen_sortiment müssen auch Felder
+    wie Adresse/Koordinaten setzbar sein."""
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    ergebnis = await coordinator.async_save_hofladen(
+        {
+            "id": "hof-1",
+            "name": "Hofladen Eins",
+            "adresse": "Dorfstrasse 1",
+            "latitude": 47.0,
+            "longitude": 8.0,
+        }
+    )
+
+    assert ergebnis.adresse == "Dorfstrasse 1"
+    assert ergebnis.latitude == 47.0
+
+
+async def test_save_hofladen_ungueltige_daten_wirft_fehler(
+    hass: HomeAssistant,
+) -> None:
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    with pytest.raises(HofladenValidationError):
+        await coordinator.async_save_hofladen({"name": ""})
+
+
+async def test_save_hofladen_nicht_unterstuetzt_bei_read_only_provider(
+    hass: HomeAssistant,
+) -> None:
+    provider = _FakeProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    with pytest.raises(NotImplementedError):
+        await coordinator.async_save_hofladen({"id": "hof-1", "name": "Hofladen"})
+
+
+# ---------------------------------------------------------------------------
+# async_delete_hofladen (Einheit 12: Kapselung für management.py)
+# ---------------------------------------------------------------------------
+
+
+async def test_delete_hofladen_entfernt_bestehenden_hofladen(
+    hass: HomeAssistant,
+) -> None:
+    provider = StaticTestDataProvider(
+        raw_hoflaeden=[{"id": "hof-1", "name": "Hofladen Eins"}]
+    )
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    await coordinator.async_delete_hofladen("hof-1")
+
+    assert "hof-1" not in coordinator.data
+
+
+async def test_delete_hofladen_unbekannte_id_wirft_fehler(
+    hass: HomeAssistant,
+) -> None:
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    with pytest.raises(HofladenNotFoundError):
+        await coordinator.async_delete_hofladen("unbekannt")
+
+
+async def test_delete_hofladen_nicht_unterstuetzt_bei_read_only_provider(
+    hass: HomeAssistant,
+) -> None:
+    provider = _FakeProvider(raw_hoflaeden=[{"id": "hof-1", "name": "Hofladen Eins"}])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    with pytest.raises(NotImplementedError):
+        await coordinator.async_delete_hofladen("hof-1")
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics-Unterstützung (Einheit 12)
+# ---------------------------------------------------------------------------
+
+
+async def test_letzte_erfolgreiche_aktualisierung_none_vor_erstem_abruf(
+    hass: HomeAssistant,
+) -> None:
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+
+    assert coordinator.letzte_erfolgreiche_aktualisierung is None
+
+
+async def test_letzte_erfolgreiche_aktualisierung_gesetzt_nach_erfolg(
+    hass: HomeAssistant,
+) -> None:
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+
+    await coordinator.async_config_entry_first_refresh()
+
+    assert coordinator.letzte_erfolgreiche_aktualisierung is not None
+
+
+async def test_letzte_erfolgreiche_aktualisierung_bleibt_bei_fehlschlag_erhalten(
+    hass: HomeAssistant,
+) -> None:
+    """Ein späterer Fehlversuch darf den Zeitpunkt des letzten Erfolgs nicht
+    überschreiben (wichtig für Diagnostics: zeigt, seit wann es hakt)."""
+    provider = _FakeProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+    erster_zeitpunkt = coordinator.letzte_erfolgreiche_aktualisierung
+    assert erster_zeitpunkt is not None
+
+    provider.error = RuntimeError("Vorübergehend nicht erreichbar")
+    await coordinator.async_refresh()
+
+    assert coordinator.letzte_erfolgreiche_aktualisierung == erster_zeitpunkt
+
+
+async def test_provider_type_name(hass: HomeAssistant) -> None:
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+
+    assert coordinator.provider_type_name == "StaticTestDataProvider"
+
+
+async def test_provider_unterstuetzt_schreibzugriffe_true_fuer_mutable(
+    hass: HomeAssistant,
+) -> None:
+    provider = StaticTestDataProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+
+    assert coordinator.provider_unterstuetzt_schreibzugriffe is True
+
+
+async def test_provider_unterstuetzt_schreibzugriffe_false_fuer_read_only(
+    hass: HomeAssistant,
+) -> None:
+    provider = _FakeProvider(raw_hoflaeden=[])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+
+    assert coordinator.provider_unterstuetzt_schreibzugriffe is False

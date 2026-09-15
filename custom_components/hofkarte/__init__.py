@@ -62,7 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Coordinator kennt ausschliesslich die abstrakte
     # HofladenDataProvider-Schnittstelle, nicht die konkrete Speicherform.
     provider = StorageHofladenDataProvider(hass)
-    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    coordinator = HofKarteUpdateCoordinator(hass, provider, config_entry=entry)
 
     await coordinator.async_config_entry_first_refresh()
 

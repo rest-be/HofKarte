@@ -13,14 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
+from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_FETCH_TIMEOUT_SECONDS, DEFAULT_UPDATE_INTERVAL, DOMAIN
 from .data_provider import (
@@ -43,6 +45,7 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
         provider: HofladenDataProvider,
         update_interval: timedelta = DEFAULT_UPDATE_INTERVAL,
         fetch_timeout_seconds: float = DEFAULT_FETCH_TIMEOUT_SECONDS,
+        config_entry: ConfigEntry | None = None,
     ) -> None:
         """Coordinator erzeugen.
 
@@ -51,15 +54,54 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
         konfigurierbar und testbar. Eine benutzerseitige Einstellung über
         einen Options Flow ist nicht Teil dieser Einheit, kann aber ohne
         Änderung an dieser Klasse ergänzt werden.
+
+        ``config_entry`` wird bewusst explizit durchgereicht (Einheit 12,
+        Qualität): Ohne explizite Angabe ermittelt
+        ``DataUpdateCoordinator`` die Config Entry implizit über einen
+        Kontextvariablen-Fallback (``config_entries.current_entry``) –
+        ein von Home Assistant selbst als veraltet markiertes Verhalten,
+        das laut Warnhinweis im Home-Assistant-Kern ab Version 2025.11
+        nicht mehr unterstützt wird. In Tests ohne echte Config Entry
+        bleibt der Parameter ``None`` (Standardwert), was weiterhin
+        funktioniert.
         """
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=update_interval,
+            config_entry=config_entry,
         )
         self._provider = provider
         self._fetch_timeout_seconds = fetch_timeout_seconds
+        self._letzte_erfolgreiche_aktualisierung: datetime | None = None
+
+    @property
+    def letzte_erfolgreiche_aktualisierung(self) -> datetime | None:
+        """Zeitpunkt (UTC) des letzten erfolgreichen Datenabrufs.
+
+        ``None``, solange noch kein Abruf erfolgreich war. Wird u. a. von
+        ``diagnostics.py`` verwendet; die Basisklasse
+        ``DataUpdateCoordinator`` verfolgt diesen Zeitpunkt in dieser
+        Home-Assistant-Version nicht selbst (nur ``last_update_success``
+        als reinen Erfolgs-/Fehlschlag-Status).
+        """
+        return self._letzte_erfolgreiche_aktualisierung
+
+    @property
+    def provider_type_name(self) -> str:
+        """Klassenname des aktuell verwendeten Data Providers.
+
+        Für Diagnostics (``diagnostics.py``) – bewusst als öffentliche
+        Property statt direktem Zugriff auf ``_provider`` von aussen,
+        um die Kapselung konsistent einzuhalten (Einheit 12, Qualität).
+        """
+        return type(self._provider).__name__
+
+    @property
+    def provider_unterstuetzt_schreibzugriffe(self) -> bool:
+        """Ob der aktuell verwendete Data Provider Schreibzugriffe unterstützt."""
+        return isinstance(self._provider, MutableHofladenDataProvider)
 
     async def _async_update_data(self) -> dict[str, Hofladen]:
         """Rohdaten abrufen, validieren und als Hofladen-Mapping liefern.
@@ -99,6 +141,7 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
                 continue
             hoflaeden[hofladen.id] = hofladen
 
+        self._letzte_erfolgreiche_aktualisierung = dt_util.utcnow()
         return hoflaeden
 
     async def async_add_hofladen(self, raw_hofladen: dict[str, Any]) -> Hofladen:
@@ -131,6 +174,7 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
         await self._provider.async_add_raw_hofladen(raw_hofladen)
         await self.async_refresh()
 
+        _LOGGER.debug("Hofladen hinzugefügt: %s", hofladen.id)
         return hofladen
 
     async def async_update_hofladen_sortiment(
@@ -211,4 +255,75 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
         await self._provider.async_update_raw_hofladen(hofladen_id, updates)
         await self.async_refresh()
 
+        _LOGGER.debug(
+            "Sortiment aktualisiert für Hofladen %s: %s", hofladen_id, list(updates)
+        )
         return validierter_hofladen
+
+    async def async_save_hofladen(self, raw_hofladen: dict[str, Any]) -> Hofladen:
+        """Einen Hofladen mit beliebigen Feldern anlegen oder aktualisieren.
+
+        Im Unterschied zu ``async_update_hofladen_sortiment`` (auf die
+        fünf Fachbereiche aus Einheit 8 beschränkt) erlaubt diese
+        Funktion das Setzen beliebiger Hofladen-Felder (Name, Adresse,
+        Koordinaten, Öffnungszeiten, Bilder, ...). Wird von der
+        grafischen Verwaltungsoberfläche verwendet (siehe
+        ``management.py``), die stets den vollständigen, vom Formular
+        gelieferten Datensatz übergibt.
+
+        Existiert die ``id`` bereits, werden die vorhandenen Felder mit
+        ``raw_hofladen`` zusammengeführt; existiert sie nicht, wird ein
+        neuer Hofladen angelegt. Validiert (Fail-Fast) über
+        ``parsing.parse_hofladen`` und stösst wie die übrigen
+        Schreibfunktionen einen Refresh an.
+
+        Wirft ``NotImplementedError`` bei einem nicht schreibfähigen
+        Provider und :class:`~custom_components.hofkarte.parsing.HofladenValidationError`
+        bei ungültigen Daten.
+        """
+        if not isinstance(self._provider, MutableHofladenDataProvider):
+            raise NotImplementedError(
+                "Der konfigurierte Data Provider unterstützt keine "
+                "Schreibzugriffe (Anlegen/Bearbeiten von Hofläden)."
+            )
+
+        # Fail-Fast: vor jedem Schreibzugriff vollständig validieren.
+        validierter_hofladen = parse_hofladen(raw_hofladen)
+
+        if self.data and validierter_hofladen.id in self.data:
+            await self._provider.async_update_raw_hofladen(
+                validierter_hofladen.id, raw_hofladen
+            )
+            _LOGGER.debug("Hofladen aktualisiert: %s", validierter_hofladen.id)
+        else:
+            await self._provider.async_add_raw_hofladen(raw_hofladen)
+            _LOGGER.debug("Hofladen angelegt: %s", validierter_hofladen.id)
+
+        await self.async_refresh()
+        return validierter_hofladen
+
+    async def async_delete_hofladen(self, hofladen_id: str) -> None:
+        """Einen Hofladen dauerhaft aus der Datenquelle entfernen.
+
+        Stösst nach dem Löschen einen regulären Refresh an; dadurch wird
+        über den bestehenden Coordinator-Listener (siehe ``device.py``)
+        automatisch auch das zugehörige Device entfernt.
+
+        Wirft ``NotImplementedError`` bei einem nicht schreibfähigen
+        Provider und :class:`~custom_components.hofkarte.data_provider.HofladenNotFoundError`,
+        falls keine ``id`` mit diesem Wert existiert.
+        """
+        if not isinstance(self._provider, MutableHofladenDataProvider):
+            raise NotImplementedError(
+                "Der konfigurierte Data Provider unterstützt keine "
+                "Schreibzugriffe (Löschen von Hofläden)."
+            )
+
+        if not self.data or hofladen_id not in self.data:
+            raise HofladenNotFoundError(
+                f"Kein Hofladen mit der ID '{hofladen_id}' gefunden."
+            )
+
+        await self._provider.async_delete_raw_hofladen(hofladen_id)
+        await self.async_refresh()
+        _LOGGER.debug("Hofladen gelöscht: %s", hofladen_id)
