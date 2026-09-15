@@ -10,7 +10,87 @@ dokumentiert.
 Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unveröffentlicht]
+## [0.12.0] - Unveröffentlicht
+
+### Hinzugefügt
+
+- Image Entity „Hauptbild“ (`image.py`, `HofKarteHauptbildImage`) pro
+  Hofladen: nutzt Home Assistants native `image`-Entity-Plattform
+  (`homeassistant.components.image.ImageEntity`) – die plattformgerechte
+  Lösung für Bild-URLs, da nur echte `image`-Entities von
+  Home-Assistant-Dashboards (z. B. Picture-Entity-Cards) automatisch als
+  Bild dargestellt werden. Home Assistant übernimmt Abruf und
+  Zwischenspeicherung selbst; keine eigene Download-/Thumbnail-Pipeline.
+- `images.py`: reine, testbare Fachfunktionen `is_valid_image_url`
+  (nur `http`/`https`, keine Zugangsdaten, keine literale
+  private/interne IP-Adresse), `get_main_image_url` (erstes Bild mit
+  sicherer URL = Hauptbild, Reihenfolge in `Hofladen.bilder` bestimmt
+  die Priorität – bewusst kein zusätzliches „ist Hauptbild“-Feld im
+  Datenmodell) und `get_additional_images` (alle sicheren Bilder ausser
+  dem Hauptbild als einfache, JSON-taugliche Liste).
+- „Weitere Bilder“ (über das Hauptbild hinaus) werden als
+  `extra_state_attributes` (`weitere_bilder`) an derselben Image-Entity
+  bereitgestellt statt als eigene Entities oder Galerie (Grenzen dieser
+  Einheit: „Keine React-Galerie“) – analog zum Sortiment-Attribute-Muster
+  aus Einheit 8.
+- Cache-Invalidierung bei Bildänderung: Ändert sich die Hauptbild-URL
+  eines Hofladens (z. B. über das Verwaltungspanel), wird Home
+  Assistants interner Bild-Cache (`ImageEntity._cached_image`)
+  zurückgesetzt und `image_last_updated` erneuert – sonst würde
+  weiterhin das alte, bereits abgerufene Bild ausgeliefert.
+- Umfangreiche Tests: `images.py` (gültige/ungültige Schemata,
+  Zugangsdaten, private/reservierte/Loopback-/Link-Local-IP-Literale,
+  fehlende Bilder, JSON-Serialisierbarkeit) und `image.py`
+  (`unique_id`-Muster, Hauptbild-Ermittlung inkl. Überspringen
+  unsicherer Bilder, Verhalten ohne Bilder, Attribute, Cache-
+  Invalidierung bei URL-Änderung, Device-Zuordnung, dynamische
+  Entity-Erzeugung für neu hinzugefügte Hofläden).
+
+### Geändert
+
+- `__init__.py`: `PLATFORMS` umfasst nun zusätzlich `image`.
+
+### Entfernt
+
+- `camera.py`: eine unvollständige, nicht verdrahtete und ungetestete
+  alternative Implementierung über die `camera`-Plattform (eigener
+  `aiohttp`-Bildabruf statt Home Assistants `image`-Entity-Mechanismus).
+  Stand im Widerspruch zur hier getroffenen Architekturentscheidung
+  (natives `image`-Entity) und wurde entfernt, um keinen toten,
+  widersprüchlichen Code im Repository zu belassen.
+
+### Architekturentscheid: Bilddarstellung
+
+- Für Hofladen-Bilder wird Home Assistants natives `image`-Entity
+  verwendet statt einer reinen Attribut-Lösung oder der
+  `camera`-Plattform. Begründung: Nur echte `image`-Entities werden von
+  Standard-Lovelace-Karten automatisch als Bild gerendert; ein
+  beliebiges Attribut mit einer URL-Zeichenkette wird das nicht.
+
+### Behoben (während der Implementierung)
+
+- **Blockierender Aufruf in `images.py`:** Eine frühere Fassung der
+  URL-Sicherheitsprüfung löste den Hostnamen über das blockierende,
+  synchrone `socket.getaddrinfo` auf, um private/interne IP-Adressen
+  auch hinter einem Domainnamen zu erkennen. Da diese Prüfung aus einer
+  Entity-Property (`image_url`) heraus aufgerufen wird, hätte dies den
+  Home-Assistant-Event-Loop blockiert (Regeln: „keine blockierenden
+  Aufrufe“). Behoben durch eine rein syntaktische Prüfung ohne
+  DNS-Auflösung (nur IP-Literale werden gegen bekannte
+  private/reservierte Bereiche geprüft); die bewusste Grenze dieser
+  vereinfachten Prüfung ist im Moduldoc von `images.py` dokumentiert.
+- Ein Testfehler in `test_image.py` (`_FakeProvider` unterstützt keine
+  Schreibzugriffe, ein Test rief dennoch `async_update_hofladen_sortiment`
+  auf) wurde behoben, indem die Testdaten direkt manipuliert und ein
+  regulärer Refresh angestossen werden.
+
+### Bewusst nicht implementiert
+
+- Optionale Diagnostics/Zusatzinformationen (im Plan als „optional“
+  genannt): Gegenstand der eigenen, kommenden Einheit „Diagnostics,
+  Fehlerbehandlung, Performance und Qualität“.
+
+## [0.11.0] - Unveröffentlicht
 
 ### Hinzugefügt
 

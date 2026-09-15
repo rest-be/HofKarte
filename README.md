@@ -3,9 +3,11 @@
 Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden.
 
-> **Status:** Suche, Filter und Home-Assistant Actions (Einheit 10),
-> ergänzt um zwei vorangegangene Architekturentscheide: (1) Home
-> Assistant ist sowohl Laufzeit- als auch Verwaltungsoberfläche für
+> **Status:** Bilder und Detailinformationen (Einheit 11). Hofläden mit
+> hinterlegten Bild-URLs zeigen ihr Hauptbild über eine native
+> Home-Assistant-Image-Entity; weitere Bilder stehen als Attribut zur
+> Verfügung. Ergänzt um zwei vorangegangene Architekturentscheide: (1)
+> Home Assistant ist sowohl Laufzeit- als auch Verwaltungsoberfläche für
 > HofKarte – die vom Benutzer gepflegten Hofläden werden in einem
 > integrationsinternen, persistenten Store gehalten (keine externe
 > Datenbank, kein externer Dienst); (2) HofKarte bietet zusätzlich zu
@@ -242,6 +244,7 @@ gebildet):
 | `sensor`         | Nächste Öffnung        | `timestamp`  | –                              |
 | `sensor`         | Nächste Schliessung    | `timestamp`  | –                              |
 | `sensor`         | Entfernung             | `distance`   | –                              |
+| `image`          | Hauptbild              | –            | Bilder (siehe unten)          |
 
 Für den Binary Sensor wurde bewusst **keine** Device Class gesetzt: Es
 gibt keine passende Home-Assistant-Device-Class für „Geschäft geöffnet“
@@ -249,7 +252,7 @@ gibt keine passende Home-Assistant-Device-Class für „Geschäft geöffnet“
 wie Türen/Fenster).
 
 Neu über den Coordinator hinzukommende Hofläden (siehe
-„Neuen Hofladen hinzufügen“ unten) erhalten automatisch alle vier
+„Neuen Hofladen hinzufügen“ unten) erhalten automatisch alle fünf
 Entities, ohne dass ein Reload nötig ist. Entities werden „unavailable“,
 sobald der letzte Coordinator-Abruf fehlgeschlagen ist oder der Hofladen
 aus den Daten verschwunden ist.
@@ -397,6 +400,39 @@ hoflaeden:
 - Keine proprietäre REST-API, keine globale Suche über andere
   Home-Assistant-Integrationen hinweg (ausserhalb des Geltungsbereichs
   dieser Action).
+
+## Bilder
+
+Jeder Hofladen zeigt sein Hauptbild über eine native
+Home-Assistant-`image`-Entity (`custom_components/hofkarte/image.py`,
+Validierung in `images.py`):
+
+- **Hauptbild:** definiert als das erste Bild in `Hofladen.bilder` mit
+  einer sicheren, ladbaren URL. Reihenfolge in `bilder` bestimmt die
+  Priorität – es gibt bewusst kein zusätzliches „ist Hauptbild“-Feld im
+  Datenmodell.
+- **Weitere Bilder:** stehen als `extra_state_attributes`
+  (`weitere_bilder`, eine Liste aus `{"url": ..., "beschreibung": ...}`)
+  an derselben Entity zur Verfügung, nicht als eigene Entities oder
+  Galerie.
+- **Sicherheitsprüfung:** Nur `http`/`https`-URLs werden akzeptiert
+  (kein `file://`, `data:`, keine rohen Dateisystempfade), keine
+  eingebetteten Zugangsdaten, keine literale private/interne
+  IP-Adresse (z. B. `127.0.0.1`, `192.168.x.x`, `169.254.169.254`).
+  Diese Prüfung ist rein syntaktisch (keine DNS-Auflösung, um den
+  Home-Assistant-Event-Loop nicht durch einen blockierenden
+  `socket.getaddrinfo`-Aufruf zu blockieren) – ein Domainname, der erst
+  später auf eine private Adresse auflöst, wird dadurch nicht erkannt.
+- **Fehlende/ungültige Bilder:** werden robust behandelt – kein Bild
+  vorhanden oder alle Bilder ungültig ergibt ein leeres Hauptbild
+  (`image_url: None`), kein Fehler.
+- **Kein eigener Bildabruf:** Home Assistants `image`-Entity-Plattform
+  übernimmt Abruf und Zwischenspeicherung des Bildes selbst; HofKarte
+  lädt und speichert keine Bilddateien selbst.
+- **Diagnostics:** Die in dieser Einheit als optional genannten
+  Diagnostics/Zusatzinformationen wurden bewusst nicht umgesetzt –
+  „Diagnostics, Fehlerbehandlung, Performance und Qualität“ ist
+  Gegenstand einer eigenen, kommenden Einheit.
 
 ## Bekannte Einschränkungen (Stand dieser Einheit)
 

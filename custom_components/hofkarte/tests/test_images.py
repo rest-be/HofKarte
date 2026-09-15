@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from custom_components.hofkarte.images import (
-    build_images_attribute,
+    get_additional_images,
     get_main_image_url,
     is_valid_image_url,
 )
@@ -118,97 +116,57 @@ class TestGetMainImageUrl:
         assert get_main_image_url(bilder) == "https://example.com/only.jpg"
 
 
-class TestBuildImagesAttribute:
-    """Tests für die Strukturierung von Bildattributen."""
+class TestGetAdditionalImages:
+    """Tests für die Ermittlung weiterer (nicht Haupt-)Bilder."""
 
-    def test_empty_bilder_returns_empty_structure(self) -> None:
-        """Ein leeres Tupel sollte eine leere Struktur zurückgeben."""
-        result = build_images_attribute(())
-        assert result == {"primary_image": None, "images": []}
+    def test_leeres_tupel_ergibt_leere_liste(self) -> None:
+        assert get_additional_images(()) == []
 
-    def test_single_valid_image(self) -> None:
-        """Ein einzelnes gültiges Bild sollte als primary_image und in images List erscheinen."""
-        bilder = (Bild(url="https://example.com/image.jpg", beschreibung="Hauptbild"),)
-        result = build_images_attribute(bilder)
+    def test_einzelnes_bild_ergibt_leere_liste(self) -> None:
+        """Gibt es nur ein Bild, ist es das Hauptbild – keine weiteren."""
+        bilder = (Bild(url="https://example.com/only.jpg", beschreibung="Einzig"),)
+        assert get_additional_images(bilder) == []
 
-        assert result["primary_image"] == "https://example.com/image.jpg"
-        assert len(result["images"]) == 1
-        assert result["images"][0]["url"] == "https://example.com/image.jpg"
-        assert result["images"][0]["description"] == "Hauptbild"
-
-    def test_multiple_valid_images(self) -> None:
-        """Mehrere gültige Bilder sollten alle in images enthalten sein, erste als primary."""
+    def test_mehrere_bilder_ohne_hauptbild(self) -> None:
         bilder = (
-            Bild(url="https://example.com/img1.jpg", beschreibung="Erste"),
-            Bild(url="https://example.com/img2.jpg", beschreibung="Zweite"),
-            Bild(url="https://example.com/img3.jpg", beschreibung=None),
+            Bild(url="https://example.com/1.jpg", beschreibung="Eins"),
+            Bild(url="https://example.com/2.jpg", beschreibung="Zwei"),
+            Bild(url="https://example.com/3.jpg", beschreibung=None),
         )
-        result = build_images_attribute(bilder)
 
-        assert result["primary_image"] == "https://example.com/img1.jpg"
-        assert len(result["images"]) == 3
-        assert result["images"][0]["url"] == "https://example.com/img1.jpg"
-        assert result["images"][0]["description"] == "Erste"
-        assert result["images"][1]["url"] == "https://example.com/img2.jpg"
-        assert result["images"][1]["description"] == "Zweite"
-        assert result["images"][2]["url"] == "https://example.com/img3.jpg"
-        assert "description" not in result["images"][2]
+        weitere = get_additional_images(bilder)
 
-    def test_filters_invalid_images(self) -> None:
-        """Ungültige Bilder sollten gefiltert werden."""
+        assert [eintrag["url"] for eintrag in weitere] == [
+            "https://example.com/2.jpg",
+            "https://example.com/3.jpg",
+        ]
+        assert weitere[0]["beschreibung"] == "Zwei"
+        assert weitere[1]["beschreibung"] is None
+
+    def test_unsichere_weitere_bilder_werden_gefiltert(self) -> None:
         bilder = (
-            Bild(url="file:///etc/passwd", beschreibung="Invalid"),
-            Bild(url="https://example.com/valid.jpg", beschreibung="Valid"),
+            Bild(url="https://example.com/1.jpg", beschreibung="Haupt"),
+            Bild(url="file:///etc/passwd", beschreibung="Unsicher"),
+            Bild(url="https://example.com/2.jpg", beschreibung="Sicher"),
         )
-        result = build_images_attribute(bilder)
 
-        assert result["primary_image"] == "https://example.com/valid.jpg"
-        assert len(result["images"]) == 1
-        assert result["images"][0]["url"] == "https://example.com/valid.jpg"
+        weitere = get_additional_images(bilder)
 
-    def test_all_invalid_images(self) -> None:
-        """Wenn alle Bilder ungültig sind, sollte ein leeres Struktur zurückgeben."""
+        assert [eintrag["url"] for eintrag in weitere] == [
+            "https://example.com/2.jpg"
+        ]
+
+    def test_unsicheres_erstes_bild_wird_nicht_als_weiteres_gezaehlt(self) -> None:
+        """Ein unsicheres erstes Bild ist weder Hauptbild noch 'weiteres
+        Bild' – es wird komplett ausgeschlossen."""
         bilder = (
-            Bild(url="", beschreibung="Empty"),
-            Bild(url="ftp://example.com/img.jpg", beschreibung="FTP"),
+            Bild(url="file:///etc/passwd", beschreibung="Unsicher"),
+            Bild(url="https://example.com/1.jpg", beschreibung="Haupt"),
+            Bild(url="https://example.com/2.jpg", beschreibung="Zwei"),
         )
-        result = build_images_attribute(bilder)
 
-        assert result["primary_image"] is None
-        assert result["images"] == []
-
-    def test_image_without_description(self) -> None:
-        """Bilder ohne Beschreibung sollten kein description Feld enthalten."""
-        bilder = (Bild(url="https://example.com/nodesc.jpg", beschreibung=None),)
-        result = build_images_attribute(bilder)
-
-        assert len(result["images"]) == 1
-        assert "description" not in result["images"][0]
-
-    def test_image_with_empty_description(self) -> None:
-        """Bilder mit leerer Beschreibung sollten kein description Feld enthalten."""
-        bilder = (Bild(url="https://example.com/emptydesc.jpg", beschreibung=""),)
-        result = build_images_attribute(bilder)
-
-        assert len(result["images"]) == 1
-        # Leere Strings werden als falsy behandelt
-        assert "description" not in result["images"][0]
-
-    def test_json_serializable(self) -> None:
-        """Das Ergebnis sollte JSON-serialisierbar sein."""
-        import json
-
-        bilder = (
-            Bild(url="https://example.com/img1.jpg", beschreibung="Bild 1"),
-            Bild(url="https://example.com/img2.jpg", beschreibung=None),
-        )
-        result = build_images_attribute(bilder)
-
-        # Sollte keine Fehler werfen
-        json_str = json.dumps(result)
-        assert json_str
-
-        # Sollte zurück parsebar sein
-        parsed = json.loads(json_str)
-        assert parsed["primary_image"] == "https://example.com/img1.jpg"
-        assert len(parsed["images"]) == 2
+        assert get_main_image_url(bilder) == "https://example.com/1.jpg"
+        weitere = get_additional_images(bilder)
+        assert [eintrag["url"] for eintrag in weitere] == [
+            "https://example.com/2.jpg"
+        ]

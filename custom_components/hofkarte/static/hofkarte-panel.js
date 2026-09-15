@@ -38,7 +38,7 @@ class HofkartePanel extends HTMLElement {
   }
 
   empty() {
-    return { id: "", name: "", beschreibung: "", adresse: "", plz: "", ort: "", land: "", website: "", latitude: "", longitude: "", oeffnungszeiten: [], sonderoeffnungszeiten: [], produkte: [], kategorien: [], zahlungsarten: [], verkaufsarten: [], merkmale: [] };
+    return { id: "", name: "", beschreibung: "", adresse: "", plz: "", ort: "", land: "", website: "", latitude: "", longitude: "", oeffnungszeiten: [], sonderoeffnungszeiten: [], produkte: [], kategorien: [], zahlungsarten: [], verkaufsarten: [], merkmale: [], bilder: [] };
   }
 
   clone(item) { return JSON.parse(JSON.stringify(item)); }
