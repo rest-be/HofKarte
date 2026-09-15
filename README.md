@@ -4,18 +4,25 @@ Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden (Direktvermarkter, Selbstbedienungsläden,
 Hofläden mit und ohne Personal).
 
-> **Status:** Übersetzungen, Dokumentation und HACS (Einheit 13). Die
-> Integration ist funktional vollständig und technisch robust (siehe
-> Einheiten 1–12) und wurde für Benutzer und HACS vorbereitet: sauberere
-> Repository-Struktur, vollständige README, konsistente Versionierung.
-> Ergänzt um zwei vorangegangene Architekturentscheide: (1) Home
-> Assistant ist sowohl Laufzeit- als auch Verwaltungsoberfläche für
-> HofKarte – die vom Benutzer gepflegten Hofläden werden in einem
-> integrationsinternen, persistenten Store gehalten (keine externe
-> Datenbank, kein externer Dienst); (2) HofKarte bietet zusätzlich zu
-> den Home-Assistant-Entities eine **eigene grafische
-> Verwaltungsoberfläche** (Sidebar-Panel) für Administratoren – eine
-> bewusste, dokumentierte Abweichung vom ursprünglichen Plan.
+> **Status:** Dokumentation für Git-Publikation und Anwendungshandbuch
+> (Einheit 15). Die Integration ist funktional vollständig, getestet und
+> releasefähig (Einheiten 1–14). Diese Einheit ergänzt ausschliesslich
+> Dokumentation: ein vollständiges Anwendungshandbuch
+> ([`docs/handbuch.md`](docs/handbuch.md)), eine
+> Architekturdokumentation ([`docs/architecture.md`](docs/architecture.md)),
+> `CONTRIBUTING.md` und `SECURITY.md`. Ergänzt um zwei vorangegangene
+> Architekturentscheide: (1) Home Assistant ist sowohl Laufzeit- als
+> auch Verwaltungsoberfläche für HofKarte – die vom Benutzer gepflegten
+> Hofläden werden in einem integrationsinternen, persistenten Store
+> gehalten (keine externe Datenbank, kein externer Dienst); (2) HofKarte
+> bietet zusätzlich zu den Home-Assistant-Entities eine **eigene
+> grafische Verwaltungsoberfläche** (Sidebar-Panel) für Administratoren
+> – eine bewusste, dokumentierte Abweichung vom ursprünglichen Plan.
+
+**📖 Für die vollständige Anleitung als Endanwender:in siehe das
+[Anwendungshandbuch](docs/handbuch.md)** – Installation, Ersteinrichtung,
+alle Entities, Öffnungszeiten, Actions/Automationen, Dashboard-Beispiele,
+Fehlerbehebung, Datenschutz und Support in einem Dokument.
 
 ## Zweck
 
@@ -587,6 +594,28 @@ Selbsteinschätzung gegen die Home-Assistant-Integration-Quality-Scale
 Begründung dokumentiert statt stillschweigend übersprungen oder
 vorgetäuscht.
 
+### Weiterführende Dokumentation
+
+- [`docs/handbuch.md`](docs/handbuch.md) – vollständiges
+  Anwendungshandbuch für Endanwender:innen.
+- [`docs/architecture.md`](docs/architecture.md) – Architekturüberblick
+  für Entwickler:innen und Beitragende.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) – Entwicklungsumgebung, Tests,
+  Pull-Request-Ablauf.
+- [`SECURITY.md`](SECURITY.md) – Meldeweg für Sicherheitsprobleme.
+
 ## Lizenz
 
 Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
+
+## Support
+
+Fragen und Fehlermeldungen bitte über den [Issue-Tracker des
+Repositories](https://github.com/rest-be/HofKarte/issues) einreichen –
+siehe [`docs/handbuch.md`, Kapitel 15](docs/handbuch.md#15-support) für
+Details, welche Angaben dabei hilfreich sind. Sicherheitsrelevante
+Probleme bitte **nicht** öffentlich melden, sondern über den in
+[`SECURITY.md`](SECURITY.md) beschriebenen privaten Meldeweg.
+
+Dies ist ein privates Freizeitprojekt ohne kommerzielle
+Support-Garantie (siehe `SECURITY.md`).

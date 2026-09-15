@@ -8,6 +8,49 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- `CONTRIBUTING.md`: Entwicklungsumgebung, Code-Stil/Linting/Typisierung,
+  Tests ausführen, Branch-/Commit-Konventionen, Pull-Request-Ablauf,
+  Umgang mit Übersetzungen.
+- `SECURITY.md`: unterstützte Versionen, privater Meldeweg für
+  Sicherheitsprobleme, erwartete Reaktionszeit, bekannte/bewusste
+  Sicherheitsentscheidungen.
+- `docs/architecture.md`: Architekturüberblick, Zusammenspiel von Config
+  Flow/ConfigEntry/Coordinator/Devices/Entities, Datenmodell und
+  Datenquelle, Öffnungszeiten-/Geo-/Sortimentslogik, Erweiterungspunkte.
+- `docs/handbuch.md`: vollständiges Anwendungshandbuch für
+  Endanwender:innen mit allen 15 im Umsetzungsplan geforderten
+  Kapiteln (Installation, Ersteinrichtung, Konfiguration,
+  HofKarte-Geräte, Entities, Öffnungszeiten, Standort/Entfernung,
+  Produkte/Eigenschaften, Actions/Automationen mit lauffähigen
+  YAML-Beispielen, zwei Dashboard-Beispiele mit reinen
+  Home-Assistant-Bordmitteln, Fehlerbehebung, Updates, Deinstallation,
+  Datenschutz, Support).
+- README: Verweis auf Anwendungshandbuch/Architekturdokumentation/
+  CONTRIBUTING/SECURITY, Support-Abschnitt ergänzt.
+
+### Geprüft, keine Änderung nötig
+
+- Secrets/Tokens/API-Schlüssel/Passwörter: keine gefunden.
+- Persönliche Daten (Namen, E-Mail-Adressen, private Koordinaten):
+  keine gefunden. Auftretende IP-Adressen (`127.0.0.1`,
+  `169.254.169.254`) sind Standard-Sicherheitsbeispiele in
+  `images.py`, keine echten Daten.
+- Veraltete Architekturhinweise (React, FastAPI, Uvicorn, SQLite,
+  Alembic, Docker, eigene REST-API): alle Fundstellen sind korrekte
+  Verneinungen abgelehnter Architekturentscheidungen, keine
+  tatsächlichen Altlasten.
+- `LICENSE`: Jahr, Rechteinhaber (`@rest-be`) konsistent mit
+  `manifest.json` (`codeowners`) und README.
+- Alle Beispiel-YAMLs (README + Handbuch) gegen echte Entity-Namen,
+  Action-Namen und Parameter aus dem Code geprüft und als YAML
+  validiert.
+- Keine Code-Änderungen in dieser Einheit nötig; Tests unverändert
+  grün (292/292).
+
+## [0.13.2] - Unveröffentlicht
+
 ### Behoben
 
 - **Kritisch – Testsuite komplett ausgefallen:** Zwei verwaiste

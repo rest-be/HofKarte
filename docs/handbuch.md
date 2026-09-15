@@ -1,0 +1,501 @@
+# HofKarte – Anwendungshandbuch
+
+Vollständiges Handbuch für Endanwender:innen. Aktuell nur auf Deutsch
+verfügbar; die Kapitelstruktur ist so angelegt, dass weitere Sprachen
+(z. B. `handbuch.en.md`) ergänzt werden können, ohne die Gliederung zu
+ändern.
+
+Für eine technische Kurzübersicht siehe [`README.md`](../README.md),
+für die Entwickler-/Architekturdokumentation siehe
+[`architecture.md`](architecture.md).
+
+## Inhalt
+
+1. [Installation über HACS](#1-installation-über-hacs)
+2. [Ersteinrichtung](#2-ersteinrichtung)
+3. [Konfiguration](#3-konfiguration)
+4. [HofKarte-Geräte](#4-hofkarte-geräte)
+5. [Entities](#5-entities)
+6. [Öffnungszeiten](#6-öffnungszeiten)
+7. [Standort und Entfernung](#7-standort-und-entfernung)
+8. [Produkte und Eigenschaften](#8-produkte-und-eigenschaften)
+9. [Actions und Automationen](#9-actions-und-automationen)
+10. [Dashboard-Beispiele](#10-dashboard-beispiele)
+11. [Fehlerbehebung](#11-fehlerbehebung)
+12. [Updates](#12-updates)
+13. [Deinstallation](#13-deinstallation)
+14. [Datenschutz](#14-datenschutz)
+15. [Support](#15-support)
+
+---
+
+## 1. Installation über HACS
+
+1. HACS öffnen (Seitenmenü in Home Assistant).
+2. Über das Drei-Punkte-Menü (oben rechts) **Benutzerdefinierte
+   Repositories** wählen.
+3. Repository-URL `https://github.com/rest-be/HofKarte` eintragen,
+   Kategorie **Integration** wählen, hinzufügen.
+4. Im HACS-Suchfeld „HofKarte“ eingeben, öffnen, **Herunterladen**
+   wählen.
+5. Home Assistant vollständig neu starten (**Entwicklerwerkzeuge →
+   YAML** reicht **nicht** – ein echter Neustart ist nötig, damit die
+   neue Integration erkannt wird).
+
+*Hinweis: Solange HofKarte nicht im HACS-Default-Store gelistet ist,
+sind Schritt 2–3 (benutzerdefiniertes Repository) erforderlich.*
+
+Alternative: manuelle Installation (siehe README, Abschnitt
+„Installation“) – nur empfohlen, wenn HACS nicht zur Verfügung steht.
+
+## 2. Ersteinrichtung
+
+Nach dem Neustart:
+
+1. **Einstellungen → Geräte & Dienste** öffnen.
+2. **Integration hinzufügen** (unten rechts) wählen.
+3. „HofKarte“ suchen und auswählen.
+4. Im Einrichtungsdialog erscheint genau **ein Eingabefeld**:
+   **Anzeigename** (z. B. „HofKarte“ – frei wählbar, wird als Titel der
+   Integration in der Übersicht angezeigt). Bestätigen.
+5. HofKarte ist eingerichtet. Es erscheint noch kein Hofladen – das
+   Hinzufügen von Hofläden geschieht über die grafische
+   Verwaltungsoberfläche (siehe Kapitel 4).
+
+**Wichtig – Single-Instance:** HofKarte kann nur **einmal** pro
+Home-Assistant-Installation eingerichtet werden. Ein zweiter Versuch
+über „Integration hinzufügen“ wird mit der Meldung „HofKarte ist bereits
+eingerichtet“ abgelehnt. Das ist kein Fehler, sondern beabsichtigt: Eine
+Instanz verwaltet zentral **alle** Hofläden.
+
+## 3. Konfiguration
+
+**Es gibt aktuell keinen Options Flow.** Nach der Ersteinrichtung lässt
+sich über die Home-Assistant-Oberfläche nichts an der Integration selbst
+nachträglich ändern (kein „Konfigurieren“-Dialog mit weiteren
+Einstellungen). Konkret:
+
+- **Aktualisierungsintervall:** fest auf 15 Minuten, nur auf
+  Code-Ebene änderbar (`const.DEFAULT_UPDATE_INTERVAL` im Quellcode).
+- **Abruf-Timeout:** fest auf 30 Sekunden, ebenfalls nur auf
+  Code-Ebene änderbar.
+- **Weitere Optionen:** existieren nicht.
+
+Das ist eine bekannte, dokumentierte Einschränkung (siehe
+`quality_scale.yaml`, README „Bekannte Einschränkungen“) – keine
+fehlende Dokumentation, sondern der tatsächliche, vollständige
+Funktionsumfang.
+
+Was sich **wohl** ändern lässt, sind die eigentlichen Hofladen-Daten
+(Name, Adresse, Öffnungszeiten, Sortiment, Bilder, ...) – das geschieht
+nicht über „Konfigurieren“, sondern über die grafische
+Verwaltungsoberfläche, siehe Kapitel 4.
+
+## 4. HofKarte-Geräte
+
+Nach der Einrichtung erscheint im Home-Assistant-Seitenmenü ein neuer
+Eintrag **HofKarte** (nur für Administrator:innen-Konten sichtbar). Dort
+können Hofläden verwaltet werden:
+
+- **Neuer Hofladen:** über die Verwaltungsseite anlegen (Name,
+  Beschreibung, Adresse, PLZ/Ort, Land, Koordinaten, Webseite,
+  Öffnungszeiten, Sortiment, Bilder).
+- **Bearbeiten:** bestehenden Hofladen in der Liste auswählen, Felder
+  ändern, speichern.
+- **Löschen:** Hofladen kontrolliert entfernen (inklusive des
+  zugehörigen Geräts und aller Entities in Home Assistant).
+
+Sobald ein Hofladen angelegt wird, erstellt HofKarte **automatisch**
+(ohne Neustart) ein **logisches Gerät** dafür unter **Einstellungen →
+Geräte & Dienste → HofKarte → Geräte**. Dieses Gerät ist **kein
+physisches Gerät** – es hat bewusst keinen Hersteller und kein Modell,
+da ein Hofladen fachlich beides nicht hat. Unter diesem Gerät finden
+sich alle in Kapitel 5 beschriebenen Entities für genau diesen Hofladen.
+
+Wird ein Hofladen gelöscht, verschwindet auch sein Gerät. Die bereits
+erzeugten Entities bleiben als „nicht verfügbar“ in der Entity-Liste
+bestehen (stabile Entity-ID), statt automatisch entfernt zu werden –
+das ist eine bekannte, bewusste Einschränkung.
+
+## 5. Entities
+
+Für **jeden** Hofladen legt HofKarte automatisch folgende fünf Entities
+an:
+
+| Entity (Name) | Plattform | Device Class | Einheit | Bedeutung |
+|---|---|---|---|---|
+| **Geöffnet** | `binary_sensor` | – | – | Ist der Hofladen gerade geöffnet? `An`/`Aus`, oder „Unbekannt“, wenn keine Öffnungszeiten hinterlegt sind. |
+| **Nächste Öffnung** | `sensor` | Zeitstempel | – | Zeitpunkt, zu dem der Hofladen als Nächstes öffnet. |
+| **Nächste Schliessung** | `sensor` | Zeitstempel | – | Zeitpunkt, zu dem der Hofladen als Nächstes schliesst. |
+| **Entfernung** | `sensor` | Entfernung | Kilometer | Luftlinien-Entfernung zur konfigurierten Home-Assistant-Position. |
+| **Hauptbild** | `image` | – | – | Zeigt das erste hinterlegte Bild mit gültiger, sicherer URL. |
+
+Die Entity-IDs folgen dem Muster `<plattform>.<hofladen_name>_<funktion>`
+(z. B. `binary_sensor.hofladen_mueller_geoeffnet`) – der genaue Name
+hängt vom vergebenen Hofladen-Namen ab und ist in **Einstellungen →
+Geräte & Dienste → HofKarte → Entities** einsehbar.
+
+### Attribute
+
+- **Geöffnet** trägt zusätzlich die Attribute `kategorien`, `produkte`,
+  `zahlungsarten`, `verkaufsarten`, `merkmale` (siehe Kapitel 8) – diese
+  Informationen erscheinen **nicht** auf den anderen Entities, um
+  Daten nicht mehrfach zu duplizieren.
+- **Hauptbild** trägt das Attribut `weitere_bilder` (Liste weiterer
+  hinterlegter Bilder mit URL und Beschreibung, siehe Kapitel 8/README
+  „Bilder“).
+
+### Zustände
+
+Alle fünf Entities werden „nicht verfügbar“, sobald der letzte
+Datenabruf fehlgeschlagen ist **oder** der zugehörige Hofladen aus den
+Daten verschwunden ist (siehe Kapitel 4). Solange Daten vorhanden sind,
+aber ein Wert (noch) nicht berechenbar ist (z. B. keine Öffnungszeiten
+hinterlegt), zeigen die Entities „Unbekannt“ – nicht „nicht verfügbar“
+und nicht einen erfundenen Wert.
+
+## 6. Öffnungszeiten
+
+HofKarte unterscheidet **reguläre Öffnungszeiten** und
+**Sonderöffnungszeiten**:
+
+- **Reguläre Öffnungszeiten:** pro Wochentag (Montag–Sonntag) beliebig
+  viele Zeitintervalle (z. B. „Montag 08:00–12:00“ und „Montag
+  14:00–18:00“ für eine Mittagspause).
+- **Sonderöffnungszeiten:** ein Datumsbereich (Start- und Enddatum) mit
+  entweder eigenen Uhrzeiten (z. B. verlängerte Öffnung an einem
+  Feiertag) oder als „geschlossen“ markiert (z. B. Betriebsferien).
+  **Sonderöffnungszeiten überschreiben reguläre Zeiten für ihren
+  Zeitraum vollständig.**
+
+Beide werden über die Verwaltungsoberfläche gepflegt (Kapitel 4).
+
+**Mitternachtsüberschreitung:** Ein Intervall, dessen Ende vor seinem
+Beginn liegt (z. B. „22:00–02:00“), wird korrekt als über Mitternacht
+hinausreichend behandelt.
+
+**Nächste Öffnung/Schliessung:** Ist der Hofladen aktuell geöffnet,
+zeigt „Nächste Öffnung“ den Beginn der **darauffolgenden**
+Öffnungsphase (nicht die laufende); „Nächste Schliessung“ zeigt das
+Ende der laufenden Phase. Ist der Hofladen aktuell geschlossen, zeigen
+beide Sensoren die als Nächstes anstehende Öffnungsphase.
+
+**Zeitzonenverhalten:** Die Berechnung erfolgt in der in Home Assistant
+konfigurierten Zeitzone (**Einstellungen → System → Allgemein**), nicht
+in UTC oder einer festen Zeitzone. Bekannte Grenze: Bei Uhrzeiten genau
+in einer Sommerzeit-Umstellungslücke oder im doppelt vorkommenden
+Bereich beim Zurückstellen der Uhr wird keine explizite
+Mehrdeutigkeits-Auflösung vorgenommen (seltener Grenzfall).
+
+## 7. Standort und Entfernung
+
+Der Sensor „Entfernung“ berechnet die **Luftlinien-Entfernung**
+(nicht die Strassenentfernung) zwischen der in Home Assistant
+konfigurierten Position (**Einstellungen → System → Allgemein**, Latitude/
+Longitude) und den beim Hofladen hinterlegten Koordinaten, über die
+Haversine-Formel (Grosskreisdistanz auf einer Kugel).
+
+**Genauigkeit:** Die Berechnung ist mathematisch präzise für die
+angegebenen Koordinaten, berücksichtigt aber **keine** Strassen,
+Höhenunterschiede oder Reisezeit – es ist eine reine Luftlinie.
+
+**Grenzen:**
+
+- Ohne hinterlegte Koordinaten am Hofladen zeigt der Sensor „Unbekannt“.
+- Ist die Home-Assistant-Position nicht sinnvoll konfiguriert (das
+  Standardpaar `0.0/0.0` einer frischen Installation), zeigt der Sensor
+  ebenfalls „Unbekannt“ statt einer irreführenden Entfernung.
+- Es wird **keine Standortverfolgung** durchgeführt (kein
+  `device_tracker`, keine Personen-/Geräteverfolgung) – nur die
+  statische, einmal konfigurierte Home-Position wird gelesen (siehe
+  Kapitel 14, Datenschutz).
+
+## 8. Produkte und Eigenschaften
+
+Jeder Hofladen kann in fünf Fachbereichen gepflegt werden (über die
+Verwaltungsoberfläche, Kapitel 4):
+
+- **Kategorien** – z. B. „Gemüse“, „Milchprodukte“.
+- **Produkte** – konkrete Artikel, jeweils optional einer oder mehreren
+  Kategorien zugeordnet, z. B. „Kartoffeln“ → Kategorie „Gemüse“.
+- **Zahlungsarten** – z. B. „Bargeld“, „TWINT“, „Debitkarte“,
+  „Kreditkarte“.
+- **Verkaufsarten** – z. B. „Hofladen“, „Selbstbedienung“,
+  „Verkaufsautomat“, „Ab-Hof-Verkauf“.
+- **Merkmale** – z. B. „Bio“, „eigener Anbau“, „Parkplatz“,
+  „barrierefrei“.
+
+Für die vier zuletzt genannten Bereiche bietet HofKarte einen
+**Vorschlagskatalog** gängiger Werte (siehe README, Abschnitt „Unter der
+Haube“) – eigene, frei gewählte Bezeichnungen sind jederzeit ebenso
+zulässig.
+
+Diese Informationen erscheinen **nicht** als eigene Sensoren (das wären
+zu viele, fachlich nicht als Messwert geeignete Entities), sondern als
+**Attribute der Entity „Geöffnet“** (siehe Kapitel 5). Sie lassen sich
+in Automationen/Vorlagen über `state_attr(...)` auslesen, z. B.:
+
+```jinja
+{{ state_attr('binary_sensor.hofladen_mueller_geoeffnet', 'merkmale') }}
+```
+
+## 9. Actions und Automationen
+
+HofKarte stellt eine Home-Assistant-Action bereit:
+
+### `hofkarte.hoflaeden_suchen`
+
+Durchsucht und filtert die verwalteten Hofläden. **Alle** Parameter
+sind optional und werden **UND-verknüpft** (je mehr gesetzt sind, desto
+enger die Suche).
+
+| Parameter | Typ | Bedeutung |
+|---|---|---|
+| `suchbegriff` | Text | Freitextsuche (Gross-/Kleinschreibung egal, Teilstring-Treffer) über Name, Beschreibung, Ort. |
+| `kategorie` | Text | Exakter Name einer Kategorie. |
+| `produkt` | Text | Exakter Produktname. |
+| `verkaufsart` | Text | Exakter Name einer Verkaufsart. |
+| `zahlungsart` | Text | Exakter Name einer Zahlungsart. |
+| `merkmal` | Text | Exakter Name eines Merkmals. |
+| `nur_geoeffnet` | Ja/Nein | Nur aktuell geöffnete Hofläden. |
+
+**Rückgabe** (per `response_variable` in Skripten/Automationen
+nutzbar): `anzahl_treffer` (Zahl) sowie `hoflaeden` (Liste mit je `id`,
+`name`, `geoeffnet`).
+
+**Beispiel 1 – einfacher Aufruf in Entwicklerwerkzeuge → Aktionen:**
+
+```yaml
+action: hofkarte.hoflaeden_suchen
+data:
+  kategorie: Gemüse
+  nur_geoeffnet: true
+```
+
+**Beispiel 2 – vollständige Automation mit Benachrichtigung:**
+
+```yaml
+alias: "Hofladen Müller ist offen"
+trigger:
+  - trigger: state
+    entity_id: binary_sensor.hofladen_mueller_geoeffnet
+    to: "on"
+action:
+  - action: notify.mobile_app
+    data:
+      message: "Hofladen Müller hat gerade geöffnet."
+```
+
+**Beispiel 3 – Skript mit Rückgabedaten (`response_variable`):**
+
+```yaml
+alias: "Bio-Hofläden Abendübersicht"
+trigger:
+  - trigger: time
+    at: "17:30:00"
+action:
+  - action: hofkarte.hoflaeden_suchen
+    data:
+      merkmal: Bio
+      nur_geoeffnet: true
+    response_variable: treffer
+  - action: notify.mobile_app
+    data:
+      message: >-
+        {% if treffer.anzahl_treffer > 0 %}
+          {{ treffer.anzahl_treffer }} Bio-Hofladen/-läden noch geöffnet:
+          {{ treffer.hoflaeden | map(attribute='name') | join(', ') }}
+        {% else %}
+          Aktuell ist kein Bio-Hofladen geöffnet.
+        {% endif %}
+```
+
+**Nicht vorhanden:** eine eigene „Daten aktualisieren“-Action (dafür
+die eingebaute Home-Assistant-Action `homeassistant.update_entity`
+verwenden), separate Actions je Filterkriterium, jede Art von
+REST-API.
+
+## 10. Dashboard-Beispiele
+
+Beide Beispiele verwenden ausschliesslich in Home Assistant eingebaute
+Karten (keine zusätzlichen Frontend-Ressourcen/Custom Cards nötig).
+Entity-IDs anpassen (siehe Kapitel 5, wie die tatsächlichen IDs zu
+finden sind).
+
+**Beispiel 1 – Entities-Karte mit allen Werten eines Hofladens:**
+
+```yaml
+type: entities
+title: Hofladen Müller
+entities:
+  - entity: binary_sensor.hofladen_mueller_geoeffnet
+    name: Geöffnet
+  - entity: sensor.hofladen_mueller_naechste_oeffnung
+    name: Nächste Öffnung
+  - entity: sensor.hofladen_mueller_naechste_schliessung
+    name: Nächste Schliessung
+  - entity: sensor.hofladen_mueller_entfernung
+    name: Entfernung
+```
+
+**Beispiel 2 – Picture-Entity-Karte mit dem Hauptbild:**
+
+```yaml
+type: picture-entity
+entity: image.hofladen_mueller_hauptbild
+name: Hofladen Müller
+show_state: false
+show_name: true
+tap_action:
+  action: more-info
+```
+
+**Kombiniert als Dashboard-Ansicht (mehrere Karten untereinander):**
+
+```yaml
+type: vertical-stack
+cards:
+  - type: picture-entity
+    entity: image.hofladen_mueller_hauptbild
+    name: Hofladen Müller
+  - type: entities
+    entities:
+      - binary_sensor.hofladen_mueller_geoeffnet
+      - sensor.hofladen_mueller_naechste_oeffnung
+      - sensor.hofladen_mueller_entfernung
+```
+
+## 11. Fehlerbehebung
+
+**Die Integration erscheint nicht unter „Integration hinzufügen“:**
+Home Assistant vollständig neu starten (nicht nur YAML neu laden); bei
+manueller Installation den Pfad `custom_components/hofkarte/` prüfen.
+
+**„HofKarte ist bereits eingerichtet“:** Erwartetes Verhalten, siehe
+Kapitel 2 (Single-Instance). Die bestehende Instanz unter
+**Einstellungen → Geräte & Dienste** verwenden.
+
+**Das Verwaltungs-Panel „HofKarte“ erscheint nicht im Seitenmenü:** Nur
+sichtbar für Administrator:innen-Konten. Browser-Cache leeren, falls es
+nach einem Update nicht aktualisiert erscheint.
+
+**Entity „Geöffnet“ zeigt dauerhaft „Unbekannt“:** Für den Hofladen sind
+keine Öffnungszeiten hinterlegt – über die Verwaltungsoberfläche
+ergänzen (Kapitel 4/6).
+
+**Sensor „Entfernung“ zeigt „Unbekannt“:** Entweder fehlen dem Hofladen
+Koordinaten, oder die Home-Assistant-Position ist nicht konfiguriert
+(**Einstellungen → System → Allgemein**), siehe Kapitel 7.
+
+**Hauptbild wird nicht angezeigt:** Die hinterlegte Bild-URL ist leer,
+kein gültiger `http(s)`-Link, oder zeigt aus Sicherheitsgründen
+abgelehnt auf eine private/interne IP-Adresse. URL in der
+Verwaltungsoberfläche prüfen.
+
+**Logging aktivieren:** Für detailliertere Fehlersuche unter
+**Einstellungen → System → Logs** das Logging für
+`custom_components.hofkarte` auf „Debug“ stellen (oder in
+`configuration.yaml`):
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.hofkarte: debug
+```
+
+**Diagnostics exportieren:** Unter **Einstellungen → Geräte & Dienste →
+HofKarte → Diagnose herunterladen** steht eine technische Übersicht zur
+Fehlersuche zur Verfügung (Status des letzten Datenabrufs, Zeitpunkt der
+letzten erfolgreichen Aktualisierung, Update-Intervall, Typ der
+Datenquelle, Anzahl Hofläden). Diese Datei enthält **bewusst keine**
+Hofladen-Inhalte oder Standortdaten und kann daher bei einer
+Fehlermeldung gefahrlos angehängt werden.
+
+## 12. Updates
+
+**Update über HACS:** HACS zeigt verfügbare Updates automatisch an
+(Badge im Seitenmenü). Update in HACS auswählen, herunterladen, Home
+Assistant **vollständig neu starten**, damit die neue Version geladen
+wird.
+
+**Breaking Changes:** Nutzerrelevante Änderungen werden in
+[`CHANGELOG.md`](../CHANGELOG.md) dokumentiert. Vor einem Update bei
+grösserem Versionssprung (geänderte `MAJOR`-Version nach [Semantic
+Versioning](https://semver.org/lang/de/)) den Changelog-Eintrag prüfen.
+
+**Reload vs. Neustart:** Ein reines **Reload** der Integration
+(Drei-Punkte-Menü bei HofKarte → **Neu laden**) reicht für die meisten
+Änderungen aus und ist schneller als ein voller Neustart. Nach einer
+HACS-Aktualisierung des Codes ist jedoch ein **vollständiger
+Home-Assistant-Neustart** nötig, damit der neue Python-Code tatsächlich
+geladen wird – ein reines Reload lädt keinen neuen Code nach.
+
+Hofladen-Daten (Storage) überstehen sowohl Reload als auch Neustart
+unverändert (siehe Kapitel 14).
+
+## 13. Deinstallation
+
+1. Unter **Einstellungen → Geräte & Dienste** die HofKarte-Integration
+   entfernen (Drei-Punkte-Menü → **Löschen**). Dabei werden alle
+   Devices und Entities automatisch entfernt.
+2. Die gespeicherten Hofladen-Daten liegen als Datei
+   `.storage/hofkarte_hoflaeden` im
+   Home-Assistant-Konfigurationsverzeichnis und werden **nicht**
+   automatisch mitgelöscht – bei Bedarf manuell entfernen (z. B. über
+   den Dateizugriff des Home-Assistant-Hosts).
+3. In HACS die Integration deinstallieren (Drei-Punkte-Menü bei
+   HofKarte in HACS → **Entfernen**). Bei manueller Installation
+   stattdessen den Ordner `custom_components/hofkarte/` löschen.
+4. Home Assistant neu starten.
+
+## 14. Datenschutz
+
+- **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
+  externen Servern – mit einer Ausnahme: Wird für einen Hofladen ein
+  Hauptbild über eine externe URL hinterlegt, ruft Home Assistant diese
+  URL beim Anzeigen des Bildes ab (siehe Kapitel 5, „Hauptbild“).
+  Ausserhalb davon findet keine Telemetrie und keine Datenübertragung an
+  Dritte statt.
+- **Standort:** Der Entfernungs-Sensor (Kapitel 7) liest ausschliesslich
+  die statische, in Home Assistant konfigurierte Position – kein
+  `device_tracker`, keine Personen- oder Geräteverfolgung. Diese
+  Position wird von HofKarte nicht separat gespeichert und nicht an
+  externe Dienste übertragen.
+- **Speicherort aller Daten:** Alle Hofladen-Daten (Name, Adresse,
+  Koordinaten, Öffnungszeiten, Sortiment, Bild-URLs) liegen
+  ausschliesslich lokal im Home-Assistant-Storage
+  (`.storage/hofkarte_hoflaeden`) – keine Cloud-Synchronisation, keine
+  externe Datenbank.
+- **Diagnostics:** Die über Home Assistant herunterladbare Diagnose
+  (Kapitel 11) enthält bewusst keine Hofladen-Inhalte und keine
+  Standortdaten.
+- **Zugriffsschutz:** Die grafische Verwaltungsoberfläche und alle
+  Schreibzugriffe erfordern Home-Assistant-Administratorrechte.
+
+## 15. Support
+
+Bei Problemen oder Fragen:
+
+1. Zunächst **Kapitel 11 (Fehlerbehebung)** prüfen sowie
+   [`README.md`](../README.md), Abschnitt „Bekannte Einschränkungen“.
+2. Sicherheitsrelevante Probleme **nicht** öffentlich melden – siehe
+   [`SECURITY.md`](../SECURITY.md) für den privaten Meldeweg.
+3. Für alle übrigen Fehlermeldungen: Issue im Repository
+   `https://github.com/rest-be/HofKarte` erstellen.
+
+**Für einen hilfreichen Fehlerbericht bitte angeben:**
+
+- HofKarte-Version (**Einstellungen → Geräte & Dienste → HofKarte** oder
+  `manifest.json` → `version`)
+- Home-Assistant-Version
+- Installationsart (HACS oder manuell)
+- Schritte zur Reproduktion
+- Erwartetes vs. tatsächliches Verhalten
+- Nach Möglichkeit: die in Kapitel 11 beschriebene Diagnose-Datei
+  (enthält keine persönlichen Daten, siehe Kapitel 14) sowie relevante
+  Log-Auszüge **ohne** eigene Zugangsdaten oder persönliche Angaben.
+
+Es handelt sich um ein privates Freizeitprojekt – siehe
+[`SECURITY.md`](../SECURITY.md) für Hinweise zur erwarteten
+Reaktionszeit.
