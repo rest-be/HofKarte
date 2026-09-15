@@ -209,8 +209,18 @@ Mehrdeutigkeits-Auflösung vorgenommen (seltener Grenzfall).
 In der Verwaltungsoberfläche werden Hofladen-Koordinaten im Schweizer
 Landeskoordinatensystem **LV95** erfasst (Ostwert **E** und Nordwert
 **N**, jeweils in Metern, z. B. E ≈ 2'600'000–2'700'000, N ≈
-1'150'000–1'250'000 im Mittelland). Ein Klick auf den Infobutton (ⓘ)
-neben den Feldern zeigt eine kurze Erklärung direkt im Formular.
+1'150'000–1'250'000 im Mittelland). Ein deutlich sichtbarer, blau
+hinterlegter Infobutton (ⓘ) neben den Feldern zeigt eine kurze
+Erklärung direkt im Formular.
+
+**Standort auf einer Karte ansehen:** Sowohl in „Bearbeiten“ als auch
+in der Detailansicht (Kapitel 4) steht neben den Koordinaten ein Button
+„🗺️ Auf Karte anzeigen“ zur Verfügung. Ein Klick öffnet den Standort in
+einem neuen Browser-Tab auf [map.geo.admin.ch](https://map.geo.admin.ch)
+(amtlicher Schweizer Kartendienst). Der Button ist ausgegraut/deaktiviert,
+solange für den Hofladen keine gültigen Koordinaten hinterlegt sind. Die
+Kartenansicht ist rein informativ – es lassen sich dort keine Daten
+verändern.
 
 **Woher bekomme ich die LV95-Koordinaten eines Hofladens?**
 Auf [map.geo.admin.ch](https://map.geo.admin.ch) den gewünschten Ort

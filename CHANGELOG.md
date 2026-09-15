@@ -10,6 +10,48 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- **Karten-Button** neben den LV95-Koordinaten, identisch in
+  „Bearbeiten“ und „Details“ verfügbar (Button „🗺️ Auf Karte anzeigen“,
+  öffnet [map.geo.admin.ch](https://map.geo.admin.ch) in neuem Tab).
+  Gemeinsame Implementierung (`mapUrl`/`mapButton` in
+  `hofkarte-panel.js`) für beide Ansichten – kein Code-Duplikat. LV95
+  wird nativ über den dokumentierten URL-Parameter `center` an
+  map.geo.admin.ch übergeben, **keine** Umrechnung nach WGS84 nötig
+  (map.geo.admin.ch akzeptiert LV95 direkt). Button ist deaktiviert
+  ohne gültige Koordinaten (`is_valid_lv95`), öffnet ausschliesslich
+  einen rein lesenden externen Link, keine neue Abhängigkeit.
+
+### Geändert
+
+- **LV95-Infobutton visuell hervorgehoben:** blau hinterlegt (nutzt die
+  Home-Assistant-Theme-Farbe `--info-color`, passt sich hellen wie
+  dunklen Themes an), mit Hover-/Fokus-Zustand und `aria-label` für
+  Barrierefreiheit. Bleibt eindeutig von der primären
+  „Speichern“-Aktion und den `.secondary`/`.danger`-Buttons
+  unterscheidbar.
+- **Gruppierung in „Bearbeiten“ überarbeitet:** die bisherige
+  „Stammdaten“-Sektion wurde in vier eigenständige, konsistent mit der
+  Detailansicht benannte Abschnitte aufgeteilt: „Allgemeine
+  Informationen“ (Name, Beschreibung), „Adresse“ (Adresse, PLZ, Ort,
+  Land), „Kontakt & Webseite“ (Webseite), „Standort / Koordinaten“
+  (LV95-Felder, Infobutton, Karten-Button). Keine Änderung an
+  Feldnamen, Validierung oder Speicherlogik – rein strukturelle/visuelle
+  Gruppierung.
+- Detailansicht: „Adresse“ und „Standort / Koordinaten“ sind jetzt zwei
+  getrennte Abschnitte (vorher gemeinsam dargestellt) – konsistent mit
+  der neuen Gruppierung in „Bearbeiten“.
+
+### Ausdrücklich unverändert
+
+- Backend (`management.py`, `coordinator.py`, `models.py`,
+  `parsing.py`, `distance.py`, `lv95.py`), WebSocket-Vertrag,
+  Datenmodell: keine Änderungen. Rein clientseitige
+  GUI-Verfeinerung ohne Breaking Changes.
+
+## [0.14.0] - Unveröffentlicht
+
+### Hinzugefügt
+
 - **Read-only Detailansicht** je Hofladen in der Verwaltungsoberfläche
   (`static/hofkarte-panel.js`): zeigt Stammdaten, Adresse, Koordinaten,
   Öffnungszeiten, Sortiment und Bilder kompakt an, ohne editierbare

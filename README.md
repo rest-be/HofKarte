@@ -142,10 +142,14 @@ sichtbar). Dort können Administratoren:
 - Hofläden kontrolliert löschen.
 
 Zusätzlich gibt es eine **read-only Detailansicht** je Hofladen
-(„Details“-Button in der Liste): zeigt alle Stammdaten, Öffnungszeiten,
-Sortiment und Bilder kompakt und übersichtlich an, **ohne** editierbare
-Felder – gedacht für den schnellen Überblick, getrennt von der
-Bearbeitung.
+(„Details“-Button in der Liste): zeigt alle Stammdaten, Adresse,
+Standort/Koordinaten (inkl. Karten-Button), Öffnungszeiten, Sortiment
+und Bilder kompakt und übersichtlich an, **ohne** editierbare Felder –
+gedacht für den schnellen Überblick, getrennt von der Bearbeitung. Die
+Gruppierung der Informationen (Allgemeines, Adresse, Standort, Kontakt,
+Öffnungszeiten, ...) ist bewusst konsistent mit der Bearbeitungsansicht
+gehalten, damit dieselben Informationen in beiden Ansichten
+wiedererkennbar sind.
 
 Änderungen werden direkt im integrationsinternen Home-Assistant-Storage
 persistiert und ohne Neustart an Coordinator, Devices und Entities
@@ -157,8 +161,23 @@ lokale Home-Assistant-Mechanismen (kein externer Dienst).
 Die Verwaltungsoberfläche erfasst und zeigt Koordinaten im Schweizer
 Landeskoordinatensystem **LV95** (Ostwert E / Nordwert N, z. B. von
 [map.geo.admin.ch](https://map.geo.admin.ch) übernehmbar), statt der
-bisherigen WGS84-Dezimalgrad-Eingabe. Ein Infobutton (ⓘ) neben den
-Eingabefeldern erklärt LV95 kurz direkt im Formular.
+bisherigen WGS84-Dezimalgrad-Eingabe. Ein deutlich sichtbarer, blau
+hinterlegter Infobutton (ⓘ) neben den Eingabefeldern erklärt LV95 kurz
+direkt im Formular – sowohl in „Bearbeiten“ als auch farblich/gestalterisch
+konsistent zur restlichen Home-Assistant-Oberfläche (nutzt die
+Home-Assistant-Theme-Farbe `--info-color`, passt sich damit hellen wie
+dunklen Themes an).
+
+**Standort auf Karte anzeigen:** Neben den LV95-Koordinaten steht in
+„Bearbeiten“ **und** „Details“ ein Button „🗺️ Auf Karte anzeigen“ zur
+Verfügung, der den Standort in einem neuen Browser-Tab auf
+[map.geo.admin.ch](https://map.geo.admin.ch) öffnet (amtlicher Schweizer
+Kartendienst, unterstützt LV95-Koordinaten nativ – **keine** Umrechnung
+nach WGS84 nötig). Der Button ist deaktiviert, solange keine gültigen
+Koordinaten hinterlegt sind. Beide Ansichten nutzen dieselbe
+Hilfsfunktion (`mapUrl`/`mapButton` in `hofkarte-panel.js`) für
+identisches Verhalten. Öffnet nur eine externe, rein lesende Kartenansicht
+– verändert keine Daten.
 
 **Wichtig – keine Datenmodell-Änderung:** Intern speichert HofKarte
 Koordinaten weiterhin als WGS84-Dezimalgrad

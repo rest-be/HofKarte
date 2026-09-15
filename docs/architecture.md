@@ -158,6 +158,21 @@ Umrechnung geschieht im Browser); es dient als getestete
 Referenzimplementierung und für mögliche künftige serverseitige
 Validierung.
 
+### Kartenanzeige (map.geo.admin.ch)
+
+Sowohl „Bearbeiten“ als auch „Details“ bieten einen Button, der den
+Hofladen-Standort auf [map.geo.admin.ch](https://map.geo.admin.ch)
+öffnet (`hofkarte-panel.js`, Methoden `mapUrl`/`mapButton` – **eine**
+gemeinsame Implementierung für beide Ansichten, kein Code-Duplikat).
+map.geo.admin.ch akzeptiert LV95-Koordinaten nativ über den
+URL-Parameter `center` (amtlich dokumentiert) – es ist **keine**
+Umrechnung nach WGS84/EPSG:4326 nötig, obwohl intern WGS84 gespeichert
+wird (die bereits im Formular/in der Detailansicht vorliegenden
+LV95-Werte werden direkt weiterverwendet). Der Button ist deaktiviert,
+wenn keine gültigen Koordinaten vorliegen (`is_valid_lv95`, siehe
+`lv95.py`); die Kartenansicht ist ein rein lesender externer Link ohne
+neue Abhängigkeit.
+
 ## Sortiment-Logik
 
 `attributes.py` überführt Kategorien/Produkte/Zahlungsarten/

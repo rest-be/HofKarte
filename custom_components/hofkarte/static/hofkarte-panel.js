@@ -161,6 +161,33 @@ class HofkartePanel extends HTMLElement {
     return { latitude: lat, longitude: lon };
   }
 
+  /** Gemeinsame Kartenlogik für "Bearbeiten" und "Details" (siehe
+   * Anforderung: identisches Verhalten in beiden Ansichten).
+   *
+   * map.geo.admin.ch (amtlicher Schweizer Kartendienst) akzeptiert
+   * LV95-Koordinaten nativ über den URL-Parameter "center" – es ist
+   * **keine** Umwandlung nach WGS84/EPSG:4326 nötig (bereits vorhandene
+   * LV95-Werte werden unverändert in die URL übernommen). Öffnet in
+   * einem neuen Tab, verändert keine Daten (rein lesender externer
+   * Link), keine neue Abhängigkeit.
+   */
+  mapUrl(easting, northing) {
+    const e = Math.round(easting);
+    const n = Math.round(northing);
+    return `https://map.geo.admin.ch/?center=${e},${n}&z=10&crosshair=marker`;
+  }
+
+  /** Karten-Button (bzw. deaktivierter Platzhalter ohne gültige
+   * Koordinaten) – identische Darstellung in Bearbeiten und Details. */
+  mapButton(lv95) {
+    const gueltig = lv95 && isValidLv95(lv95.easting, lv95.northing);
+    if (!gueltig) {
+      return `<button type="button" class="map-btn" disabled title="Keine gültigen Koordinaten hinterlegt">🗺️ Auf Karte anzeigen</button>`;
+    }
+    const url = this.mapUrl(lv95.easting, lv95.northing);
+    return `<a class="map-btn" href="${this.escAttr(url)}" target="_blank" rel="noopener noreferrer" title="Standort auf map.geo.admin.ch anzeigen (neuer Tab)">🗺️ Auf Karte anzeigen</a>`;
+  }
+
   formData() {
     const f = this.shadowRoot.querySelector("form");
     const value = (name) => f.elements[name]?.value ?? "";
@@ -245,9 +272,13 @@ class HofkartePanel extends HTMLElement {
       input,textarea,select{box-sizing:border-box;width:100%;padding:9px;border:1px solid var(--divider-color);border-radius:7px;background:var(--primary-background-color);color:var(--primary-text-color);font-size:.95em}
       textarea{min-height:100px}
       @media(max-width:700px){main{padding:12px}.field-row.two{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
-      .coord-row{display:flex;gap:8px;align-items:flex-end}
-      .coord-row .field-row{flex:1}
-      .info-btn{flex:0 0 auto;width:34px;height:34px;border-radius:50%;background:var(--secondary-background-color);color:var(--primary-text-color);font-weight:bold}
+      .coord-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+      .coord-row .field-row{flex:1;min-width:160px}
+      .info-btn{flex:0 0 auto;width:34px;height:34px;border-radius:50%;background:var(--info-color,#2196f3);color:#fff;font-weight:bold;box-shadow:0 1px 3px #0003;border:2px solid transparent}
+      .info-btn:hover,.info-btn:focus-visible{background:var(--info-color,#1976d2);outline:2px solid var(--info-color,#2196f3);outline-offset:2px}
+      .map-btn{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);text-decoration:none;font-size:.95em;box-sizing:border-box}
+      .map-btn[disabled],.map-btn.disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+      .coord-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
       .info-box{margin-top:8px;padding:12px 14px;border-radius:8px;background:var(--secondary-background-color);font-size:.9em;line-height:1.5}
       .info-box code{background:var(--primary-background-color);padding:1px 5px;border-radius:4px}
       .day-block{border:1px solid var(--divider-color);border-radius:10px;padding:10px 12px;margin:8px 0}
@@ -310,15 +341,20 @@ class HofkartePanel extends HTMLElement {
       </div>
       ${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}
 
+      ${d.beschreibung ? `<section class="card detail-section"><h3>Allgemeine Informationen</h3><div>${this.esc(d.beschreibung)}</div></section>` : ""}
+
       <section class="card detail-section">
         <h3>Adresse</h3>
         <div>${adresse ? this.esc(adresse) : '<span class="muted">Keine Adresse hinterlegt</span>'}</div>
-        <div class="muted" style="margin-top:6px">
-          ${lv95 ? `LV95: E ${Math.round(lv95.easting).toLocaleString("de-CH")} / N ${Math.round(lv95.northing).toLocaleString("de-CH")}` : "Keine Koordinaten hinterlegt"}
-        </div>
       </section>
 
-      ${d.beschreibung ? `<section class="card detail-section"><h3>Beschreibung</h3><div>${this.esc(d.beschreibung)}</div></section>` : ""}
+      <section class="card detail-section">
+        <h3>Standort / Koordinaten</h3>
+        <div class="coord-row">
+          <div class="muted">${lv95 ? `LV95: E ${Math.round(lv95.easting).toLocaleString("de-CH")} / N ${Math.round(lv95.northing).toLocaleString("de-CH")}` : "Keine Koordinaten hinterlegt"}</div>
+        </div>
+        <div class="coord-actions">${this.mapButton(lv95)}</div>
+      </section>
 
       ${this.websiteLinkBlock(d.website)}
 
@@ -410,26 +446,39 @@ class HofkartePanel extends HTMLElement {
       ${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}
       <form>
         <section class=card>
-          <h2>Stammdaten</h2>
+          <h2>Allgemeine Informationen</h2>
           <div class="fields">
             <div class="field-row">${this.input("Name", "name", d.name, true)}</div>
             <div class="field-row">${this.input("Beschreibung", "beschreibung", d.beschreibung || "")}</div>
+          </div>
+        </section>
+
+        <section class=card>
+          <h2>Adresse</h2>
+          <div class="fields">
             <div class="field-row">${this.input("Adresse", "adresse", d.adresse || "")}</div>
             <div class="field-row two">${this.input("PLZ", "plz", d.plz || "")}${this.input("Ort", "ort", d.ort || "")}</div>
             <div class="field-row">${this.input("Land", "land", d.land || "")}</div>
+          </div>
+        </section>
+
+        <section class=card>
+          <h2>Kontakt &amp; Webseite</h2>
+          <div class="fields">
             <div class="field-row">${this.input("Webseite", "website", d.website || "")}</div>
           </div>
         </section>
 
         <section class=card>
-          <h2>Standort (LV95 / EPSG:2056)</h2>
+          <h2>Standort / Koordinaten <span class="muted" style="font-weight:normal;font-size:.7em">(LV95 / EPSG:2056)</span></h2>
           <div class="coord-row">
             <div class="field-row two">
               <label>E (Ostwert)<input name="lv95_easting" type="number" step="any" value="${eastingValue}" placeholder="z. B. 2600980"></label>
               <label>N (Nordwert)<input name="lv95_northing" type="number" step="any" value="${northingValue}" placeholder="z. B. 1197450"></label>
             </div>
-            <button type="button" class="info-btn" data-toggle-lv95-info title="Was ist LV95?">ⓘ</button>
+            <button type="button" class="info-btn" data-toggle-lv95-info title="Was ist LV95? (Erklärung anzeigen)" aria-label="Was ist LV95? Erklärung anzeigen">ⓘ</button>
           </div>
+          <div class="coord-actions">${this.mapButton(lv95)}</div>
           <input type="hidden" name="lv95_original_easting" value="${eastingValue}">
           <input type="hidden" name="lv95_original_northing" value="${northingValue}">
           ${this.showLv95Info ? this.lv95InfoBox() : ""}
