@@ -68,6 +68,20 @@ Entwicklungsversion getestet werden soll:
 3. Prüfen, dass beim Start keine Fehler zur Domain `hofkarte` im Log
    erscheinen (siehe „Fehlerbehebung“ unten).
 
+### Deinstallation
+
+1. Unter **Einstellungen → Geräte & Dienste** die HofKarte-Integration
+   entfernen (Drei-Punkte-Menü → **Löschen**). Dabei werden Devices und
+   Entities automatisch entfernt.
+2. Die gespeicherten Hofladen-Daten liegen als JSON-Datei unter
+   `.storage/hofkarte_hoflaeden` im Home-Assistant-Konfigurationsverzeichnis
+   und werden **nicht** automatisch mitgelöscht – bei Bedarf manuell
+   entfernen.
+3. Bei manueller Installation zusätzlich den Ordner
+   `custom_components/hofkarte/` löschen. Bei einer Installation über
+   HACS die Integration in HACS deinstallieren.
+4. Home Assistant neu starten.
+
 ## Einrichtung
 
 Nach der Installation:
@@ -564,6 +578,14 @@ pytest custom_components/hofkarte/tests
 - `hacs.json` deklariert die minimal unterstützte Home-Assistant-Version
   (`homeassistant`). Diese sollte bei Verwendung neuerer
   Home-Assistant-APIs entsprechend angehoben werden.
+
+### Quality Scale
+
+`custom_components/hofkarte/quality_scale.yaml` enthält eine ehrliche
+Selbsteinschätzung gegen die Home-Assistant-Integration-Quality-Scale
+(Bronze/Silber/Gold/Platin). Nicht erfüllte Kriterien sind mit
+Begründung dokumentiert statt stillschweigend übersprungen oder
+vorgetäuscht.
 
 ## Lizenz
 

@@ -102,6 +102,13 @@ def calculate_distance_km(
     if hofladen_latitude is None or hofladen_longitude is None:
         return None
 
+    # is_valid_home_position() bereits geprüft: beide Werte sind an dieser
+    # Stelle garantiert nicht None. Die assert-Anweisung macht das auch für
+    # statische Typprüfung (mypy) explizit, da TypeGuard zwei unabhängige
+    # Parameter nicht gemeinsam verengen kann.
+    assert home_latitude is not None
+    assert home_longitude is not None
+
     return haversine_distance_km(
         home_latitude, home_longitude, hofladen_latitude, hofladen_longitude
     )

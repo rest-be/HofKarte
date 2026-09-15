@@ -19,6 +19,11 @@ from .distance import calculate_distance_km
 from .entity import HofKarteEntity, async_setup_hofladen_entities
 from .opening_hours import get_next_closing, get_next_opening
 
+# Alle Hofladen-Daten stammen aus einem gemeinsamen Coordinator-Abruf
+# (siehe entity.py); es gibt keine pro-Entity-Netzwerkzugriffe, die
+# parallel gedrosselt werden müssten.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

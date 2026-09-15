@@ -31,6 +31,12 @@ from .coordinator import HofKarteUpdateCoordinator
 from .entity import HofKarteEntity, async_setup_hofladen_entities
 from .images import get_additional_images, get_main_image_url
 
+# Alle Hofladen-Daten stammen aus einem gemeinsamen Coordinator-Abruf
+# (siehe entity.py); das eigentliche Bild wird über Home Assistants
+# eigenen Image-Proxy abgerufen, nicht über einen von uns parallel zu
+# drosselnden Zugriff.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

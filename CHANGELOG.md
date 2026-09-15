@@ -8,6 +8,51 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Kritisch – Testsuite komplett ausgefallen:** Zwei verwaiste
+  Testdateien (`tests/test_camera.py`, `tests/test_camera_fetch.py`)
+  referenzierten das bereits entfernte `camera.py`-Modul und liessen die
+  gesamte Testsammlung mit `Interrupted: 2 errors during collection`
+  abbrechen (0 von 271 Tests liefen). Entfernt.
+- `distance.py`: mypy-Fund behoben – nach `is_valid_home_position(...)`
+  konnte statische Typprüfung nicht erkennen, dass die Koordinaten nicht
+  mehr `None` sind (`TypeGuard` kann zwei unabhängige Parameter nicht
+  gemeinsam verengen). Durch explizite `assert`-Anweisungen behoben.
+- `opening_hours.py`: mypy-Fund behoben – interne Hilfsfunktionen
+  typisierten den `tzinfo`-Parameter als `object` statt
+  `datetime.tzinfo | None`.
+
+### Hinzugefügt
+
+- `quality_scale.yaml`: ehrliche Selbsteinschätzung gegen die
+  Home-Assistant-Integration-Quality-Scale (52 Kriterien: 36 erfüllt,
+  8 fachlich nicht zutreffend/„exempt“, 8 offen mit dokumentiertem
+  technischen Grund statt Scheinimplementierung).
+- `PARALLEL_UPDATES = 0` in allen drei Entity-Plattformen
+  (`binary_sensor.py`, `sensor.py`, `image.py`) ergänzt – Konvention für
+  coordinator-basierte Plattformen ohne pro-Entity-Netzwerkzugriffe.
+- README: Abschnitt „Deinstallation“ ergänzt (fehlte bisher vollständig).
+- Tests: `test_end_to_end.py` (vollständiges Szenario mit zwei
+  gleichzeitigen Hofläden: Devices, Öffnungsstatus, Sortiment,
+  Entfernung, Action, zweifacher Reload als Neustart-Ersatz,
+  Stabilität von Entity-/Unique-IDs), `test_translations.py`
+  (JSON-Validität, DE/EN-Strukturgleichheit, Vollständigkeit der
+  Config-Flow- und Service-Feld-Übersetzungen), `test_manifest_und_hacs.py`
+  (Manifest-Pflichtfelder, SemVer, `http`-Dependency, `hacs.json`,
+  Versionskonsistenz mit CHANGELOG, HACS-Pflichtdateien).
+
+### Geprüft, keine Änderung nötig
+
+- `pyflakes`, `vulture` (Dead-Code-Scan, 80 % Konfidenz): keine Funde in
+  Produktionscode.
+- Mehrfacher Config-Entry-Reload, Entity-/Unique-ID-Stabilität über
+  Reloads hinweg: durch Tests bestätigt.
+- Mehrere Config Entries: nicht vorgesehen (Single-Instance-Architektur,
+  siehe Einheit 2); dokumentiert statt implementiert.
+
+## [0.13.1] - Unveröffentlicht
+
 ### Geändert
 
 - **README komplett neu strukturiert** für Benutzer statt nur

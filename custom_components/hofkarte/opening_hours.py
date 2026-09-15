@@ -50,7 +50,7 @@ ist nicht Teil dieser Einheit.
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, tzinfo as TzInfo
 
 from .models import Hofladen, Sonderoeffnungszeit
 
@@ -82,7 +82,7 @@ def _finde_sonderoeffnungszeit(
 
 
 def _baue_intervall(
-    datum: date, beginn: time, ende: time, tzinfo: object
+    datum: date, beginn: time, ende: time, tzinfo: TzInfo | None
 ) -> tuple[datetime, datetime]:
     """Ein konkretes, zeitzonenbewusstes Intervall für ein Datum bilden.
 
@@ -99,7 +99,7 @@ def _baue_intervall(
 
 
 def _intervalle_fuer_datum(
-    hofladen: Hofladen, datum: date, tzinfo: object
+    hofladen: Hofladen, datum: date, tzinfo: TzInfo | None
 ) -> list[tuple[datetime, datetime]]:
     """Effektive Öffnungsintervalle für ein einzelnes Datum.
 
