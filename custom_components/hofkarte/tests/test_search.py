@@ -7,11 +7,10 @@ from datetime import datetime, time, timezone
 import pytest
 
 from custom_components.hofkarte.models import (
+    Angebot,
     Hofladen,
-    Kategorie,
     Merkmal,
     Oeffnungszeit,
-    Produkt,
     Verkaufsart,
     Zahlungsart,
 )
@@ -31,8 +30,7 @@ _MUELLER = _hofladen(
     name="Hofladen Müller",
     beschreibung="Frisches Gemüse direkt ab Hof.",
     ort="Bern",
-    kategorien=(Kategorie(id="gemuese", name="Gemüse"),),
-    produkte=(Produkt(id="kartoffeln", name="Kartoffeln"),),
+    angebote=(Angebot(id="kartoffeln", name="Kartoffeln", gruppen=("Gemüse",)),),
     verkaufsarten=(Verkaufsart(id="ab-hof", name="Ab-Hof-Verkauf"),),
     zahlungsarten=(Zahlungsart(id="bar", name="Bargeld"),),
     merkmale=(Merkmal(id="bio", name="Bio"),),
@@ -45,8 +43,7 @@ _SCHMID = _hofladen(
     name="Hofladen Schmid",
     beschreibung="Käse und Milchprodukte.",
     ort="Thun",
-    kategorien=(Kategorie(id="milch", name="Milchprodukte"),),
-    produkte=(Produkt(id="kaese", name="Käse"),),
+    angebote=(Angebot(id="kaese", name="Käse", gruppen=("Milchprodukte",)),),
     verkaufsarten=(Verkaufsart(id="automat", name="Verkaufsautomat"),),
     zahlungsarten=(Zahlungsart(id="twint", name="TWINT"),),
     merkmale=(),
@@ -119,20 +116,24 @@ def test_suchbegriff_ignoriert_hofladen_ohne_beschreibung() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Filter nach Kategorie / Produkt / Verkaufsart / Zahlungsart / Merkmal
+# Filter nach Angebot (Name oder Gruppe) / Verkaufsart / Zahlungsart / Merkmal
 # ---------------------------------------------------------------------------
 
 
-def test_filter_nach_kategorie() -> None:
-    assert find_hoflaeden(_ALLE, kategorie="Gemüse") == [_MUELLER]
+def test_filter_nach_angebot_gruppe() -> None:
+    """Der Filter 'angebot' muss auch über die Gruppen-Zugehörigkeit
+    treffen (ersetzt den früheren separaten 'kategorie'-Filter)."""
+    assert find_hoflaeden(_ALLE, angebot="Gemüse") == [_MUELLER]
 
 
-def test_filter_nach_kategorie_case_insensitiv() -> None:
-    assert find_hoflaeden(_ALLE, kategorie="gemüse") == [_MUELLER]
+def test_filter_nach_angebot_gruppe_case_insensitiv() -> None:
+    assert find_hoflaeden(_ALLE, angebot="gemüse") == [_MUELLER]
 
 
-def test_filter_nach_produkt() -> None:
-    assert find_hoflaeden(_ALLE, produkt="Käse") == [_SCHMID]
+def test_filter_nach_angebot_name() -> None:
+    """Der Filter 'angebot' muss auch über den Angebotsnamen treffen
+    (ersetzt den früheren separaten 'produkt'-Filter)."""
+    assert find_hoflaeden(_ALLE, angebot="Käse") == [_SCHMID]
 
 
 def test_filter_nach_verkaufsart() -> None:
@@ -150,7 +151,7 @@ def test_filter_nach_merkmal() -> None:
 def test_filter_ist_exakter_abgleich_kein_teilstring() -> None:
     """Filterkriterien (im Unterschied zum Suchbegriff) müssen exakt
     übereinstimmen, kein Teilstring-Treffer."""
-    assert find_hoflaeden(_ALLE, kategorie="Gem") == []
+    assert find_hoflaeden(_ALLE, angebot="Gem") == []
 
 
 def test_filter_ohne_treffer_liefert_leere_liste() -> None:
@@ -165,14 +166,14 @@ def test_filter_ohne_treffer_liefert_leere_liste() -> None:
 def test_kombinierte_filter_werden_und_verknuepft() -> None:
     """Beide Kriterien zusammen dürfen nur Hofläden liefern, die beide
     erfüllen."""
-    ergebnis = find_hoflaeden(_ALLE, kategorie="Gemüse", zahlungsart="Bargeld")
+    ergebnis = find_hoflaeden(_ALLE, angebot="Gemüse", zahlungsart="Bargeld")
 
     assert ergebnis == [_MUELLER]
 
 
 def test_kombinierte_filter_ohne_gemeinsamen_treffer() -> None:
     """Erfüllt kein Hofladen alle Kriterien gemeinsam, ist das Ergebnis leer."""
-    ergebnis = find_hoflaeden(_ALLE, kategorie="Gemüse", zahlungsart="TWINT")
+    ergebnis = find_hoflaeden(_ALLE, angebot="Gemüse", zahlungsart="TWINT")
 
     assert ergebnis == []
 
@@ -223,6 +224,6 @@ def test_eingabereihenfolge_bleibt_erhalten() -> None:
 
 def test_eingabe_wird_nicht_veraendert() -> None:
     eingabe = [_MUELLER, _SCHMID]
-    find_hoflaeden(eingabe, kategorie="Gemüse")
+    find_hoflaeden(eingabe, angebot="Gemüse")
 
     assert eingabe == [_MUELLER, _SCHMID]

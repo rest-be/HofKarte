@@ -96,14 +96,14 @@ async def test_suche_mit_suchbegriff_filtert_korrekt(hass: HomeAssistant) -> Non
     assert ergebnis["hoflaeden"][0]["id"] == "hof-1"
 
 
-async def test_suche_mit_kategorie_filter(hass: HomeAssistant) -> None:
+async def test_suche_mit_angebot_filter(hass: HomeAssistant) -> None:
     await _setup(hass)
     coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
     await coordinator.async_add_hofladen(
         {
             "id": "hof-1",
             "name": "Hofladen Eins",
-            "kategorien": [{"id": "gemuese", "name": "Gemüse"}],
+            "angebote": [{"id": "kartoffeln", "name": "Kartoffeln", "gruppen": ["Gemüse"]}],
         }
     )
     await coordinator.async_add_hofladen({"id": "hof-2", "name": "Hofladen Zwei"})
@@ -111,7 +111,7 @@ async def test_suche_mit_kategorie_filter(hass: HomeAssistant) -> None:
     ergebnis = await hass.services.async_call(
         DOMAIN,
         SERVICE_HOFLAEDEN_SUCHEN,
-        {"kategorie": "Gemüse"},
+        {"angebot": "Gemüse"},
         blocking=True,
         return_response=True,
     )
@@ -127,7 +127,7 @@ async def test_suche_mit_mehreren_kombinierten_filtern(hass: HomeAssistant) -> N
         {
             "id": "hof-1",
             "name": "Hofladen Eins",
-            "kategorien": [{"id": "gemuese", "name": "Gemüse"}],
+            "angebote": [{"id": "kartoffeln", "name": "Kartoffeln", "gruppen": ["Gemüse"]}],
             "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
         }
     )
@@ -135,7 +135,7 @@ async def test_suche_mit_mehreren_kombinierten_filtern(hass: HomeAssistant) -> N
         {
             "id": "hof-2",
             "name": "Hofladen Zwei",
-            "kategorien": [{"id": "gemuese", "name": "Gemüse"}],
+            "angebote": [{"id": "karotten", "name": "Karotten", "gruppen": ["Gemüse"]}],
             "zahlungsarten": [{"id": "twint", "name": "TWINT"}],
         }
     )
@@ -143,7 +143,7 @@ async def test_suche_mit_mehreren_kombinierten_filtern(hass: HomeAssistant) -> N
     ergebnis = await hass.services.async_call(
         DOMAIN,
         SERVICE_HOFLAEDEN_SUCHEN,
-        {"kategorie": "Gemüse", "zahlungsart": "Bargeld"},
+        {"angebot": "Gemüse", "zahlungsart": "Bargeld"},
         blocking=True,
         return_response=True,
     )
@@ -224,7 +224,7 @@ async def test_suche_mit_ungueltigem_datentyp_wird_abgelehnt(
         await hass.services.async_call(
             DOMAIN,
             SERVICE_HOFLAEDEN_SUCHEN,
-            {"kategorie": ["nicht", "erlaubt"]},
+            {"angebot": ["nicht", "erlaubt"]},
             blocking=True,
             return_response=True,
         )

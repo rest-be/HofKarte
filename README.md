@@ -27,8 +27,8 @@ Fehlerbehebung, Datenschutz und Support in einem Dokument.
 ## Zweck
 
 HofKarte verwaltet Hofläden lokal in Home Assistant: Stammdaten,
-Öffnungszeiten, Sortiment (Kategorien, Produkte, Zahlungsarten,
-Verkaufsarten, Merkmale) und Bilder. Jeder Hofladen erscheint als Device
+Öffnungszeiten, Sortiment (Angebote, Zahlungsarten, Verkaufsarten,
+Merkmale) und Bilder. Jeder Hofladen erscheint als Device
 mit Entities für Öffnungsstatus, nächste Öffnung/Schliessung, Entfernung
 zum eigenen Zuhause und Hauptbild. Eine Home-Assistant-Action erlaubt
 das Durchsuchen und Filtern aus Automationen und Skripten heraus. Es
@@ -140,8 +140,8 @@ sichtbar). Dort können Administratoren:
 - reguläre und Sonderöffnungszeiten bearbeiten (pro Wochentag:
   Geschlossen / 24 Stunden geöffnet / Zeiten festlegen, mit beliebig
   vielen Intervallen),
-- Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale
-  bearbeiten,
+- Angebote (vormals getrennt: Kategorien/Produkte), Zahlungsarten,
+  Verkaufsarten und Merkmale bearbeiten,
 - Hofläden kontrolliert löschen.
 
 Zusätzlich gibt es eine **read-only Detailansicht** je Hofladen
@@ -261,18 +261,30 @@ seltenen Grenzfälle).
 
 ### Sortiment und Eigenschaften
 
-Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale sind
-fachlich keine Messwerte und rechtfertigen keine eigenen Sensoren. Sie
-werden daher als Zusatzattribute **ausschliesslich** am Binary Sensor
-„Geöffnet“ bereitgestellt (`custom_components/hofkarte/attributes.py`).
-Diese fünf Fachbereiche können pro Hofladen über die Verwaltungsseite
-bearbeitet werden.
+**Architekturentscheid:** Die früher getrennten Fachbereiche
+„Kategorien“ und „Produkte“ wurden zu einem einheitlichen Fachbereich
+**„Angebote“** zusammengelegt. Ein Angebot ist ein konkreter Artikel
+bzw. eine Leistung mit optional einer oder mehreren frei formulierten
+Gruppen-Bezeichnungen (vormals „Kategorie“) direkt am Angebot – ohne
+separat gepflegte, über IDs referenzierte Kategorienliste. Bestehende,
+im alten Format gespeicherte Daten werden beim Einlesen automatisch und
+verlustfrei migriert (siehe „Unter der Haube“ unten); auch eine
+Kategorie ganz ohne zugeordnete Produkte bleibt dabei als eigenständiges
+Angebot mit leeren Gruppen erhalten.
+
+Angebote, Zahlungsarten, Verkaufsarten und Merkmale sind fachlich keine
+Messwerte und rechtfertigen keine eigenen Sensoren. Sie werden daher
+als Zusatzattribute **ausschliesslich** am Binary Sensor „Geöffnet“
+bereitgestellt (`custom_components/hofkarte/attributes.py`). Diese vier
+Fachbereiche können pro Hofladen über die Verwaltungsseite bearbeitet
+werden.
 
 ```yaml
-kategorien: ["Gemüse", "Milchprodukte"]
-produkte:
+angebote:
   - name: "Kartoffeln"
-    kategorien: ["Gemüse"]
+    gruppen: ["Gemüse"]
+  - name: "Honig"
+    gruppen: []
 zahlungsarten: ["Bargeld", "TWINT"]
 verkaufsarten: ["Ab-Hof-Verkauf"]
 merkmale: ["Bio"]
@@ -298,6 +310,17 @@ Haversine-Formel. Zustand „unbekannt“, wenn der Hofladen keine
 Koordinaten hinterlegt hat oder die Home-Assistant-Position nicht
 bekannt ist – es wird kein Wert erfunden oder geschätzt (siehe
 „Datenschutz- und Standort-Hinweise“ unten).
+
+**Entfernung vom aktuellen Gerät:** Da eine Home-Assistant-Entity nur
+**einen** Zustand für alle Betrachter:innen hat, kann der obige Sensor
+nicht die Entfernung vom jeweils gerade verwendeten Gerät zeigen. In der
+Detailansicht der Verwaltungsoberfläche steht dafür **zusätzlich** ein
+Button „📍 Entfernung von diesem Gerät berechnen“ zur Verfügung, der
+über die Browser-Geolocation-API rein clientseitig die Entfernung vom
+aktuellen Gerät berechnet (dieselbe Haversine-Formel, in
+`hofkarte-panel.js` dupliziert). Der Gerätestandort wird dabei
+ausschliesslich lokal im Browser verwendet, nicht gespeichert und nicht
+an das Backend übertragen.
 
 ### Bilder
 
@@ -347,8 +370,7 @@ Für Automationen, Skripte und Dashboards steht die Action
 | Parameter        | Typ     | Bedeutung                                              |
 |-------------------|---------|----------------------------------------------------------|
 | `suchbegriff`     | Text    | Freitextsuche (Gross-/Kleinschreibung egal) über Name, Beschreibung, Ort |
-| `kategorie`       | Text    | Exakter Name einer Produktkategorie                     |
-| `produkt`         | Text    | Exakter Produktname                                      |
+| `angebot`         | Text    | Exakter Name eines Angebots **oder** einer seiner Gruppen |
 | `verkaufsart`     | Text    | Exakter Name einer Verkaufsart                            |
 | `zahlungsart`     | Text    | Exakter Name einer Zahlungsart                            |
 | `merkmal`         | Text    | Exakter Name eines Merkmals                               |
@@ -365,7 +387,7 @@ hoflaeden:
     geoeffnet: true
 ```
 
-- Filter (`kategorie`, `produkt`, …) verlangen exakte Übereinstimmung
+- Filter (`angebot`, …) verlangen exakte Übereinstimmung
   (case-insensitive); der `suchbegriff` erlaubt Teilstring-Treffer.
 - Ein Hofladen ohne bekannten Öffnungsstatus gilt bei
   `nur_geoeffnet: true` **nicht** als Treffer.
@@ -434,12 +456,15 @@ Intern verwaltet HofKarte einen Hofladen als typisierte, unveränderliche
 Datenstruktur (`custom_components/hofkarte/models.py`) mit u. a.
 Stammdaten (Name, Beschreibung, Adresse, PLZ/Ort, Land, Koordinaten,
 Webseite), regelmässigen Öffnungszeiten und datumsbezogenen
-Sonderöffnungszeiten, Produkten/Kategorien/Zahlungsarten/
-Verkaufsarten/Merkmalen sowie optionalen Bildern. Rohdaten werden über
+Sonderöffnungszeiten, Angeboten/Zahlungsarten/Verkaufsarten/Merkmalen
+sowie optionalen Bildern. Rohdaten werden über
 `custom_components/hofkarte/parsing.py` in dieses Modell überführt und
 dabei validiert (`HofladenValidationError` bei ungültigen
 Pflichtfeldern; fehlende optionale Felder werden robust auf leere
-Werte abgebildet).
+Werte abgebildet). Im alten Format (getrennte `kategorien`/`produkte`)
+gespeicherte Daten werden dabei automatisch und verlustfrei in die
+einheitliche `angebote`-Struktur migriert (siehe Abschnitt „Sortiment
+und Eigenschaften“).
 
 Für Öffnungszeiten und Sonderöffnungszeiten gilt: Ende gleich Beginn ist
 ungültig; Ende **vor** Beginn ist hingegen gültig und bedeutet ein
@@ -606,12 +631,18 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
   externen Servern (ausser dem Laden von Hofladen-Bildern über die vom
   Benutzer hinterlegten Bild-URLs, siehe „Bilder“). Es findet keine
   Telemetrie und keine Datenübertragung an Dritte statt.
-- **Standort:** Der Entfernungs-Sensor liest ausschliesslich die
-  statische, in Home Assistant konfigurierte Position
-  (`hass.config.latitude`/`longitude`) – kein `device_tracker`, keine
-  Personen- oder Geräteverfolgung. Diese Position wird von HofKarte
-  nicht gespeichert und nicht an externe Dienste übertragen; die
-  Berechnung erfolgt vollständig lokal.
+- **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor liest
+  ausschliesslich die statische, in Home Assistant konfigurierte
+  Position (`hass.config.latitude`/`longitude`) – kein `device_tracker`,
+  keine Personen- oder Geräteverfolgung. Diese Position wird von
+  HofKarte nicht gespeichert und nicht an externe Dienste übertragen;
+  die Berechnung erfolgt vollständig lokal.
+- **Standort (aktuelles Gerät):** Der optionale Button „Entfernung von
+  diesem Gerät berechnen“ in der Detailansicht nutzt die
+  Browser-Geolocation-API nur nach expliziter Zustimmung im Browser.
+  Der Gerätestandort wird ausschliesslich im Browser für die einmalige
+  Berechnung verwendet, nirgends gespeichert und **nicht** an das
+  Home-Assistant-Backend übertragen.
 - **Persistenz:** Alle Hofladen-Daten liegen ausschliesslich lokal im
   Home-Assistant-Storage (`.storage/`-Verzeichnis der
   Konfiguration) – keine Cloud-Synchronisation.

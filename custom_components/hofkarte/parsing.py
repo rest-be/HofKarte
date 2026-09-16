@@ -26,12 +26,11 @@ from datetime import date, time
 from typing import Any
 
 from .models import (
+    Angebot,
     Bild,
     Hofladen,
-    Kategorie,
     Merkmal,
     Oeffnungszeit,
-    Produkt,
     Sonderoeffnungszeit,
     Verkaufsart,
     Zahlungsart,
@@ -195,8 +194,8 @@ def _parse_lookup(raw: Any, index: int, kind: str, factory: Any) -> Any:
     return factory(id=id_value.strip(), name=name_value.strip())
 
 
-def _parse_produkt(raw: Any, index: int) -> Produkt:
-    context = f"Produkt #{index}"
+def _parse_angebot(raw: Any, index: int) -> Angebot:
+    context = f"Angebot #{index}"
     if not isinstance(raw, Mapping):
         raise HofladenValidationError(f"{context}: muss ein Mapping (dict) sein.")
 
@@ -207,16 +206,93 @@ def _parse_produkt(raw: Any, index: int) -> Produkt:
     if not isinstance(name_value, str) or not name_value.strip():
         raise HofladenValidationError(f"{context}: 'name' fehlt oder ist leer.")
 
-    kategorie_ids_raw = raw.get("kategorie_ids", []) or []
-    if not isinstance(kategorie_ids_raw, (list, tuple)):
-        raise HofladenValidationError(
-            f"{context}: 'kategorie_ids' muss eine Liste sein."
-        )
-    kategorie_ids = tuple(str(kategorie_id) for kategorie_id in kategorie_ids_raw)
-
-    return Produkt(
-        id=id_value.strip(), name=name_value.strip(), kategorie_ids=kategorie_ids
+    gruppen_raw = raw.get("gruppen", []) or []
+    if not isinstance(gruppen_raw, (list, tuple)):
+        raise HofladenValidationError(f"{context}: 'gruppen' muss eine Liste sein.")
+    gruppen = tuple(
+        str(gruppe).strip() for gruppe in gruppen_raw if str(gruppe).strip()
     )
+
+    return Angebot(id=id_value.strip(), name=name_value.strip(), gruppen=gruppen)
+
+
+def _migriere_kategorien_und_produkte_zu_angeboten(
+    raw: Mapping[str, Any],
+) -> list[Any]:
+    """Migriert die frühere, getrennte Struktur (``kategorien``/``produkte``)
+    verlustfrei in eine einheitliche Liste von Angebot-Rohdaten.
+
+    **Idempotent:** Ist der Schlüssel ``angebote`` bereits vorhanden
+    (neues Format), wird dieser unverändert zurückgegeben – die
+    Migration greift ausschliesslich, wenn ausschliesslich die alten
+    Schlüssel ``kategorien``/``produkte`` vorhanden sind. Ein bereits
+    migrierter Datensatz wird durch erneutes Einlesen also nicht
+    nochmals verändert.
+
+    Jedes bestehende Produkt wird zu einem Angebot; seine
+    ``kategorie_ids`` werden anhand der bestehenden ``kategorien``-Liste
+    zu Gruppen-**Namen** aufgelöst (unbekannte IDs bleiben als rohe ID
+    erhalten statt die Zuordnung stillschweigend zu verwerfen, analog
+    zum bisherigen Verhalten in ``attributes.py``). Kategorien ohne
+    zugeordnete Produkte („verwaiste“ Kategorien) werden als
+    eigenständige Angebote mit leeren ``gruppen`` erhalten, damit ihr
+    Name nicht stillschweigend verloren geht.
+    """
+    if "angebote" in raw:
+        angebote_raw = raw.get("angebote") or []
+        return list(angebote_raw) if isinstance(angebote_raw, (list, tuple)) else []
+
+    kategorien_raw = raw.get("kategorien") or []
+    produkte_raw = raw.get("produkte") or []
+    if not kategorien_raw and not produkte_raw:
+        return []
+
+    kategorie_namen_je_id: dict[str, str] = {}
+    if isinstance(kategorien_raw, (list, tuple)):
+        for kategorie in kategorien_raw:
+            if isinstance(kategorie, Mapping):
+                kid, kname = kategorie.get("id"), kategorie.get("name")
+                if isinstance(kid, str) and isinstance(kname, str):
+                    kategorie_namen_je_id[kid] = kname
+
+    verwendete_kategorie_ids: set[str] = set()
+    angebote: list[Any] = []
+
+    if isinstance(produkte_raw, (list, tuple)):
+        for produkt in produkte_raw:
+            if not isinstance(produkt, Mapping):
+                # Ungültig - unverändert weitergeben, _parse_angebot meldet
+                # den konkreten Fehler (Fail-Fast bleibt erhalten).
+                angebote.append(produkt)
+                continue
+            kategorie_ids = produkt.get("kategorie_ids") or []
+            gruppen: list[str] = []
+            if isinstance(kategorie_ids, (list, tuple)):
+                for kategorie_id in kategorie_ids:
+                    kategorie_id_str = str(kategorie_id)
+                    verwendete_kategorie_ids.add(kategorie_id_str)
+                    gruppen.append(
+                        kategorie_namen_je_id.get(kategorie_id_str, kategorie_id_str)
+                    )
+            angebote.append(
+                {
+                    "id": produkt.get("id"),
+                    "name": produkt.get("name"),
+                    "gruppen": gruppen,
+                }
+            )
+
+    if isinstance(kategorien_raw, (list, tuple)):
+        for kategorie in kategorien_raw:
+            if not isinstance(kategorie, Mapping):
+                continue
+            kategorie_id = kategorie.get("id")
+            if kategorie_id is not None and str(kategorie_id) not in verwendete_kategorie_ids:
+                angebote.append(
+                    {"id": kategorie_id, "name": kategorie.get("name"), "gruppen": []}
+                )
+
+    return angebote
 
 
 def _parse_bild(raw: Any, index: int) -> Bild:
@@ -285,10 +361,9 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
     sonderoeffnungszeiten = _parse_list(
         raw, "sonderoeffnungszeiten", _parse_sonderoeffnungszeit
     )
-    kategorien = _parse_list(
-        raw,
-        "kategorien",
-        lambda item, i: _parse_lookup(item, i, "Kategorie", Kategorie),
+    angebote_raw = _migriere_kategorien_und_produkte_zu_angeboten(raw)
+    angebote = tuple(
+        _parse_angebot(item, i) for i, item in enumerate(angebote_raw)
     )
     zahlungsarten = _parse_list(
         raw,
@@ -303,7 +378,6 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
     merkmale = _parse_list(
         raw, "merkmale", lambda item, i: _parse_lookup(item, i, "Merkmal", Merkmal)
     )
-    produkte = _parse_list(raw, "produkte", _parse_produkt)
     bilder = _parse_list(raw, "bilder", _parse_bild)
 
     return Hofladen(
@@ -319,8 +393,7 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
         longitude=longitude,
         oeffnungszeiten=oeffnungszeiten,
         sonderoeffnungszeiten=sonderoeffnungszeiten,
-        produkte=produkte,
-        kategorien=kategorien,
+        angebote=angebote,
         zahlungsarten=zahlungsarten,
         verkaufsarten=verkaufsarten,
         merkmale=merkmale,

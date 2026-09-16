@@ -29,7 +29,13 @@ WS_DELETE = "hofkarte/management/delete"
 
 
 def _json_value(value: Any) -> Any:
-    if isinstance(value, (date, time)):
+    if isinstance(value, time):
+        # time.isoformat() liefert standardmässig Sekunden ("08:00:00").
+        # Öffnungszeiten werden ausschliesslich über type="time"-Felder
+        # ohne Sekundenauflösung erfasst (siehe hofkarte-panel.js) – die
+        # Darstellung soll das widerspiegeln (hh:mm statt hh:mm:ss).
+        return value.isoformat(timespec="minutes")
+    if isinstance(value, date):
         return value.isoformat()
     if isinstance(value, (tuple, list)):
         return [_json_value(item) for item in value]

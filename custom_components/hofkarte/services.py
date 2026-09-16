@@ -13,7 +13,7 @@ bereit, coordinator-basierte Entities (wie alle HofKarte-Entities, siehe
 duplizieren und wird daher bewusst **nicht** implementiert (Regeln
 dieser Einheit: „Keine Actions bauen, die ... unnötig duplizieren“).
 
-Analog wird auf separate Actions je Filterdimension (Kategorie, Produkt,
+Analog wird auf separate Actions je Filterdimension (Angebot,
 Verkaufsart, Zahlungsart, Merkmal) verzichtet – eine einzige, klar
 strukturierte Such-Action mit mehreren optionalen, UND-verknüpften
 Filterparametern deckt alle in der Einheit genannten Fälle ab, ohne
@@ -45,8 +45,7 @@ SERVICE_HOFLAEDEN_SUCHEN = "hoflaeden_suchen"
 _SERVICE_HOFLAEDEN_SUCHEN_SCHEMA = vol.Schema(
     {
         vol.Optional("suchbegriff"): cv.string,
-        vol.Optional("kategorie"): cv.string,
-        vol.Optional("produkt"): cv.string,
+        vol.Optional("angebot"): cv.string,
         vol.Optional("verkaufsart"): cv.string,
         vol.Optional("zahlungsart"): cv.string,
         vol.Optional("merkmal"): cv.string,
@@ -94,8 +93,7 @@ async def _async_hoflaeden_suchen(
     treffer = find_hoflaeden(
         coordinator.data.values() if coordinator.data else [],
         suchbegriff=call.data.get("suchbegriff"),
-        kategorie=call.data.get("kategorie"),
-        produkt=call.data.get("produkt"),
+        angebot=call.data.get("angebot"),
         verkaufsart=call.data.get("verkaufsart"),
         zahlungsart=call.data.get("zahlungsart"),
         merkmal=call.data.get("merkmal"),

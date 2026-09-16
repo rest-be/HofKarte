@@ -22,6 +22,25 @@ function googleMapsUrl(lat, lon) {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
 }
 
+/** Grosskreisdistanz zwischen zwei WGS84-Koordinaten in Kilometern
+ * (Haversine-Formel) – client-seitiges Äquivalent zu
+ * distance.haversine_distance_km() in distance.py, für die Entfernung
+ * vom aktuell verwendeten Gerät aus (siehe deviceDistanceBlock()).
+ * Bewusst dupliziert statt im Backend berechnet: Der Gerätestandort
+ * wird nicht an das Backend übertragen (Datenschutz), die Berechnung
+ * muss daher im Browser erfolgen. */
+function haversineDistanceKm(lat1, lon1, lat2, lon2) {
+  const erdradiusKm = 6371.0088;
+  const toRad = (grad) => (grad * Math.PI) / 180;
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const deltaPhi = toRad(lat2 - lat1);
+  const deltaLambda = toRad(lon2 - lon1);
+  const a = Math.sin(deltaPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return erdradiusKm * c;
+}
+
 const WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 
 // Konvention (bereits an anderer Stelle im Projekt verwendet, siehe
@@ -40,6 +59,8 @@ class HofkartePanel extends HTMLElement {
     this.message = "";
     this.error = "";
     this.showCoordInfo = false;
+    this.deviceDistance = null; // { km } - clientseitig ermittelte Entfernung vom aktuellen Gerät
+    this.deviceDistanceStatus = ""; // Lade-/Fehlermeldung während der Ermittlung
     this.attachShadow({ mode: "open" });
   }
 
@@ -78,7 +99,7 @@ class HofkartePanel extends HTMLElement {
   }
 
   empty() {
-    return { id: "", name: "", beschreibung: "", adresse: "", plz: "", ort: "", land: "", website: "", latitude: "", longitude: "", oeffnungszeiten: [], sonderoeffnungszeiten: [], produkte: [], kategorien: [], zahlungsarten: [], verkaufsarten: [], merkmale: [], bilder: [] };
+    return { id: "", name: "", beschreibung: "", adresse: "", plz: "", ort: "", land: "", website: "", latitude: "", longitude: "", oeffnungszeiten: [], sonderoeffnungszeiten: [], angebote: [], zahlungsarten: [], verkaufsarten: [], merkmale: [], bilder: [] };
   }
 
   clone(item) { return JSON.parse(JSON.stringify(item)); }
@@ -138,6 +159,66 @@ class HofkartePanel extends HTMLElement {
     }
     const url = googleMapsUrl(lat, lon);
     return `<a class="map-btn" href="${this.escAttr(url)}" target="_blank" rel="noopener noreferrer" title="Standort auf Google Maps anzeigen (neuer Tab)">🗺️ Auf Google Maps anzeigen</a>`;
+  }
+
+  /** Entfernung vom aktuell verwendeten Gerät (nicht vom
+   * Home-Assistant-Server) zum Hofladen ermitteln – rein clientseitig
+   * über die Browser-Geolocation-API. Der Gerätestandort wird
+   * ausschliesslich lokal für diese Berechnung verwendet, nicht
+   * gespeichert und nicht an das Backend übertragen (siehe
+   * haversineDistanceKm-Kommentar). Ergänzt die bestehende,
+   * serverseitige Entfernungs-Entity, ersetzt sie nicht.
+   */
+  ermittleGeraeteEntfernung() {
+    const hofladen = this.viewing;
+    if (!hofladen || !isValidWgs84(hofladen.latitude, hofladen.longitude)) return;
+
+    if (!("geolocation" in navigator)) {
+      this.deviceDistanceStatus = "Dieser Browser unterstützt keine Standortermittlung.";
+      this.render();
+      return;
+    }
+
+    this.deviceDistanceStatus = "Standort wird ermittelt …";
+    this.deviceDistance = null;
+    this.render();
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const km = haversineDistanceKm(
+          position.coords.latitude, position.coords.longitude,
+          hofladen.latitude, hofladen.longitude
+        );
+        this.deviceDistance = { km };
+        this.deviceDistanceStatus = "";
+        this.render();
+      },
+      (fehler) => {
+        const meldungen = {
+          1: "Standortzugriff wurde verweigert.", // PERMISSION_DENIED
+          2: "Standort konnte nicht ermittelt werden.", // POSITION_UNAVAILABLE
+          3: "Standortermittlung hat zu lange gedauert.", // TIMEOUT
+        };
+        this.deviceDistanceStatus = meldungen[fehler.code] || "Standort konnte nicht ermittelt werden.";
+        this.render();
+      },
+      { timeout: 10000, maximumAge: 60000 }
+    );
+  }
+
+  /** Anzeigeblock für die Geräte-Entfernung in der Detailansicht. */
+  deviceDistanceBlock(hofladen) {
+    if (!isValidWgs84(hofladen.latitude, hofladen.longitude)) return "";
+
+    let inhalt;
+    if (this.deviceDistance) {
+      inhalt = `<span class="muted">Entfernung von diesem Gerät: <strong>${this.deviceDistance.km.toFixed(1)} km</strong></span>`;
+    } else if (this.deviceDistanceStatus) {
+      inhalt = `<span class="muted">${this.esc(this.deviceDistanceStatus)}</span>`;
+    } else {
+      inhalt = `<button type="button" class="secondary" data-geraete-entfernung title="Nutzt den Standort dieses Geräts/Browsers, nicht den des Home-Assistant-Servers">📍 Entfernung von diesem Gerät berechnen</button>`;
+    }
+    return `<div class="coord-row" style="margin-top:8px">${inhalt}</div>`;
   }
 
   // --- Bilder: geführter Upload -----------------------------------------
@@ -268,8 +349,8 @@ class HofkartePanel extends HTMLElement {
     data.latitude = koordinaten.latitude; data.longitude = koordinaten.longitude;
     data.oeffnungszeiten = this.readOpeningHours(f);
     data.sonderoeffnungszeiten = [...f.querySelectorAll("[data-special]")].map(row => ({ datum_von: row.querySelector("[name=datum_von]").value, datum_bis: row.querySelector("[name=datum_bis]").value, geschlossen: row.querySelector("[name=geschlossen]").checked, beginn: row.querySelector("[name=beginn]").value || null, ende: row.querySelector("[name=ende]").value || null }));
-    for (const field of ["kategorien", "zahlungsarten", "verkaufsarten", "merkmale"]) data[field] = this.lines(f.elements[field]?.value);
-    data.produkte = this.products(f.elements.produkte?.value);
+    for (const field of ["zahlungsarten", "verkaufsarten", "merkmale"]) data[field] = this.lines(f.elements[field]?.value);
+    data.angebote = this.angebote(f.elements.angebote?.value);
     // Bilder: Liste selbst lebt in this.editing.bilder (Upload/Entfernen/
     // Hauptbild-Wechsel mutieren sie direkt, siehe uploadBild/removeBild/
     // setHauptbild) – hier nur die live editierbaren Beschreibungsfelder
@@ -299,7 +380,16 @@ class HofkartePanel extends HTMLElement {
   }
 
   lines(text) { return String(text || "").split("\n").map(x => x.trim()).filter(Boolean).map(name => ({ id: this.slug(name), name })); }
-  products(text) { return String(text || "").split("\n").map(x => x.trim()).filter(Boolean).map(line => { const [name, cats = ""] = line.split("|"); return { id: this.slug(name), name: name.trim(), kategorie_ids: cats.split(",").map(x => this.slug(x)).filter(Boolean) }; }); }
+  /** Ein "Angebote"-Textfeld (ein Eintrag pro Zeile, Syntax
+   * "Name" oder "Name|Gruppe1,Gruppe2") in Angebot-Rohdaten überführen.
+   * Ersetzt die früheren getrennten Felder "Kategorien"/"Produkte". */
+  angebote(text) {
+    return String(text || "").split("\n").map(x => x.trim()).filter(Boolean).map(line => {
+      const [name, gruppenText = ""] = line.split("|");
+      const gruppen = gruppenText.split(",").map(g => g.trim()).filter(Boolean);
+      return { id: this.slug(name), name: name.trim(), gruppen };
+    });
+  }
   slug(s) { return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "eintrag"; }
 
   async remove(id) {
@@ -310,7 +400,7 @@ class HofkartePanel extends HTMLElement {
 
   start(item = null) { this.error = ""; this.viewing = null; this.showCoordInfo = false; this.editing = item ? this.clone(item) : this.empty(); this.render(); }
   cancel() { this.editing = null; this.error = ""; this.render(); }
-  view(item) { this.error = ""; this.editing = null; this.viewing = item; this.render(); }
+  view(item) { this.error = ""; this.editing = null; this.viewing = item; this.deviceDistance = null; this.deviceDistanceStatus = ""; this.render(); }
   closeView() { this.viewing = null; this.render(); }
 
   // --- Rendering -----------------------------------------------------
@@ -441,6 +531,7 @@ class HofkartePanel extends HTMLElement {
           <div class="muted">${hatKoordinaten ? `Latitude ${d.latitude.toFixed(6)}, Longitude ${d.longitude.toFixed(6)}` : "Keine Koordinaten hinterlegt"}</div>
         </div>
         <div class="coord-actions">${this.mapButton(d.latitude, d.longitude)}</div>
+        ${this.deviceDistanceBlock(d)}
       </section>
 
       ${this.websiteLinkBlock(d.website)}
@@ -451,8 +542,7 @@ class HofkartePanel extends HTMLElement {
         ${(d.sonderoeffnungszeiten || []).length ? `<h3 style="margin-top:14px">Sonderöffnungszeiten</h3>${this.detailSpecialHours(d.sonderoeffnungszeiten)}` : ""}
       </section>
 
-      ${this.detailPillSection("Kategorien", d.kategorien)}
-      ${this.detailProductsSection(d.produkte)}
+      ${this.detailAngeboteSection(d.angebote)}
       ${this.detailPillSection("Zahlungsarten", d.zahlungsarten)}
       ${this.detailPillSection("Verkaufsarten", d.verkaufsarten)}
       ${this.detailPillSection("Merkmale", d.merkmale)}
@@ -511,9 +601,41 @@ class HofkartePanel extends HTMLElement {
     return `<section class="card detail-section"><h3>${label}</h3>${entries.map(e => `<span class="pill">${this.esc(e.name)}</span>`).join("")}</section>`;
   }
 
-  detailProductsSection(produkte) {
-    if (!produkte || !produkte.length) return "";
-    return `<section class="card detail-section"><h3>Produkte</h3>${produkte.map(p => `<span class="pill">${this.esc(p.name)}</span>`).join("")}</section>`;
+  /** Angebote in der Detailansicht, nach Gruppen zusammengefasst (sofern
+   * vorhanden) – ersetzt die früher getrennten Abschnitte
+   * "Kategorien"/"Produkte". Angebote ohne Gruppe erscheinen gesammelt
+   * unter "Ohne Gruppe". */
+  detailAngeboteSection(angebote) {
+    if (!angebote || !angebote.length) return "";
+
+    const gruppenMap = new Map();
+    const ohneGruppe = [];
+    for (const angebot of angebote) {
+      if (!angebot.gruppen || !angebot.gruppen.length) {
+        ohneGruppe.push(angebot.name);
+        continue;
+      }
+      for (const gruppe of angebot.gruppen) {
+        if (!gruppenMap.has(gruppe)) gruppenMap.set(gruppe, []);
+        gruppenMap.get(gruppe).push(angebot.name);
+      }
+    }
+
+    const gruppenNamen = [...gruppenMap.keys()].sort((a, b) => a.localeCompare(b));
+    const gruppenHtml = gruppenNamen.map(gruppe => `
+      <div style="margin-bottom:8px">
+        <div class="muted" style="font-size:.85em;margin-bottom:4px">${this.esc(gruppe)}</div>
+        ${gruppenMap.get(gruppe).map(name => `<span class="pill">${this.esc(name)}</span>`).join("")}
+      </div>
+    `).join("");
+    const ohneGruppeHtml = ohneGruppe.length ? `
+      <div>
+        ${gruppenNamen.length ? `<div class="muted" style="font-size:.85em;margin-bottom:4px">Ohne Gruppe</div>` : ""}
+        ${ohneGruppe.map(name => `<span class="pill">${this.esc(name)}</span>`).join("")}
+      </div>
+    ` : "";
+
+    return `<section class="card detail-section"><h3>Angebote</h3>${gruppenHtml}${ohneGruppeHtml}</section>`;
   }
 
   // --- Editor ------------------------------------------------------------
@@ -525,7 +647,7 @@ class HofkartePanel extends HTMLElement {
 
     const specials = (d.sonderoeffnungszeiten || []).map(x => `<div class="special" data-special><label>Von<input type=date name=datum_von value="${x.datum_von || ""}"></label><label>Bis<input type=date name=datum_bis value="${x.datum_bis || ""}"></label><label>Beginn<input type=time name=beginn value="${x.beginn || ""}"></label><label>Ende<input type=time name=ende value="${x.ende || ""}"></label><label>Geschlossen<input type=checkbox name=geschlossen ${x.geschlossen ? "checked" : ""}></label><button type=button class=secondary data-remove-special>−</button></div>`).join("");
     const text = (field) => (d[field] || []).map(x => x.name).join("\n");
-    const products = (d.produkte || []).map(x => `${x.name}${x.kategorie_ids?.length ? "|" + x.kategorie_ids.join(",") : ""}`).join("\n");
+    const angeboteText = (d.angebote || []).map(x => `${x.name}${x.gruppen?.length ? "|" + x.gruppen.join(",") : ""}`).join("\n");
 
     return `<div class="top"><div><h1>${d.id ? "Hofladen bearbeiten" : "Neuen Hofladen erstellen"}</h1><div class="muted">${d.id ? this.esc(d.id) : "Neue stabile ID wird beim Speichern erzeugt."}</div></div></div>
       ${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}
@@ -576,10 +698,9 @@ class HofkartePanel extends HTMLElement {
         </section>
 
         <section class=card>
-          <h2>Sortiment und Eigenschaften</h2>
-          <p class=muted>Ein Eintrag pro Zeile. Produkte können optional mit Kategorie-IDs als <code>Produkt|kategorie-id</code> angegeben werden.</p>
-          ${this.area("Kategorien", "kategorien", text("kategorien"))}
-          ${this.area("Produkte", "produkte", products)}
+          <h2>Angebote und Eigenschaften</h2>
+          <p class=muted>Ein Eintrag pro Zeile. Angebote können optional mit Gruppen als <code>Angebot|Gruppe1,Gruppe2</code> angegeben werden (z. B. <code>Kartoffeln|Gemüse</code>).</p>
+          ${this.area("Angebote", "angebote", angeboteText)}
           ${this.area("Zahlungsarten", "zahlungsarten", text("zahlungsarten"))}
           ${this.area("Verkaufsarten", "verkaufsarten", text("verkaufsarten"))}
           ${this.area("Merkmale", "merkmale", text("merkmale"))}
@@ -700,6 +821,7 @@ class HofkartePanel extends HTMLElement {
     this.shadowRoot.querySelector("[data-edit-from-detail]")?.addEventListener("click", (e) => this.start(this.items.find(x => x.id === e.target.dataset.editFromDetail)));
     this.shadowRoot.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => this.view(this.items.find(x => x.id === b.dataset.view))));
     this.shadowRoot.querySelector("[data-back]")?.addEventListener("click", () => this.closeView());
+    this.shadowRoot.querySelector("[data-geraete-entfernung]")?.addEventListener("click", () => this.ermittleGeraeteEntfernung());
     this.shadowRoot.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", () => this.remove(b.dataset.delete)));
     this.shadowRoot.querySelector("[data-cancel]")?.addEventListener("click", () => this.cancel());
     this.shadowRoot.querySelector("form")?.addEventListener("submit", e => { e.preventDefault(); this.save(); });

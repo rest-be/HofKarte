@@ -4,11 +4,7 @@ hoflaeden_suchen:
       example: "Käse"
       selector:
         text:
-    kategorie:
-      example: "Gemüse"
-      selector:
-        text:
-    produkt:
+    angebot:
       example: "Kartoffeln"
       selector:
         text:

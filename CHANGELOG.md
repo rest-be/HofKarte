@@ -8,6 +8,76 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Entfernung vom aktuellen Gerät:** Neuer Button „📍 Entfernung von
+  diesem Gerät berechnen“ in der Detailansicht (`hofkarte-panel.js`),
+  nutzt die Browser-Geolocation-API rein clientseitig. Ergänzt die
+  bestehende, serverseitige Entfernungs-Entity, ersetzt sie **nicht**
+  (eine Home-Assistant-Entity kann nur einen Zustand für alle
+  Betrachter:innen haben). Haversine-Formel als dokumentiertes
+  JS-Duplikat von `distance.haversine_distance_km` implementiert und
+  numerisch gegen die Python-Referenz verifiziert. Klare Fehlermeldungen
+  bei verweigerter/nicht unterstützter/zeitüberschreitender
+  Standortabfrage. Gerätestandort wird nicht gespeichert und nicht an
+  das Backend übertragen.
+
+### Geändert
+
+- **„Kategorien“ und „Produkte“ zu „Angebote“ zusammengelegt:**
+  `models.Angebot(id, name, gruppen)` ersetzt die früher getrennten
+  `Kategorie`/`Produkt`. Betroffen: `models.py`, `parsing.py`,
+  `attributes.py`, `coordinator.py` (`async_update_hofladen_sortiment`:
+  Parameter `kategorien`/`produkte` → `angebote`), `search.py`
+  (`find_hoflaeden`: Parameter `kategorie`/`produkt` → `angebot`,
+  prüft Name **oder** Gruppe), `services.py` +
+  `strings.json`/`translations/{en,de}.json`/`services.yaml`
+  (Action-Parameter der `hofkarte.hoflaeden_suchen`-Action angepasst –
+  bewusste, dokumentierte Ausnahme von „keine Breaking Changes“).
+  JS-Panel: die beiden getrennten Editor-Textfelder „Kategorien“ und
+  „Produkte“ sind einem einzigen Feld „Angebote“ gewichen (Syntax
+  `Name` bzw. `Name|Gruppe1,Gruppe2`); die Detailansicht zeigt Angebote
+  nach Gruppen zusammengefasst statt in zwei getrennten Abschnitten.
+- **Bestehende Daten werden automatisch migriert:** Neue, verbindliche
+  Migrationsfunktion `parsing._migriere_kategorien_und_produkte_zu_angeboten`
+  – idempotent (bereits migrierte bzw. neu angelegte Daten im
+  `angebote`-Format bleiben unverändert), verlustfrei (jedes Produkt
+  wird zu einem Angebot mit aufgelösten Gruppennamen; Kategorien ohne
+  zugeordnete Produkte bleiben als eigenständige Angebote mit leeren
+  Gruppen erhalten statt zu verschwinden). Keine manuelle Nutzeraktion
+  nötig.
+
+### Behoben
+
+- **Zeiten ohne Sekunden (hh:mm statt hh:mm:ss):** `management.py`s
+  `_json_value` rief `time.isoformat()` ohne `timespec` auf, was
+  standardmässig Sekunden liefert. Die Detailansicht der
+  Öffnungszeiten zeigte dadurch z. B. „08:00:00–12:00:00 Uhr“ statt
+  „08:00–12:00 Uhr“. Behoben durch `timespec="minutes"` speziell für
+  `time`-Objekte (nicht für `date`-Objekte, die weiterhin
+  `YYYY-MM-DD` liefern). Betrifft ausschliesslich die Darstellung,
+  keine Änderung an Speicherung oder Berechnung.
+
+### Tests
+
+- 9 dedizierte Migrationstests (`test_migration_kategorien_produkte_zu_angebote.py`):
+  Produkt mit einer/mehreren Kategorien, Produkt ohne Kategorie,
+  verwaiste Kategorie, gemischter Fall, Idempotenz (isoliert und über
+  den vollen `parse_hofladen`-Pfad), leere Eingabe.
+- Bestehende Tests in `test_models.py`, `test_attributes.py`,
+  `test_search.py`, `test_parsing.py`, `test_binary_sensor.py`,
+  `test_coordinator.py`, `test_services.py`, `test_end_to_end.py` auf
+  das neue `Angebot`-Modell umgestellt.
+- Neuer Regressionstest für den Sekunden-Bug in `test_management.py`.
+
+### Ausdrücklich unverändert
+
+- `image.py`, `distance.py`, `data_provider.py`, `frontend.py`,
+  WebSocket-Vertrag der Verwaltungsoberfläche
+  (`hofkarte/management/*`): keine Änderungen.
+
+## [0.16.2] - Unveröffentlicht
+
 ### Behoben
 
 - **Kritischer Bug – Bilder-Upload schlug immer fehl:** Der

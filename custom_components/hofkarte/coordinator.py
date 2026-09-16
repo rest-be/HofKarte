@@ -181,19 +181,20 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
         self,
         hofladen_id: str,
         *,
-        kategorien: list[dict[str, Any]] | None = None,
-        produkte: list[dict[str, Any]] | None = None,
+        angebote: list[dict[str, Any]] | None = None,
         zahlungsarten: list[dict[str, Any]] | None = None,
         verkaufsarten: list[dict[str, Any]] | None = None,
         merkmale: list[dict[str, Any]] | None = None,
     ) -> Hofladen:
-        """Sortiment und Eigenschaften (Fachbereiche aus Einheit 8) eines
-        bestehenden Hofladens durch die Nutzerin/den Nutzer bearbeiten.
+        """Sortiment und Eigenschaften eines bestehenden Hofladens durch
+        die Nutzerin/den Nutzer bearbeiten.
 
-        Bewusst auf genau diese fünf Fachbereiche beschränkt (Kategorien,
-        Produkte, Zahlungsarten, Verkaufsarten, Merkmale) – andere Felder
-        eines Hofladens (Name, Adresse, Öffnungszeiten, ...) werden über
-        diese Funktion nicht verändert.
+        Bewusst auf genau diese vier Fachbereiche beschränkt (Angebote,
+        Zahlungsarten, Verkaufsarten, Merkmale) – andere Felder eines
+        Hofladens (Name, Adresse, Öffnungszeiten, ...) werden über diese
+        Funktion nicht verändert. „Angebote“ ersetzt seit der
+        Zusammenlegung von Kategorien und Produkten (siehe CHANGELOG)
+        die früheren, getrennten Parameter ``kategorien``/``produkte``.
 
         Jeder Parameter, der nicht ``None`` ist, ersetzt die entsprechende
         Sammlung vollständig; ``None`` bedeutet „unverändert lassen“. Um
@@ -232,10 +233,8 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
             )
 
         updates: dict[str, Any] = {}
-        if kategorien is not None:
-            updates["kategorien"] = kategorien
-        if produkte is not None:
-            updates["produkte"] = produkte
+        if angebote is not None:
+            updates["angebote"] = angebote
         if zahlungsarten is not None:
             updates["zahlungsarten"] = zahlungsarten
         if verkaufsarten is not None:

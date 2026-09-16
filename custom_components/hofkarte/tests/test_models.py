@@ -5,8 +5,8 @@ from datetime import date, time
 import pytest
 
 from custom_components.hofkarte.models import (
+    Angebot,
     Hofladen,
-    Kategorie,
     Oeffnungszeit,
     Sonderoeffnungszeit,
 )
@@ -23,8 +23,7 @@ def test_hofladen_minimal_defaults() -> None:
     assert hofladen.longitude is None
     assert hofladen.oeffnungszeiten == ()
     assert hofladen.sonderoeffnungszeiten == ()
-    assert hofladen.produkte == ()
-    assert hofladen.kategorien == ()
+    assert hofladen.angebote == ()
     assert hofladen.zahlungsarten == ()
     assert hofladen.verkaufsarten == ()
     assert hofladen.merkmale == ()
@@ -61,8 +60,15 @@ def test_sonderoeffnungszeit_geschlossen_ohne_uhrzeiten() -> None:
     assert sonder.ende is None
 
 
-def test_kategorie_equality_by_value() -> None:
+def test_angebot_equality_by_value() -> None:
     """Frozen Dataclasses vergleichen nach Wert, nicht nach Identität."""
-    assert Kategorie(id="gemuese", name="Gemüse") == Kategorie(
-        id="gemuese", name="Gemüse"
+    assert Angebot(id="kartoffeln", name="Kartoffeln", gruppen=("Gemüse",)) == Angebot(
+        id="kartoffeln", name="Kartoffeln", gruppen=("Gemüse",)
     )
+
+
+def test_angebot_default_gruppen_ist_leer() -> None:
+    """Ein Angebot ohne Gruppenzuordnung muss gültig sein."""
+    angebot = Angebot(id="honig", name="Honig")
+
+    assert angebot.gruppen == ()

@@ -17,14 +17,6 @@ from datetime import date, time
 
 
 @dataclass(frozen=True, slots=True)
-class Kategorie:
-    """Eine Produktkategorie (z. B. „Gemüse“, „Milchprodukte“)."""
-
-    id: str
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
 class Zahlungsart:
     """Eine akzeptierte Zahlungsart (z. B. „Bar“, „Twint“)."""
 
@@ -49,12 +41,21 @@ class Merkmal:
 
 
 @dataclass(frozen=True, slots=True)
-class Produkt:
-    """Ein im Hofladen angebotenes Produkt."""
+class Angebot:
+    """Ein im Hofladen angebotener Artikel bzw. eine angebotene Leistung.
+
+    Ersetzt die früher getrennten Konzepte ``Kategorie`` und ``Produkt``
+    (siehe CHANGELOG, Zusammenlegung zu „Angebote“). ``gruppen`` enthält
+    frei formulierte, schlichte Textbezeichnungen (z. B. ``"Gemüse"``,
+    ``"Bio"``) direkt am Angebot – bewusst **keine** eigene, über IDs
+    referenzierte Kategorienliste mehr, da diese Indirektion in der
+    Praxis mehr Pflegeaufwand als Nutzen brachte. Ein Angebot ohne
+    Gruppen ist gültig (z. B. ein Artikel ohne sinnvolle Einordnung).
+    """
 
     id: str
     name: str
-    kategorie_ids: tuple[str, ...] = ()
+    gruppen: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,8 +141,7 @@ class Hofladen:
     longitude: float | None = None
     oeffnungszeiten: tuple[Oeffnungszeit, ...] = ()
     sonderoeffnungszeiten: tuple[Sonderoeffnungszeit, ...] = ()
-    produkte: tuple[Produkt, ...] = ()
-    kategorien: tuple[Kategorie, ...] = ()
+    angebote: tuple[Angebot, ...] = ()
     zahlungsarten: tuple[Zahlungsart, ...] = ()
     verkaufsarten: tuple[Verkaufsart, ...] = ()
     merkmale: tuple[Merkmal, ...] = ()

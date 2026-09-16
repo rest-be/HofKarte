@@ -25,13 +25,9 @@
           "name": "Search term",
           "description": "Free-text search (case-insensitive) across name, description and town."
         },
-        "kategorie": {
-          "name": "Category",
-          "description": "Only farm shops offering this exact product category."
-        },
-        "produkt": {
-          "name": "Product",
-          "description": "Only farm shops offering this exact product."
+        "angebot": {
+          "name": "Offer",
+          "description": "Only farm shops with this exact offer name or group (e.g. product or category name)."
         },
         "verkaufsart": {
           "name": "Type of sale",

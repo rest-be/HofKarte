@@ -1,8 +1,8 @@
 """Sortiment und Eigenschaften als Entity-Attribute.
 
-Kategorien, Produkte, Zahlungsarten, Verkaufsarten und Merkmale eines
-Hofladens sind fachlich keine Messwerte und rechtfertigen keine eigenen
-Entities (Regeln dieser Einheit: „Keine künstlichen Messwerte“, „Keine
+Angebote, Zahlungsarten, Verkaufsarten und Merkmale eines Hofladens sind
+fachlich keine Messwerte und rechtfertigen keine eigenen Entities
+(Regeln dieser Einheit: „Keine künstlichen Messwerte“, „Keine
 unnötigen Entities“). Stattdessen werden sie als ``extra_state_attributes``
 einer einzigen bestehenden Entity bereitgestellt (Binary Sensor
 „Geöffnet“, siehe ``binary_sensor.py``) statt auf mehrere Entities
@@ -12,6 +12,12 @@ Dieses Modul ist die alleinige Stelle, die diese Rohdaten aus
 ``models.Hofladen`` in eine einfache, JSON-serialisierbare und stabile
 Attributstruktur überführt (nur ``str``/``list``/``dict`` – keine
 dataclass-Instanzen direkt als State-Attribut).
+
+„Angebote“ ersetzt die früher getrennten Attribute ``kategorien`` und
+``produkte`` (siehe CHANGELOG, Zusammenlegung zu „Angebote“): ein
+Angebot trägt seine Gruppen-Zugehörigkeit (vormals „Kategorie“) direkt
+als einfache Textliste statt über eine separate, ID-referenzierte
+Kategorienliste.
 """
 
 from __future__ import annotations
@@ -19,11 +25,6 @@ from __future__ import annotations
 from typing import Any
 
 from .models import Hofladen
-
-
-def _kategorie_namen_je_id(hofladen: Hofladen) -> dict[str, str]:
-    """Mapping von Kategorie-ID auf Kategorie-Name für die Auflösung bei Produkten."""
-    return {kategorie.id: kategorie.name for kategorie in hofladen.kategorien}
 
 
 def _sortierte_namen(namen: list[str]) -> list[str]:
@@ -40,27 +41,14 @@ def _sortierte_namen(namen: list[str]) -> list[str]:
     return sorted(namen, key=str.casefold)
 
 
-def _produkt_eintraege(
-    hofladen: Hofladen, kategorie_namen_je_id: dict[str, str]
-) -> list[dict[str, Any]]:
-    """Produkte inkl. aufgelöster Kategorie-Namen, alphabetisch nach Name.
-
-    Verweist ein Produkt auf eine ``kategorie_id``, die in
-    ``hofladen.kategorien`` nicht vorhanden ist (vom Datenmodell nicht
-    ausgeschlossen), wird ersatzweise die rohe ID verwendet, statt die
-    Zuordnung stillschweigend zu verwerfen.
-    """
+def _angebot_eintraege(hofladen: Hofladen) -> list[dict[str, Any]]:
+    """Angebote inkl. ihrer Gruppen, alphabetisch nach Name sortiert."""
     eintraege = [
         {
-            "name": produkt.name,
-            "kategorien": _sortierte_namen(
-                [
-                    kategorie_namen_je_id.get(kategorie_id, kategorie_id)
-                    for kategorie_id in produkt.kategorie_ids
-                ]
-            ),
+            "name": angebot.name,
+            "gruppen": _sortierte_namen(list(angebot.gruppen)),
         }
-        for produkt in hofladen.produkte
+        for angebot in hofladen.angebote
     ]
     return sorted(eintraege, key=lambda eintrag: eintrag["name"].casefold())
 
@@ -73,13 +61,8 @@ def build_sortiment_attributes(hofladen: Hofladen) -> dict[str, Any]:
     fehlenden Schlüssels oder ``None`` – für eine vorhersagbare,
     stabile Struktur unabhängig vom Vollständigkeitsgrad der Daten.
     """
-    kategorie_namen_je_id = _kategorie_namen_je_id(hofladen)
-
     return {
-        "kategorien": _sortierte_namen(
-            [kategorie.name for kategorie in hofladen.kategorien]
-        ),
-        "produkte": _produkt_eintraege(hofladen, kategorie_namen_je_id),
+        "angebote": _angebot_eintraege(hofladen),
         "zahlungsarten": _sortierte_namen(
             [zahlungsart.name for zahlungsart in hofladen.zahlungsarten]
         ),

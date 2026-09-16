@@ -229,12 +229,12 @@ async def test_update_sortiment_mehrere_fachbereiche_gleichzeitig(
 
     ergebnis = await coordinator.async_update_hofladen_sortiment(
         "hof-1",
-        kategorien=[{"id": "gemuese", "name": "Gemüse"}],
+        angebote=[{"id": "kartoffeln", "name": "Kartoffeln", "gruppen": ["Gemüse"]}],
         verkaufsarten=[{"id": "hofladen", "name": "Hofladen"}],
         merkmale=[{"id": "bio", "name": "Bio"}],
     )
 
-    assert [k.name for k in ergebnis.kategorien] == ["Gemüse"]
+    assert [a.name for a in ergebnis.angebote] == ["Kartoffeln"]
     assert [v.name for v in ergebnis.verkaufsarten] == ["Hofladen"]
     assert [m.name for m in ergebnis.merkmale] == ["Bio"]
 

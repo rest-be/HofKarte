@@ -18,7 +18,7 @@ für die Entwickler-/Architekturdokumentation siehe
 5. [Entities](#5-entities)
 6. [Öffnungszeiten](#6-öffnungszeiten)
 7. [Standort und Entfernung](#7-standort-und-entfernung)
-8. [Produkte und Eigenschaften](#8-produkte-und-eigenschaften)
+8. [Angebote und Eigenschaften](#8-angebote-und-eigenschaften)
 9. [Actions und Automationen](#9-actions-und-automationen)
 10. [Dashboard-Beispiele](#10-dashboard-beispiele)
 11. [Fehlerbehebung](#11-fehlerbehebung)
@@ -164,7 +164,7 @@ Geräte & Dienste → HofKarte → Entities** einsehbar.
 
 ### Attribute
 
-- **Geöffnet** trägt zusätzlich die Attribute `kategorien`, `produkte`,
+- **Geöffnet** trägt zusätzlich die Attribute `angebote`,
   `zahlungsarten`, `verkaufsarten`, `merkmale` (siehe Kapitel 8) – diese
   Informationen erscheinen **nicht** auf den anderen Entities, um
   Daten nicht mehrfach zu duplizieren.
@@ -272,14 +272,36 @@ Höhenunterschiede oder Reisezeit – es ist eine reine Luftlinie.
   statische, einmal konfigurierte Home-Position wird gelesen (siehe
   Kapitel 14, Datenschutz).
 
-## 8. Produkte und Eigenschaften
+### Entfernung vom aktuellen Gerät
 
-Jeder Hofladen kann in fünf Fachbereichen gepflegt werden (über die
+Da eine Home-Assistant-Entity nur **einen** Zustand für alle
+Betrachter:innen gleichzeitig haben kann, kann der obige Sensor nicht
+zeigen, wie weit **du gerade persönlich** vom Hofladen entfernt bist.
+Dafür steht in der **Detailansicht** eines Hofladens zusätzlich ein
+Button „📍 Entfernung von diesem Gerät berechnen“ zur Verfügung:
+
+1. Button anklicken.
+2. Der Browser fragt (beim ersten Mal) um Erlaubnis, den Standort zu
+   verwenden – diese Anfrage bestätigen.
+3. Die Entfernung wird direkt im Browser berechnet und angezeigt.
+
+Wird der Standortzugriff verweigert, ist er nicht verfügbar, oder
+dauert die Ermittlung zu lange, erscheint eine entsprechende, klare
+Meldung statt eines falschen Werts. Der Gerätestandort wird
+ausschliesslich für diese einmalige Berechnung im Browser verwendet –
+er wird **nicht** gespeichert und **nicht** an Home Assistant
+übertragen (siehe Kapitel 14, Datenschutz).
+
+## 8. Angebote und Eigenschaften
+
+Jeder Hofladen kann in vier Fachbereichen gepflegt werden (über die
 Verwaltungsoberfläche, Kapitel 4):
 
-- **Kategorien** – z. B. „Gemüse“, „Milchprodukte“.
-- **Produkte** – konkrete Artikel, jeweils optional einer oder mehreren
-  Kategorien zugeordnet, z. B. „Kartoffeln“ → Kategorie „Gemüse“.
+- **Angebote** – konkrete Artikel bzw. Leistungen, z. B. „Kartoffeln“,
+  optional mit einer oder mehreren frei formulierten Gruppen versehen,
+  z. B. „Gemüse“. Ein Angebot ohne Gruppe ist ebenso zulässig. In der
+  Verwaltungsoberfläche als ein Eintrag pro Zeile erfasst, Syntax
+  `Name` bzw. `Name|Gruppe1,Gruppe2` (z. B. `Kartoffeln|Gemüse`).
 - **Zahlungsarten** – z. B. „Bargeld“, „TWINT“, „Debitkarte“,
   „Kreditkarte“.
 - **Verkaufsarten** – z. B. „Hofladen“, „Selbstbedienung“,
@@ -287,7 +309,7 @@ Verwaltungsoberfläche, Kapitel 4):
 - **Merkmale** – z. B. „Bio“, „eigener Anbau“, „Parkplatz“,
   „barrierefrei“.
 
-Für die vier zuletzt genannten Bereiche bietet HofKarte einen
+Für die drei zuletzt genannten Bereiche bietet HofKarte einen
 **Vorschlagskatalog** gängiger Werte (siehe README, Abschnitt „Unter der
 Haube“) – eigene, frei gewählte Bezeichnungen sind jederzeit ebenso
 zulässig.
@@ -300,6 +322,12 @@ in Automationen/Vorlagen über `state_attr(...)` auslesen, z. B.:
 ```jinja
 {{ state_attr('binary_sensor.hofladen_mueller_geoeffnet', 'merkmale') }}
 ```
+
+**Hinweis für bestehende Installationen:** Waren „Kategorien“ und
+„Produkte“ vorher als getrennte Fachbereiche gepflegt, werden diese
+beim nächsten Öffnen automatisch und ohne Datenverlust in „Angebote“
+zusammengeführt – auch eine Kategorie ganz ohne zugeordnete Produkte
+bleibt dabei als eigenständiges Angebot ohne Gruppe erhalten.
 
 ## 9. Actions und Automationen
 
@@ -314,8 +342,7 @@ enger die Suche).
 | Parameter | Typ | Bedeutung |
 |---|---|---|
 | `suchbegriff` | Text | Freitextsuche (Gross-/Kleinschreibung egal, Teilstring-Treffer) über Name, Beschreibung, Ort. |
-| `kategorie` | Text | Exakter Name einer Kategorie. |
-| `produkt` | Text | Exakter Produktname. |
+| `angebot` | Text | Exakter Name eines Angebots **oder** einer seiner Gruppen. |
 | `verkaufsart` | Text | Exakter Name einer Verkaufsart. |
 | `zahlungsart` | Text | Exakter Name einer Zahlungsart. |
 | `merkmal` | Text | Exakter Name eines Merkmals. |
@@ -330,7 +357,7 @@ nutzbar): `anzahl_treffer` (Zahl) sowie `hoflaeden` (Liste mit je `id`,
 ```yaml
 action: hofkarte.hoflaeden_suchen
 data:
-  kategorie: Gemüse
+  angebot: Gemüse
   nur_geoeffnet: true
 ```
 
@@ -521,11 +548,16 @@ unverändert (siehe Kapitel 14).
   URL beim Anzeigen des Bildes ab (siehe Kapitel 5, „Hauptbild“).
   Ausserhalb davon findet keine Telemetrie und keine Datenübertragung an
   Dritte statt.
-- **Standort:** Der Entfernungs-Sensor (Kapitel 7) liest ausschliesslich
-  die statische, in Home Assistant konfigurierte Position – kein
-  `device_tracker`, keine Personen- oder Geräteverfolgung. Diese
-  Position wird von HofKarte nicht separat gespeichert und nicht an
-  externe Dienste übertragen.
+- **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor
+  (Kapitel 7) liest ausschliesslich die statische, in Home Assistant
+  konfigurierte Position – kein `device_tracker`, keine Personen- oder
+  Geräteverfolgung. Diese Position wird von HofKarte nicht separat
+  gespeichert und nicht an externe Dienste übertragen.
+- **Standort (aktuelles Gerät):** Der optionale Button „Entfernung von
+  diesem Gerät berechnen“ (Kapitel 7) nutzt den Standort deines
+  Geräts/Browsers nur nach deiner ausdrücklichen Zustimmung. Dieser
+  Standort wird ausschliesslich einmalig im Browser verwendet, nicht
+  gespeichert und nicht an Home Assistant übertragen.
 - **Speicherort aller Daten:** Alle Hofladen-Daten (Name, Adresse,
   Koordinaten, Öffnungszeiten, Sortiment, Bild-Adressen) liegen
   ausschliesslich lokal im Home-Assistant-Storage

@@ -49,7 +49,11 @@ VOLLSTAENDIGER_ROHDATENSATZ = {
 
 
 def test_parse_vollstaendiger_datensatz() -> None:
-    """Ein vollständiger Rohdatensatz muss korrekt in alle Felder überführt werden."""
+    """Ein vollständiger Rohdatensatz muss korrekt in alle Felder überführt
+    werden. Verwendet bewusst noch das alte Format (getrennte
+    'kategorien'/'produkte') für 'Angebote', um implizit auch die
+    Migration alter Daten (siehe test_migration_kategorien_produkte_zu_angebote.py)
+    über den regulären Parsing-Pfad abzudecken."""
     hofladen = parse_hofladen(VOLLSTAENDIGER_ROHDATENSATZ)
 
     assert hofladen.id == "hof-1"
@@ -75,9 +79,9 @@ def test_parse_vollstaendiger_datensatz() -> None:
     assert silvester.geschlossen is False
     assert silvester.beginn == time(9, 0)
 
-    assert len(hofladen.produkte) == 1
-    assert hofladen.produkte[0].kategorie_ids == ("gemuese",)
-    assert hofladen.kategorien[0].name == "Gemüse"
+    assert len(hofladen.angebote) == 1
+    assert hofladen.angebote[0].name == "Kartoffeln"
+    assert hofladen.angebote[0].gruppen == ("Gemüse",)
     assert hofladen.zahlungsarten[0].name == "Bar"
     assert hofladen.verkaufsarten[0].name == "Ab-Hof-Verkauf"
     assert hofladen.merkmale[0].name == "Bio"
@@ -97,7 +101,7 @@ def test_parse_unvollstaendiger_datensatz_nur_pflichtfelder() -> None:
     assert hofladen.longitude is None
     assert hofladen.oeffnungszeiten == ()
     assert hofladen.sonderoeffnungszeiten == ()
-    assert hofladen.produkte == ()
+    assert hofladen.angebote == ()
     assert hofladen.bilder == ()
 
 
@@ -285,8 +289,9 @@ def test_parse_sonderoeffnungszeit_ende_gleich_beginn_ist_ungueltig() -> None:
         parse_hofladen(raw)
 
 
-def test_parse_produkt_fehlende_id() -> None:
-    """Ein Produkt ohne id muss abgelehnt werden."""
+def test_parse_altes_format_produkt_fehlende_id() -> None:
+    """Ein Produkt (altes Format) ohne id muss über die Migration hinweg
+    weiterhin abgelehnt werden (Fail-Fast bleibt erhalten)."""
     raw = {
         "id": "hof-13",
         "name": "Hofladen",
@@ -297,8 +302,9 @@ def test_parse_produkt_fehlende_id() -> None:
         parse_hofladen(raw)
 
 
-def test_parse_kategorie_fehlender_name() -> None:
-    """Eine Kategorie ohne name muss abgelehnt werden."""
+def test_parse_altes_format_kategorie_fehlender_name() -> None:
+    """Eine Kategorie (altes Format) ohne name muss über die Migration
+    hinweg weiterhin abgelehnt werden."""
     raw = {
         "id": "hof-14",
         "name": "Hofladen",

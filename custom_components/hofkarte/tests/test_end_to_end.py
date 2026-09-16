@@ -73,12 +73,11 @@ async def test_vollstaendiges_end_zu_end_szenario_mit_mehreren_hoflaeden(
                 {"wochentag": tag, "beginn": "08:00", "ende": "20:00"}
                 for tag in range(1, 8)
             ],
-            "kategorien": [{"id": "gemuese", "name": "Gemüse"}],
-            "produkte": [
+            "angebote": [
                 {
                     "id": "kartoffeln",
                     "name": "Kartoffeln",
-                    "kategorie_ids": ["gemuese"],
+                    "gruppen": ["Gemüse"],
                 }
             ],
             "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
@@ -148,10 +147,9 @@ async def test_vollstaendiges_end_zu_end_szenario_mit_mehreren_hoflaeden(
     assert hofladen_a.oeffnungszeiten[0].beginn == time(8, 0)
     assert is_open(hofladen_a, mittags_montag) is True
 
-    # --- Produkte/Eigenschaften sehen (Sortiment-Attribute) ------------------
+    # --- Angebote/Eigenschaften sehen (Sortiment-Attribute) ------------------
     attribute_a = hass.states.get(geoeffnet_a).attributes
-    assert attribute_a["kategorien"] == ["Gemüse"]
-    assert attribute_a["produkte"] == [{"name": "Kartoffeln", "kategorien": ["Gemüse"]}]
+    assert attribute_a["angebote"] == [{"name": "Kartoffeln", "gruppen": ["Gemüse"]}]
     assert attribute_a["merkmale"] == ["Bio"]
 
     # --- Entfernung prüfen -----------------------------------------------------
@@ -173,7 +171,7 @@ async def test_vollstaendiges_end_zu_end_szenario_mit_mehreren_hoflaeden(
     treffer = await hass.services.async_call(
         DOMAIN,
         "hoflaeden_suchen",
-        {"kategorie": "Gemüse"},
+        {"angebot": "Gemüse"},
         blocking=True,
         return_response=True,
     )

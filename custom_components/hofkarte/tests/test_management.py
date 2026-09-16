@@ -88,9 +88,32 @@ def test_serialize_hofladen_wandelt_verschachtelte_werte_in_json_typen_um() -> N
     assert serialisiert["id"] == "hof-1"
     assert isinstance(serialisiert["oeffnungszeiten"], list)
     erste_zeit = serialisiert["oeffnungszeiten"][0]
-    assert erste_zeit["beginn"] == "08:00:00"
-    assert erste_zeit["ende"] == "12:00:00"
+    assert erste_zeit["beginn"] == "08:00"
+    assert erste_zeit["ende"] == "12:00"
     assert erste_zeit["wochentag"] == 1
+
+
+def test_serialize_hofladen_zeiten_ohne_sekunden() -> None:
+    """Regressionstest für den behobenen Sekunden-Bug: time.isoformat()
+    liefert standardmässig 'hh:mm:ss' - die Detailansicht darf aber nur
+    'hh:mm' anzeigen, da Öffnungszeiten ausschliesslich minutengenau
+    erfasst werden."""
+    from datetime import time
+
+    hofladen = Hofladen(
+        id="hof-2",
+        name="Hofladen Zwei",
+        oeffnungszeiten=(
+            Oeffnungszeit(wochentag=3, beginn=time(7, 30), ende=time(18, 45)),
+        ),
+    )
+
+    serialisiert = _serialize_hofladen(hofladen)
+    zeit = serialisiert["oeffnungszeiten"][0]
+
+    assert zeit["beginn"] == "07:30"
+    assert zeit["ende"] == "18:45"
+    assert ":" not in zeit["beginn"][5:]  # kein zweiter Doppelpunkt -> keine Sekunden
 
 
 # ---------------------------------------------------------------------------

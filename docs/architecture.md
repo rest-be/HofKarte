@@ -105,10 +105,27 @@ Coordinator-Listener automatisch auf später hinzukommende Hofläden
 
 `models.py` definiert das interne, unveränderliche (`frozen`
 Dataclasses) Datenmodell (`Hofladen`, `Oeffnungszeit`,
-`Sonderoeffnungszeit`, `Produkt`, `Kategorie`, `Zahlungsart`,
+`Sonderoeffnungszeit`, `Angebot`, `Zahlungsart`,
 `Verkaufsart`, `Merkmal`, `Bild`). `parsing.py` überführt rohe,
 JSON-kompatible `dict`-Daten in dieses Modell und validiert dabei
 (`HofladenValidationError` bei ungültigen Pflichtfeldern).
+
+**Architekturentscheid – Angebote statt Kategorien/Produkte:** Die
+früher getrennten Konzepte `Kategorie` (eigene, über IDs referenzierte
+Liste) und `Produkt` (referenziert Kategorien über `kategorie_ids`)
+wurden zu einem einzigen `Angebot(id, name, gruppen)` zusammengelegt.
+`gruppen` sind schlichte Textbezeichnungen direkt am Angebot – keine
+separate, global gepflegte Kategorienliste mehr. `parsing.py` enthält
+dafür `_migriere_kategorien_und_produkte_zu_angeboten`: eine
+verbindliche, idempotente Migration, die beim Einlesen alter Rohdaten
+(Schlüssel `kategorien`/`produkte`) automatisch greift, sobald der
+Schlüssel `angebote` fehlt. Jedes Produkt wird zu einem Angebot, seine
+`kategorie_ids` werden zu Gruppen-Namen aufgelöst; Kategorien ohne
+zugeordnete Produkte bleiben als eigenständige Angebote mit leeren
+Gruppen erhalten, damit kein Name stillschweigend verloren geht. Liegt
+bereits das neue Format vor (`angebote`-Schlüssel vorhanden), greift
+die Migration nicht – wiederholtes Einlesen verändert die Daten nicht
+(Idempotenz, siehe `tests/test_migration_kategorien_produkte_zu_angebote.py`).
 
 Die Datenquelle ist final festgelegt (siehe CHANGELOG,
 „Architekturentscheid: Datenquelle final festgelegt“): ein
@@ -157,13 +174,28 @@ Umrechnung nötig. Der Button ist deaktiviert, wenn keine gültigen
 Koordinaten vorliegen (`isValidWgs84`); die Kartenansicht ist ein rein
 lesender externer Link ohne neue Abhängigkeit.
 
+### Entfernung vom aktuellen Gerät (clientseitig)
+
+`haversineDistanceKm` in `hofkarte-panel.js` ist ein bewusstes,
+dokumentiertes JS-Duplikat von `distance.haversine_distance_km`
+(numerisch gegen die Python-Referenz verifiziert) – **nicht**
+serverseitig implementiert, da der Gerätestandort aus
+Datenschutzgründen nie an das Backend übertragen wird. Ergänzt in der
+Detailansicht die bestehende, serverseitige Entfernungs-Entity, ersetzt
+sie nicht: Eine Home-Assistant-Entity hat genau einen Zustand für alle
+Betrachter:innen und kann sich nicht sinnvoll pro Gerät unterscheiden.
+Nutzt `navigator.geolocation.getCurrentPosition` mit expliziter
+Fehlerbehandlung für verweigerte/nicht unterstützte/zeitüberschreitende
+Standortabfragen.
+
 ## Sortiment-Logik
 
-`attributes.py` überführt Kategorien/Produkte/Zahlungsarten/
-Verkaufsarten/Merkmale eines Hofladens in eine stabile,
-JSON-taugliche Attributstruktur für den Binary Sensor „Geöffnet“ (siehe
-Handbuch, Kapitel 8). `sortiment_katalog.py` bietet einen optionalen
-Vorschlagskatalog gängiger Werte.
+`attributes.py` überführt Angebote/Zahlungsarten/Verkaufsarten/
+Merkmale eines Hofladens in eine stabile, JSON-taugliche
+Attributstruktur für den Binary Sensor „Geöffnet“ (siehe Handbuch,
+Kapitel 8). `sortiment_katalog.py` bietet einen optionalen
+Vorschlagskatalog gängiger Werte (Zahlungsarten, Verkaufsarten,
+Merkmale – nicht für Angebote, da diese frei formuliert werden).
 
 ## Bilder
 
@@ -229,8 +261,11 @@ einer fragilen Erkennung anhand des URL-Musters.
 ## Suche/Filter
 
 `search.py` (`find_hoflaeden`) ist eine reine, HA-unabhängige
-Fachfunktion für die UND-verknüpfte Filterung. `services.py` bindet sie
-als Home-Assistant-Action (`hofkarte.hoflaeden_suchen`) an.
+Fachfunktion für die UND-verknüpfte Filterung. Der Parameter `angebot`
+prüft sowohl den Namen als auch die Gruppen eines Angebots (ersetzt die
+früher getrennten Parameter `kategorie`/`produkt`, siehe CHANGELOG).
+`services.py` bindet die Funktion als Home-Assistant-Action
+(`hofkarte.hoflaeden_suchen`) an.
 
 ## Grafische Verwaltungsoberfläche (Architekturabweichung)
 
