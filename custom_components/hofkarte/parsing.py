@@ -234,9 +234,14 @@ def _parse_bild(raw: Any, index: int) -> Bild:
             f"{context}: 'beschreibung' muss eine Zeichenkette sein."
         )
 
+    hochgeladen = raw.get("hochgeladen", False)
+    if not isinstance(hochgeladen, bool):
+        raise HofladenValidationError(f"{context}: 'hochgeladen' muss ein Bool sein.")
+
     return Bild(
         url=url.strip(),
         beschreibung=(beschreibung.strip() if beschreibung else None) or None,
+        hochgeladen=hochgeladen,
     )
 
 

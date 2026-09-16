@@ -8,6 +8,63 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Geführter Bilder-Upload** in der Verwaltungsoberfläche
+  (`hofkarte-panel.js`): Bild direkt hochladen (JPEG/PNG/GIF, max.
+  10 MB) statt nur externe Bild-Adressen manuell einzutragen – beide
+  Wege sind kombinierbar. Direktes Feedback bei Erfolg/Fehler, Vorschau
+  je Bild, optionale Beschreibung, Entfernen sowie „Als Hauptbild
+  festlegen“ (verschiebt an den Anfang der Liste, bestehende
+  Hauptbild-Konvention unverändert).
+- Nutzt **ausschliesslich Home Assistants eigene `image_upload`-
+  Komponente** (`POST /api/image/upload`, Auslieferung über
+  `/api/image/serve/{id}/original`, Löschen über den bestehenden
+  WebSocket-Befehl `image/delete`) – kein eigener Upload-Endpunkt,
+  keine neue Python-Abhängigkeit. `manifest.json` deklariert
+  `image_upload` neu als Abhängigkeit (analog zu `http`).
+- `models.Bild`: neues Feld `hochgeladen: bool = False` (Default
+  erhält bestehende, extern verlinkte Bilder unverändert). Wird von
+  `parsing.py` validiert.
+- `images.py`: `is_valid_image_url` akzeptiert einen neuen
+  `hochgeladen`-Parameter. Über den Upload erzeugte Bilder sind gezielt
+  von der Ablehnung privater/interner IP-Adressen ausgenommen (die
+  Upload-URL zeigt zwangsläufig auf die eigene, meist private
+  Home-Assistant-Instanz) – Vertrauensbasis ist die Herkunft, nicht der
+  Adressbereich; Schema-/Zugangsdaten-Prüfung bleiben unverändert auch
+  für hochgeladene Bilder in Kraft.
+- Beim Entfernen eines hochgeladenen Bildes wird die zugrunde liegende
+  Datei über `image/delete` mitgelöscht – keine verwaisten Dateien.
+- Tests: 5 neue Fälle in `test_images_security.py` (Ausnahme für
+  `hochgeladen=True`, weiterhin geltende Schema-/Zugangsdaten-Prüfung,
+  Behandlung je Bild statt global), 3 neue Fälle in `test_parsing.py`
+  (Default, Übernahme, Typprüfung des neuen Felds), 1 neuer Test für
+  die `image_upload`-Manifest-Abhängigkeit.
+
+### Geändert
+
+- README, `docs/handbuch.md` (neuer Abschnitt „Bilder hochladen“ in
+  Kapitel 4), `docs/architecture.md` (neuer Abschnitt „Geführter
+  Bilder-Upload“) und `SECURITY.md` um den Upload-Mechanismus und die
+  `hochgeladen`-Sicherheitsausnahme ergänzt. Veraltete Formulierungen
+  („HofKarte lädt und speichert keine Bilddateien selbst“) korrigiert,
+  da dies mit dem neuen Upload nicht mehr zutrifft.
+
+### Ausdrücklich unverändert
+
+- `image.py`, `distance.py`, `coordinator.py`, `data_provider.py`,
+  WebSocket-Vertrag für Hofladen-Verwaltung (`hofkarte/management/*`):
+  keine Änderungen. Bestehende, extern verlinkte Bilder funktionieren
+  unverändert (Feld `hochgeladen` defaultet auf `False`).
+
+### Bewusst nicht implementiert
+
+- WebP-Unterstützung: Home Assistants `image_upload`-Komponente
+  unterstützt nur JPEG/PNG/GIF; da kein eigener Upload-Mechanismus
+  gebaut wird (siehe oben), gilt dieselbe Einschränkung für HofKarte.
+
+## [0.15.1] - Unveröffentlicht
+
 ### Geändert
 
 - **Koordinaten von LV95 auf WGS84 umgestellt:** Die Verwaltungsoberfläche

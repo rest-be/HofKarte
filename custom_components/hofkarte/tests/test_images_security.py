@@ -56,3 +56,67 @@ def test_get_additional_images_excludes_hauptbild_and_unsafe_entries() -> None:
     assert urls == ["https://example.com/2.jpg"]
     assert "http://127.0.0.1/x.png" not in urls
     assert "https://example.com/1.jpg" not in urls
+
+
+# ---------------------------------------------------------------------------
+# hochgeladen=True: Ausnahme für über den geführten Upload erzeugte Bilder
+# ---------------------------------------------------------------------------
+
+
+def test_rejects_private_ip_when_not_hochgeladen() -> None:
+    """Ohne hochgeladen=True gilt weiterhin die normale Ablehnung
+    (Referenzverhalten, unverändert)."""
+    assert not images.is_valid_image_url("http://192.168.1.50:8123/x.jpg")
+
+
+def test_accepts_private_ip_when_hochgeladen() -> None:
+    """Eine private/interne IP-Adresse (typisch für die eigene
+    Home-Assistant-Instanz im Heimnetz) muss bei hochgeladen=True
+    akzeptiert werden – die Vertrauensbasis ist hier die Herkunft (von
+    HofKarte selbst über Home Assistants offiziellen Upload-Weg
+    erzeugt), nicht der Adressbereich."""
+    url = "http://192.168.1.50:8123/api/image/serve/abc123/original"
+    assert images.is_valid_image_url(url, hochgeladen=True)
+
+
+def test_accepts_localhost_when_hochgeladen() -> None:
+    assert images.is_valid_image_url(
+        "http://localhost:8123/api/image/serve/abc123/original", hochgeladen=True
+    )
+
+
+def test_hochgeladen_still_rejects_invalid_scheme() -> None:
+    """Die Ausnahme betrifft ausschliesslich die Adressbereichs-Prüfung –
+    Schema- und Zugangsdaten-Prüfung gelten unverändert auch für
+    hochgeladene Bilder (Defense in Depth)."""
+    assert not images.is_valid_image_url(
+        "file:///etc/passwd", hochgeladen=True
+    )
+    assert not images.is_valid_image_url(
+        "http://user:pw@192.168.1.50/x.jpg", hochgeladen=True
+    )
+
+
+def test_hochgeladen_still_rejects_empty_url() -> None:
+    assert not images.is_valid_image_url(None, hochgeladen=True)
+    assert not images.is_valid_image_url("", hochgeladen=True)
+
+
+def test_get_main_image_url_beruecksichtigt_hochgeladen_flag_pro_bild() -> None:
+    """get_main_image_url/get_additional_images müssen das hochgeladen-Flag
+    JE BILD berücksichtigen (nicht global) – ein extern verlinktes
+    Bild mit privater IP bleibt unsicher, auch wenn ein anderes Bild im
+    selben Hofladen hochgeladen wurde."""
+    images_list = (
+        Bild(
+            url="http://192.168.1.50:8123/api/image/serve/abc/original",
+            hochgeladen=True,
+        ),
+        Bild(url="http://192.168.1.99/nicht-hochgeladen.jpg", hochgeladen=False),
+    )
+
+    hauptbild = images.get_main_image_url(images_list)
+    weitere = images.get_additional_images(images_list)
+
+    assert hauptbild == "http://192.168.1.50:8123/api/image/serve/abc/original"
+    assert weitere == []  # das zweite, nicht hochgeladene Bild bleibt unsicher

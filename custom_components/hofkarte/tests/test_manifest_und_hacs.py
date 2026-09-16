@@ -84,6 +84,16 @@ def test_manifest_deklariert_http_abhaengigkeit() -> None:
     assert "http" in manifest.get("dependencies", [])
 
 
+def test_manifest_deklariert_image_upload_abhaengigkeit() -> None:
+    """Der geführte Bilder-Upload nutzt Home Assistants eigene
+    ``image_upload``-Komponente (Upload-/Serve-Endpunkte,
+    WebSocket-Befehle ``image/list|update|delete``). Ohne diese
+    Abhängigkeit ist nicht garantiert, dass die Komponente beim Setup
+    von HofKarte bereits initialisiert ist."""
+    manifest = _load_manifest()
+    assert "image_upload" in manifest.get("dependencies", [])
+
+
 def test_hacs_json_ist_gueltiges_json() -> None:
     _load_hacs()
 

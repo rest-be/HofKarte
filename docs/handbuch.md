@@ -110,6 +110,27 @@ können Hofläden verwaltet werden:
 - **Löschen:** Hofladen kontrolliert entfernen (inklusive des
   zugehörigen Geräts und aller Entities in Home Assistant).
 
+### Bilder hochladen
+
+Im Bearbeitungsformular steht im Bereich „Bilder“ ein geführter
+Upload zur Verfügung:
+
+1. Auf „📤 Bild hochladen“ klicken und eine Datei auswählen (unterstützt:
+   JPEG, PNG, GIF; maximal 10 MB).
+2. Der Upload startet sofort; Erfolg oder ein Fehler (z. B. falsches
+   Format oder Datei zu gross) wird direkt darunter angezeigt.
+3. Das hochgeladene Bild erscheint danach in der Bilderliste. Dort kann
+   optional eine Beschreibung ergänzt, das Bild per Stern-Symbol als
+   Hauptbild festgelegt oder wieder entfernt werden.
+4. Alternativ lässt sich weiterhin eine externe Bild-Adresse manuell
+   eintragen („Oder externe Bild-Adresse manuell hinzufügen“) – beide
+   Wege können auch kombiniert werden.
+
+Das **erste Bild in der Liste** ist stets das Hauptbild und erscheint
+als `image`-Entity des Hofladens (siehe Kapitel 5). Wird ein
+hochgeladenes Bild entfernt, wird die zugrunde liegende Datei ebenfalls
+gelöscht – es bleiben keine verwaisten Dateien zurück.
+
 Sobald ein Hofladen angelegt wird, erstellt HofKarte **automatisch**
 (ohne Neustart) ein **logisches Gerät** dafür unter **Einstellungen →
 Geräte & Dienste → HofKarte → Geräte**. Dieses Gerät ist **kein
@@ -427,10 +448,12 @@ ergänzen (Kapitel 4/6).
 Koordinaten, oder die Home-Assistant-Position ist nicht konfiguriert
 (**Einstellungen → System → Allgemein**), siehe Kapitel 7.
 
-**Hauptbild wird nicht angezeigt:** Die hinterlegte Bild-URL ist leer,
-kein gültiger `http(s)`-Link, oder zeigt aus Sicherheitsgründen
-abgelehnt auf eine private/interne IP-Adresse. URL in der
-Verwaltungsoberfläche prüfen.
+**Hauptbild wird nicht angezeigt:** Bei einem hochgeladenen Bild die
+Fehlermeldung im Upload-Bereich prüfen (z. B. falsches Format oder zu
+gross). Bei einer manuell eingetragenen externen Bild-Adresse: Diese
+ist entweder leer, kein gültiger `http(s)`-Link, oder zeigt aus
+Sicherheitsgründen abgelehnt auf eine private/interne IP-Adresse –
+Adresse in der Verwaltungsoberfläche prüfen.
 
 **Logging aktivieren:** Für detailliertere Fehlersuche unter
 **Einstellungen → System → Logs** das Logging für
@@ -503,15 +526,21 @@ unverändert (siehe Kapitel 14).
   Position wird von HofKarte nicht separat gespeichert und nicht an
   externe Dienste übertragen.
 - **Speicherort aller Daten:** Alle Hofladen-Daten (Name, Adresse,
-  Koordinaten, Öffnungszeiten, Sortiment, Bild-URLs) liegen
+  Koordinaten, Öffnungszeiten, Sortiment, Bild-Adressen) liegen
   ausschliesslich lokal im Home-Assistant-Storage
   (`.storage/hofkarte_hoflaeden`) – keine Cloud-Synchronisation, keine
-  externe Datenbank.
+  externe Datenbank. Hochgeladene Bilddateien selbst liegen im
+  Home-Assistant-Konfigurationsverzeichnis unter `image/` (verwaltet
+  durch Home Assistants eigene `image_upload`-Komponente, nicht durch
+  HofKarte) und werden beim Entfernen eines Bildes gelöscht. Beim
+  Deinstallieren von HofKarte (Kapitel 13) werden diese Dateien –
+  analog zu den übrigen Hofladen-Daten – nicht automatisch entfernt.
 - **Diagnostics:** Die über Home Assistant herunterladbare Diagnose
   (Kapitel 11) enthält bewusst keine Hofladen-Inhalte und keine
   Standortdaten.
-- **Zugriffsschutz:** Die grafische Verwaltungsoberfläche und alle
-  Schreibzugriffe erfordern Home-Assistant-Administratorrechte.
+- **Zugriffsschutz:** Die grafische Verwaltungsoberfläche, der Bilder-
+  Upload und alle Schreibzugriffe erfordern
+  Home-Assistant-Administratorrechte.
 
 ## 15. Support
 

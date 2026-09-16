@@ -71,9 +71,21 @@ offenen Sicherheitslücken:
   erst zur Abrufzeit auf eine private Adresse auflöst (DNS-Rebinding),
   wird dadurch nicht erkannt. Siehe README, Abschnitt „Bekannte
   Einschränkungen“.
+- Über den geführten Bilder-Upload erzeugte Bilder (`Bild.hochgeladen =
+  True`) sind von der Ablehnung privater/interner IP-Adressen bewusst
+  ausgenommen, da ihre URL zwangsläufig auf die eigene
+  Home-Assistant-Instanz zeigt. Die Vertrauensbasis ist hier die
+  Herkunft (über Home Assistants offiziellen `image_upload`-Mechanismus
+  erzeugt), nicht der Adressbereich; Schema- und
+  Zugangsdaten-Prüfung gelten unverändert auch für hochgeladene Bilder.
+  Siehe `docs/architecture.md`, Abschnitt „Geführter Bilder-Upload“.
+- Der Bilder-Upload selbst nutzt ausschliesslich Home Assistants eigene
+  `image_upload`-Komponente (kein eigener Upload-Endpunkt); Format-
+  (JPEG/PNG/GIF) und Grössenprüfung (max. 10 MB) erfolgen serverseitig
+  durch diese Komponente.
 - Die Verwaltungsoberfläche (`frontend.py`, `management.py`) erfordert
   Home-Assistant-Administratorrechte (`require_admin`).
 - Es findet keine Kommunikation mit externen Diensten durch HofKarte
   selbst statt (siehe README, Abschnitt „Datenschutz- und
   Standort-Hinweise“) – Ausnahme: das Laden von Hofladen-Bildern über
-  die vom Benutzer hinterlegten Bild-URLs.
+  die vom Benutzer hinterlegten externen Bild-Adressen.

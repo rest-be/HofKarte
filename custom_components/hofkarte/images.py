@@ -10,6 +10,22 @@ Sicherheitsrisiken entsprechen:
   abgelehnt, ebenso der Hostname "localhost"
 - Fehlende oder ungültige Bilder werden robust behandelt
 
+## Ausnahme: über den geführten Upload erzeugte Bilder
+
+Über den geführten Bilder-Upload (siehe ``hofkarte-panel.js``, Home
+Assistants eigene ``image_upload``-Komponente) erzeugte Bilder werden
+zwangsläufig über eine URL referenziert, die auf die eigene
+Home-Assistant-Instanz zeigt – bei den meisten Heiminstallationen eine
+private LAN-Adresse (z. B. ``http://192.168.1.50:8123/...``). Die
+private-IP-Prüfung unten dient dem Schutz vor SSRF über **frei
+eingegebene, nicht vertrauenswürdige** externe URLs; sie ist bei einer
+von HofKarte selbst über den offiziellen Home-Assistant-Upload-Weg
+erzeugten URL nicht das richtige Kriterium – hier zählt die **Herkunft**
+(von uns selbst erzeugt), nicht der Adressbereich. Bilder mit
+``Bild.hochgeladen = True`` überspringen daher gezielt die
+private-IP-/localhost-Prüfung, durchlaufen aber unverändert die
+übrigen Prüfungen (nur http/https, keine eingebetteten Zugangsdaten).
+
 ## Bewusste Grenze: rein syntaktische Prüfung, keine DNS-Auflösung
 
 Die Prüfung erfolgt ausschliesslich anhand der URL-Syntax (Schema,
@@ -69,7 +85,7 @@ def _ist_unsicheres_ip_literal(hostname: str) -> bool:
     )
 
 
-def is_valid_image_url(url: str | None) -> bool:
+def is_valid_image_url(url: str | None, *, hochgeladen: bool = False) -> bool:
     """Überprüft, ob eine URL ein gültiges, sicheres Bild ist.
 
     Akzeptiert nur http/https URLs. Lehnt ab:
@@ -79,11 +95,15 @@ def is_valid_image_url(url: str | None) -> bool:
     - URLs mit eingebetteten Zugangsdaten
     - Den Hostnamen "localhost" sowie IP-Literale, die auf ein
       privates/internes Ziel zeigen (siehe Moduldoc zur bewussten Grenze
-      dieser rein syntaktischen, nicht-blockierenden Prüfung)
+      dieser rein syntaktischen, nicht-blockierenden Prüfung) –
+      **ausser** bei ``hochgeladen=True`` (siehe Moduldoc, Abschnitt
+      „Ausnahme: über den geführten Upload erzeugte Bilder“)
     - Ungültige/leere URLs
 
     Args:
         url: Die zu validierende URL (oder None)
+        hochgeladen: Ob die URL über HofKartes eigenen, geführten
+            Bilder-Upload erzeugt wurde (siehe ``Bild.hochgeladen``).
 
     Returns:
         True, wenn die URL den syntaktischen Sicherheitsprüfungen genügt.
@@ -110,6 +130,11 @@ def is_valid_image_url(url: str | None) -> bool:
     hostname = parsed.hostname
     if not hostname:
         return False
+    if hochgeladen:
+        # Herkunft (von HofKarte selbst über den offiziellen
+        # Home-Assistant-Upload-Weg erzeugt) ersetzt hier die
+        # Adressbereichs-Prüfung, siehe Moduldoc.
+        return True
     if hostname.lower() in _UNSICHERE_HOSTNAMEN:
         return False
     if _ist_unsicheres_ip_literal(hostname):
@@ -134,7 +159,7 @@ def get_main_image_url(bilder: tuple[Bild, ...]) -> str | None:
         return None
 
     for bild in bilder:
-        if is_valid_image_url(bild.url):
+        if is_valid_image_url(bild.url, hochgeladen=bild.hochgeladen):
             return bild.url
 
     return None
@@ -161,7 +186,7 @@ def get_additional_images(bilder: tuple[Bild, ...]) -> list[dict[str, str | None
     hauptbild_bereits_uebersprungen = False
 
     for bild in bilder:
-        if not is_valid_image_url(bild.url):
+        if not is_valid_image_url(bild.url, hochgeladen=bild.hochgeladen):
             continue
         if not hauptbild_bereits_uebersprungen and bild.url == hauptbild_url:
             hauptbild_bereits_uebersprungen = True

@@ -140,6 +140,108 @@ class HofkartePanel extends HTMLElement {
     return `<a class="map-btn" href="${this.escAttr(url)}" target="_blank" rel="noopener noreferrer" title="Standort auf Google Maps anzeigen (neuer Tab)">🗺️ Auf Google Maps anzeigen</a>`;
   }
 
+  // --- Bilder: geführter Upload -----------------------------------------
+  //
+  // Nutzt Home Assistants eigene image_upload-Komponente
+  // (POST /api/image/upload, Serve unter /api/image/serve/<id>/original,
+  // Löschen über den WebSocket-Befehl "image/delete") statt eines
+  // eigenen Upload-Endpunkts. Die serverseitige Validierung (erlaubte
+  // Formate, maximale Grösse) übernimmt diese Home-Assistant-Komponente
+  // vollständig; die Prüfung hier dient nur dem sofortigen, direkten
+  // Feedback vor dem eigentlichen Upload.
+
+  static UPLOAD_MAX_BYTES = 10 * 1024 * 1024; // entspricht image_upload.MAX_SIZE
+  static UPLOAD_ERLAUBTE_TYPEN = ["image/jpeg", "image/png", "image/gif"];
+
+  extractImageId(url) {
+    const treffer = /\/api\/image\/serve\/([^/]+)\//.exec(url || "");
+    return treffer ? treffer[1] : null;
+  }
+
+  setUploadStatus(text, kind = "") {
+    const el = this.shadowRoot.querySelector("[data-upload-status]");
+    if (!el) return;
+    el.textContent = text;
+    el.className = `upload-status muted${kind ? " " + kind : ""}`;
+  }
+
+  async uploadBild(file) {
+    if (!file) return;
+
+    if (!HofkartePanel.UPLOAD_ERLAUBTE_TYPEN.includes(file.type)) {
+      this.setUploadStatus("Nicht unterstütztes Dateiformat. Erlaubt: JPEG, PNG, GIF.", "error");
+      return;
+    }
+    if (file.size > HofkartePanel.UPLOAD_MAX_BYTES) {
+      this.setUploadStatus("Datei ist zu gross (maximal 10 MB erlaubt).", "error");
+      return;
+    }
+
+    this.setUploadStatus(`„${file.name}“ wird hochgeladen …`);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/image/upload", { method: "POST", body: formData });
+      if (!response.ok) {
+        throw new Error(response.status === 413 ? "Datei ist zu gross." : `Upload fehlgeschlagen (${response.status}).`);
+      }
+      const ergebnis = await response.json();
+      const url = `${window.location.origin}/api/image/serve/${ergebnis.id}/original`;
+
+      if (!this.editing.bilder) this.editing.bilder = [];
+      this.editing.bilder.push({ url, beschreibung: null, hochgeladen: true });
+      this.setUploadStatus(`„${file.name}“ erfolgreich hochgeladen.`, "success");
+      this.render();
+    } catch (err) {
+      this.setUploadStatus(err?.message || "Upload fehlgeschlagen.", "error");
+    }
+  }
+
+  async removeBild(index) {
+    if (!this.editing.bilder) this.editing.bilder = [];
+    const bild = this.editing.bilder[index];
+    if (!bild) return;
+
+    if (bild.hochgeladen) {
+      const imageId = this.extractImageId(bild.url);
+      if (imageId) {
+        try {
+          await this.call("image/delete", { image_id: imageId });
+        } catch (err) {
+          // Die zugrunde liegende Datei liess sich nicht bereinigen
+          // (z. B. bereits anderweitig gelöscht) - das Bild wird trotzdem
+          // aus dem Hofladen entfernt, um die Nutzerin/den Nutzer nicht
+          // zu blockieren; kein Datenverlust an Hofladen-Seite dadurch.
+          console.warn("Hochgeladenes Bild konnte nicht bereinigt werden:", err);
+        }
+      }
+    }
+
+    this.editing.bilder.splice(index, 1);
+    this.render();
+  }
+
+  setHauptbild(index) {
+    const bilder = this.editing.bilder || [];
+    if (index <= 0 || index >= bilder.length) return;
+    const [gewaehltes] = bilder.splice(index, 1);
+    bilder.unshift(gewaehltes);
+    this.render();
+  }
+
+  addExternalUrl(value) {
+    const trimmed = (value || "").trim();
+    if (!trimmed) return;
+    if (!this.isPlausibleUrl(trimmed)) {
+      this.setUploadStatus("Die Bild-Adresse muss eine gültige http(s)-Adresse sein.", "error");
+      return;
+    }
+    if (!this.editing.bilder) this.editing.bilder = [];
+    this.editing.bilder.push({ url: trimmed, beschreibung: null, hochgeladen: false });
+    this.setUploadStatus("");
+    this.render();
+  }
+
   formData() {
     const f = this.shadowRoot.querySelector("form");
     const value = (name) => f.elements[name]?.value ?? "";
@@ -154,6 +256,14 @@ class HofkartePanel extends HTMLElement {
     data.sonderoeffnungszeiten = [...f.querySelectorAll("[data-special]")].map(row => ({ datum_von: row.querySelector("[name=datum_von]").value, datum_bis: row.querySelector("[name=datum_bis]").value, geschlossen: row.querySelector("[name=geschlossen]").checked, beginn: row.querySelector("[name=beginn]").value || null, ende: row.querySelector("[name=ende]").value || null }));
     for (const field of ["kategorien", "zahlungsarten", "verkaufsarten", "merkmale"]) data[field] = this.lines(f.elements[field]?.value);
     data.produkte = this.products(f.elements.produkte?.value);
+    // Bilder: Liste selbst lebt in this.editing.bilder (Upload/Entfernen/
+    // Hauptbild-Wechsel mutieren sie direkt, siehe uploadBild/removeBild/
+    // setHauptbild) – hier nur die live editierbaren Beschreibungsfelder
+    // aus dem Formular übernehmen.
+    data.bilder = (this.editing?.bilder || []).map((bild, i) => {
+      const feld = f.querySelector(`[data-bild-index="${i}"] [data-bild-beschreibung]`);
+      return { ...bild, beschreibung: feld ? (feld.value || null) : bild.beschreibung };
+    });
     return data;
   }
 
@@ -254,6 +364,18 @@ class HofkartePanel extends HTMLElement {
       a.website-link{color:var(--primary-color);text-decoration:none;font-weight:500}
       a.website-link:hover{text-decoration:underline}
       .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+      .bild-row{display:flex;gap:10px;align-items:center;padding:8px;border:1px solid var(--divider-color);border-radius:8px;margin-bottom:8px}
+      .bild-row img{width:64px;height:64px;object-fit:cover;border-radius:6px;flex:0 0 auto}
+      .bild-row-fields{flex:1;min-width:0}
+      .bild-row-fields input{width:100%}
+      .bild-row-meta{margin-top:4px;font-size:.85em}
+      .bild-row-actions{display:flex;gap:6px;flex:0 0 auto}
+      .upload-row{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
+      .upload-label{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);cursor:pointer;font-size:.95em}
+      .upload-label:hover{filter:brightness(0.95)}
+      .upload-status{font-size:.9em}
+      .upload-status.error{color:var(--error-color,#db4437)}
+      .upload-status.success{color:var(--success-color,#43a047)}
       .thumbs img{width:96px;height:96px;object-fit:cover;border-radius:8px}
     `;
   }
@@ -449,11 +571,47 @@ class HofkartePanel extends HTMLElement {
           ${this.area("Merkmale", "merkmale", text("merkmale"))}
         </section>
 
+        <section class=card>
+          <h2>Bilder</h2>
+          <p class="muted">Das erste Bild in der Liste ist das Hauptbild. Bilder können hochgeladen oder per externer Adresse verlinkt werden.</p>
+          <div id="bilder-liste">${this.bilderListe(d.bilder || [])}</div>
+          <div class="upload-row">
+            <label class="upload-label" for="bild-upload-input">📤 Bild hochladen</label>
+            <input type="file" id="bild-upload-input" accept="image/jpeg,image/png,image/gif" style="display:none">
+            <span class="upload-status muted" data-upload-status></span>
+          </div>
+          <details style="margin-top:10px">
+            <summary class="muted" style="cursor:pointer">Oder externe Bild-Adresse manuell hinzufügen</summary>
+            <div class="field-row two" style="margin-top:8px">
+              <input type="text" data-external-url placeholder="https://beispiel.ch/bild.jpg">
+              <button type="button" class="secondary" data-add-external-url>Hinzufügen</button>
+            </div>
+          </details>
+        </section>
+
         <div class=actions>
           <button type=button class=secondary data-cancel>Abbrechen</button>
           <button type=submit>Speichern</button>
         </div>
       </form>`;
+  }
+
+  /** Liste der Bilder eines Hofladens im Editor – Vorschau, optionale
+   * Beschreibung, "Als Hauptbild"/"Entfernen"-Aktionen. Das erste Bild
+   * gilt als Hauptbild (bestehende Konvention, siehe images.py). */
+  bilderListe(bilder) {
+    if (!bilder.length) return `<p class="muted">Noch keine Bilder hinterlegt.</p>`;
+    return bilder.map((bild, i) => `<div class="bild-row" data-bild-index="${i}">
+      <img src="${this.escAttr(bild.url)}" alt="" loading="lazy">
+      <div class="bild-row-fields">
+        <input type="text" data-bild-beschreibung placeholder="Beschreibung (optional)" value="${this.escAttr(bild.beschreibung || "")}">
+        <div class="bild-row-meta muted">${i === 0 ? "Hauptbild · " : ""}${bild.hochgeladen ? "hochgeladen" : "externe Adresse"}</div>
+      </div>
+      <div class="bild-row-actions">
+        ${i !== 0 ? `<button type="button" class="secondary" data-bild-hauptbild="${i}" title="Als Hauptbild festlegen">⭐</button>` : ""}
+        <button type="button" class="danger" data-bild-entfernen="${i}" title="Bild entfernen">🗑️</button>
+      </div>
+    </div>`).join("");
   }
 
   coordInfoBox() {
@@ -555,6 +713,24 @@ class HofkartePanel extends HTMLElement {
       el.innerHTML = `<div class="special" data-special><label>Von<input type=date name=datum_von></label><label>Bis<input type=date name=datum_bis></label><label>Beginn<input type=time name=beginn></label><label>Ende<input type=time name=ende></label><label>Geschlossen<input type=checkbox name=geschlossen></label><button type=button class=secondary data-remove-special>−</button></div>`;
       this.shadowRoot.querySelector("#specials").append(el.firstElementChild);
       this.bind();
+    });
+
+    // --- Bilder ---
+    this.shadowRoot.querySelector("#bild-upload-input")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      this.uploadBild(file);
+      e.target.value = ""; // erlaubt erneutes Hochladen derselben Datei
+    });
+    this.shadowRoot.querySelectorAll("[data-bild-entfernen]").forEach(b =>
+      b.addEventListener("click", () => this.removeBild(Number(b.dataset.bildEntfernen)))
+    );
+    this.shadowRoot.querySelectorAll("[data-bild-hauptbild]").forEach(b =>
+      b.addEventListener("click", () => this.setHauptbild(Number(b.dataset.bildHauptbild)))
+    );
+    this.shadowRoot.querySelector("[data-add-external-url]")?.addEventListener("click", () => {
+      const input = this.shadowRoot.querySelector("[data-external-url]");
+      this.addExternalUrl(input?.value);
+      if (input) input.value = "";
     });
   }
 

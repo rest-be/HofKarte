@@ -174,6 +174,48 @@ eingebetteten Zugangsdaten, keine literale private/interne IP-Adresse
 eigenen Bild-Proxy/Cache – HofKarte implementiert keine eigene
 Bildabruf-Pipeline.
 
+### Geführter Bilder-Upload
+
+Der Upload in der Verwaltungsoberfläche (`hofkarte-panel.js`)
+implementiert **keinen eigenen** Upload-Endpunkt, sondern nutzt Home
+Assistants eingebaute `image_upload`-Komponente vollständig:
+
+- **Upload:** `POST /api/image/upload` (Multipart-Formular), liefert
+  eine `image_id` zurück.
+- **Auslieferung:** `GET /api/image/serve/{image_id}/original`
+  (`requires_auth = False` in dieser Home-Assistant-Komponente – exakt
+  passend zur bestehenden `image.py`-Entity, die eine öffentlich ohne
+  zusätzliche Authentifizierung abrufbare Bild-URL erwartet).
+- **Löschen:** WebSocket-Befehl `image/delete` (Teil der
+  `image_upload`-Komponente, nicht von HofKarte selbst implementiert).
+- Deklariert als `manifest.json`-Abhängigkeit (`image_upload`), analog
+  zur bestehenden `http`-Abhängigkeit – ohne diese ist nicht garantiert,
+  dass die Komponente beim Setup von HofKarte bereits initialisiert ist.
+
+Die vom Upload erzeugte, absolute URL wird clientseitig aus
+`window.location.origin` gebildet (der Browser kennt die tatsächlich
+erreichbare Basis-URL der aktuellen Sitzung). **Bekannte Grenze:**
+Läuft Home Assistant hinter einem Reverse Proxy mit unterschiedlichen
+intern/extern erreichbaren Adressen, kann die vom Browser gebildete
+URL für den serverseitigen Bildabruf (`ImageEntity._fetch_url`, siehe
+oben) u. U. nicht erreichbar sein, obwohl sie im Browser selbst
+funktioniert.
+
+**Sicherheitsentscheid – `Bild.hochgeladen`:** Eine über den Upload
+erzeugte URL zeigt zwangsläufig auf die eigene Home-Assistant-Instanz –
+bei den meisten Installationen eine private LAN-Adresse. Die in
+`images.py` beschriebene Ablehnung privater/interner IP-Adressen dient
+dem Schutz vor SSRF über frei eingegebene, nicht vertrauenswürdige
+externe URLs; sie ist bei einer von HofKarte selbst über den
+offiziellen Upload-Weg erzeugten URL das falsche Kriterium. Das
+Datenmodell (`models.Bild`) trägt daher ein explizites
+`hochgeladen: bool`-Feld; `is_valid_image_url` überspringt bei
+`hochgeladen=True` gezielt nur die Adressbereichs-Prüfung, nicht die
+Schema-/Zugangsdaten-Prüfung (Defense in Depth). Die Vertrauensbasis
+ist damit die **Herkunft** (von HofKarte selbst erzeugt), nicht der
+Adressbereich – eine bewusste, im Modul dokumentierte Ausnahme statt
+einer fragilen Erkennung anhand des URL-Musters.
+
 ## Suche/Filter
 
 `search.py` (`find_hoflaeden`) ist eine reine, HA-unabhängige

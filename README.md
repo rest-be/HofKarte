@@ -43,7 +43,10 @@ Verwaltungsumgebung zugleich.
 - [HACS](https://hacs.xyz/) für die empfohlene Installation (nicht
   zwingend – manuelle Installation ist möglich, siehe unten).
 - Kein Cloud-Konto, kein externer Dienst und keine zusätzlichen
-  Python-Pakete nötig (`requirements: []` in `manifest.json`).
+  Python-Pakete für HofKarte selbst nötig (`requirements: []` in
+  `manifest.json`). Der geführte Bilder-Upload nutzt Home Assistants
+  eingebaute `image_upload`-Komponente (Abhängigkeit `Pillow`), die von
+  Home Assistant automatisch mitinstalliert wird.
 - Für den Entfernungs-Sensor: eine sinnvoll gesetzte Position der
   Home-Assistant-Installation (**Einstellungen → System → Allgemein**).
   Ohne diese bleibt der Sensor auf „unbekannt“.
@@ -303,22 +306,34 @@ Home-Assistant-`image`-Entity (`custom_components/hofkarte/image.py`,
 Sicherheitsprüfung in `images.py`):
 
 - **Hauptbild:** das erste Bild mit einer sicheren, ladbaren URL.
-  Reihenfolge der hinterlegten Bilder bestimmt die Priorität.
+  Reihenfolge der hinterlegten Bilder bestimmt die Priorität; über die
+  Verwaltungsoberfläche lässt sich ein beliebiges Bild als Hauptbild
+  festlegen (verschiebt es an den Anfang der Liste).
 - **Weitere Bilder:** stehen als Zusatzattribut (`weitere_bilder`) an
   derselben Entity zur Verfügung, nicht als eigene Entities oder
   Galerie.
+- **Geführter Upload:** In der Verwaltungsoberfläche kann ein Bild
+  direkt hochgeladen werden (Dateiauswahl, JPEG/PNG/GIF, max. 10 MB) –
+  alternativ bleibt die manuelle Eingabe einer externen Bild-Adresse
+  verfügbar. Hochgeladene Bilder werden über Home Assistants eigene
+  `image_upload`-Komponente gespeichert und ausgeliefert (kein eigener
+  Upload-Mechanismus). Wird ein hochgeladenes Bild entfernt, wird die
+  zugrunde liegende Datei ebenfalls gelöscht.
 - **Sicherheitsprüfung:** Nur `http`/`https`-URLs werden akzeptiert
   (kein `file://`, `data:`, keine rohen Dateisystempfade), keine
-  eingebetteten Zugangsdaten, keine literale private/interne
-  IP-Adresse. Diese Prüfung ist rein syntaktisch (keine DNS-Auflösung,
-  um den Home-Assistant-Event-Loop nicht zu blockieren) – ein
-  Domainname, der erst später auf eine private Adresse auflöst, wird
-  dadurch nicht erkannt.
+  eingebetteten Zugangsdaten. Bei frei eingegebenen externen Adressen
+  wird zusätzlich jede literale private/interne IP-Adresse abgelehnt;
+  diese Prüfung ist rein syntaktisch (keine DNS-Auflösung, um den
+  Home-Assistant-Event-Loop nicht zu blockieren) – ein Domainname, der
+  erst später auf eine private Adresse auflöst, wird dadurch nicht
+  erkannt. Über den geführten Upload erzeugte Bilder sind von der
+  IP-Adressbereichs-Prüfung ausgenommen (ihre Vertrauenswürdigkeit
+  ergibt sich aus der Herkunft – von HofKarte selbst über den
+  offiziellen Home-Assistant-Upload-Weg erzeugt – nicht aus dem
+  Adressbereich; sie zeigen typischerweise auf die eigene, private
+  Home-Assistant-Instanz und würden sonst fälschlich abgelehnt).
 - **Fehlende/ungültige Bilder** werden robust behandelt (leeres
   Hauptbild statt Fehler).
-- **Kein eigener Bildabruf:** Home Assistants `image`-Entity-Plattform
-  übernimmt Abruf und Zwischenspeicherung selbst; HofKarte lädt und
-  speichert keine Bilddateien selbst.
 
 ## Actions/Services
 
@@ -541,10 +556,14 @@ reguläre Öffnungszeiten ergänzen.
 Koordinaten, oder die Home-Assistant-Position ist nicht sinnvoll
 konfiguriert (**Einstellungen → System → Allgemein**).
 
-**Hauptbild wird nicht angezeigt:** Die hinterlegte Bild-URL ist
-entweder leer, kein `http(s)`-Link, oder zeigt auf eine private/interne
-IP-Adresse (wird aus Sicherheitsgründen abgelehnt, siehe Abschnitt
-„Bilder“). URL in der Verwaltungsoberfläche prüfen.
+**Hauptbild wird nicht angezeigt:** Bei hochgeladenen Bildern: prüfen,
+ob die Datei erfolgreich hochgeladen wurde (Fehlermeldung im
+Upload-Bereich der Verwaltungsoberfläche). Bei extern verlinkten
+Bildern: Die hinterlegte Bild-Adresse ist entweder leer, kein
+`http(s)`-Link, oder zeigt auf eine private/interne IP-Adresse (wird
+bei manuell eingegebenen Adressen aus Sicherheitsgründen abgelehnt,
+siehe Abschnitt „Bilder“) – Adresse in der Verwaltungsoberfläche
+prüfen.
 
 **Diagnose zur Fehlersuche:** Unter **Einstellungen → Geräte & Dienste →
 HofKarte → Diagnose herunterladen** steht eine technische Übersicht zur
@@ -597,10 +616,14 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
   Konfiguration) – keine Cloud-Synchronisation.
 - **Diagnostics:** Die herunterladbare Diagnose enthält bewusst keine
   Hofladen-Inhalte und keine Standortdaten (siehe oben).
-- **Bilder:** Bild-URLs werden vor der Nutzung auf ein sicheres Format
-  geprüft (siehe „Bilder“); dennoch lädt Home Assistant beim Anzeigen
-  eines Hauptbilds das Bild von der hinterlegten externen URL – wer
-  Bild-URLs pflegt, sollte nur vertrauenswürdige Quellen verwenden.
+- **Bilder:** Extern eingegebene Bild-Adressen werden vor der Nutzung
+  auf ein sicheres Format geprüft (siehe „Bilder“); dennoch lädt Home
+  Assistant beim Anzeigen eines Hauptbilds das Bild von der
+  hinterlegten externen Adresse – wer externe Bild-Adressen pflegt,
+  sollte nur vertrauenswürdige Quellen verwenden. Hochgeladene Bilder
+  werden lokal über Home Assistants eigene `image_upload`-Komponente
+  gespeichert (keine externe Übertragung) und beim Entfernen wieder
+  gelöscht.
 
 ## Entwicklung
 

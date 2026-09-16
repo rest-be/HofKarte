@@ -325,3 +325,46 @@ def test_parse_bild_ohne_url() -> None:
 
     with pytest.raises(HofladenValidationError):
         parse_hofladen(raw)
+
+
+def test_parse_bild_hochgeladen_flag_default_false() -> None:
+    """Fehlt 'hochgeladen' in den Rohdaten (bestehende, vor dieser
+    Funktion gespeicherte Bilder), muss es als False interpretiert
+    werden – unverändertes Verhalten für bestehende Daten."""
+    raw = {
+        "id": "hof-16",
+        "name": "Hofladen",
+        "bilder": [{"url": "https://example.com/bild.jpg"}],
+    }
+
+    hofladen = parse_hofladen(raw)
+
+    assert hofladen.bilder[0].hochgeladen is False
+
+
+def test_parse_bild_hochgeladen_flag_wird_uebernommen() -> None:
+    raw = {
+        "id": "hof-17",
+        "name": "Hofladen",
+        "bilder": [
+            {
+                "url": "http://192.168.1.50:8123/api/image/serve/abc/original",
+                "hochgeladen": True,
+            }
+        ],
+    }
+
+    hofladen = parse_hofladen(raw)
+
+    assert hofladen.bilder[0].hochgeladen is True
+
+
+def test_parse_bild_hochgeladen_muss_bool_sein() -> None:
+    raw = {
+        "id": "hof-18",
+        "name": "Hofladen",
+        "bilder": [{"url": "https://example.com/bild.jpg", "hochgeladen": "ja"}],
+    }
+
+    with pytest.raises(HofladenValidationError):
+        parse_hofladen(raw)

@@ -59,10 +59,24 @@ class Produkt:
 
 @dataclass(frozen=True, slots=True)
 class Bild:
-    """Ein optionales Bild des Hofladens."""
+    """Ein optionales Bild des Hofladens.
+
+    ``hochgeladen`` unterscheidet über HofKartes geführten Upload
+    erzeugte Bilder (Home Assistants eigene ``image_upload``-Komponente,
+    URL zeigt auf die eigene Home-Assistant-Instanz) von frei
+    eingegebenen externen URLs. Wird für die Sicherheitsprüfung in
+    ``images.py`` benötigt: Eine von uns selbst über den offiziellen
+    Upload-Weg erzeugte URL ist per Herkunft vertrauenswürdig, auch wenn
+    sie auf eine private/interne Adresse der eigenen Home-Assistant-
+    Installation zeigt (was für frei eingegebene externe URLs zu Recht
+    abgelehnt wird, siehe Moduldoc dort). Standardmässig ``False``
+    (bestehende, extern verlinkte Bilder ohne dieses Feld bleiben
+    dadurch unverändert als "extern" behandelt).
+    """
 
     url: str
     beschreibung: str | None = None
+    hochgeladen: bool = False
 
 
 @dataclass(frozen=True, slots=True)
