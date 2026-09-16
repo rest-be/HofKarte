@@ -371,8 +371,8 @@ class HofkartePanel extends HTMLElement {
       .bild-row-meta{margin-top:4px;font-size:.85em}
       .bild-row-actions{display:flex;gap:6px;flex:0 0 auto}
       .upload-row{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
-      .upload-label{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);cursor:pointer;font-size:.95em}
-      .upload-label:hover{filter:brightness(0.95)}
+      .upload-start-btn{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 16px;border-radius:8px;background:var(--success-color,#43a047);color:#fff;cursor:pointer;font-size:.95em;font-weight:500;border:0;box-shadow:0 1px 3px #0003}
+      .upload-start-btn:hover,.upload-start-btn:focus-visible{filter:brightness(0.95);outline:2px solid var(--success-color,#43a047);outline-offset:2px}
       .upload-status{font-size:.9em}
       .upload-status.error{color:var(--error-color,#db4437)}
       .upload-status.success{color:var(--success-color,#43a047)}
@@ -576,7 +576,7 @@ class HofkartePanel extends HTMLElement {
           <p class="muted">Das erste Bild in der Liste ist das Hauptbild. Bilder können hochgeladen oder per externer Adresse verlinkt werden.</p>
           <div id="bilder-liste">${this.bilderListe(d.bilder || [])}</div>
           <div class="upload-row">
-            <label class="upload-label" for="bild-upload-input">📤 Bild hochladen</label>
+            <button type="button" class="upload-start-btn" data-start-upload title="Bild-Upload starten" aria-label="Bild-Upload starten">📤 Bild hochladen</button>
             <input type="file" id="bild-upload-input" accept="image/jpeg,image/png,image/gif" style="display:none">
             <span class="upload-status muted" data-upload-status></span>
           </div>
@@ -716,6 +716,13 @@ class HofkartePanel extends HTMLElement {
     });
 
     // --- Bilder ---
+    // Der Start-Button löst gezielt die Dateiauswahl des bestehenden,
+    // versteckten Datei-Felds aus (input.click()); der eigentliche
+    // Upload-Ablauf (Validierung, Upload, Rückmeldung) bleibt
+    // unverändert an das "change"-Ereignis dieses Felds gebunden.
+    this.shadowRoot.querySelector("[data-start-upload]")?.addEventListener("click", () => {
+      this.shadowRoot.querySelector("#bild-upload-input")?.click();
+    });
     this.shadowRoot.querySelector("#bild-upload-input")?.addEventListener("change", (e) => {
       const file = e.target.files?.[0];
       this.uploadBild(file);

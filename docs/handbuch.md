@@ -115,8 +115,9 @@ können Hofläden verwaltet werden:
 Im Bearbeitungsformular steht im Bereich „Bilder“ ein geführter
 Upload zur Verfügung:
 
-1. Auf „📤 Bild hochladen“ klicken und eine Datei auswählen (unterstützt:
-   JPEG, PNG, GIF; maximal 10 MB).
+1. Auf den Button „📤 Bild hochladen“ klicken – dieser öffnet die
+   Dateiauswahl des Betriebssystems (unterstützte Formate: JPEG, PNG,
+   GIF; maximal 10 MB).
 2. Der Upload startet sofort; Erfolg oder ein Fehler (z. B. falsches
    Format oder Datei zu gross) wird direkt darunter angezeigt.
 3. Das hochgeladene Bild erscheint danach in der Bilderliste. Dort kann

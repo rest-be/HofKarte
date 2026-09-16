@@ -8,6 +8,38 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- **Start-Button für den Bilder-Upload:** Der bisherige Einstiegspunkt
+  (ein als Button gestaltetes `<label>`, das ein verstecktes
+  `input[type=file]` auslöste) wurde durch einen echten
+  `<button type="button">` ersetzt, der dasselbe Datei-Feld
+  programmatisch öffnet (`input.click()`). Rein visuelle/semantische
+  Verbesserung des Einstiegspunkts – der dahinterliegende Upload-Ablauf
+  (Validierung, Anbindung an Home Assistants `image_upload`-Komponente,
+  Erfolgs-/Fehlermeldung, Einreihung in die Bilderliste) ist
+  unverändert.
+- Neuer, eigenständiger Button-Stil (`.upload-start-btn`, grün über
+  `--success-color`) statt der bisherigen, optisch mit `.secondary`-
+  Buttons verwechselbaren Gestaltung – klar als eigene Aktion erkennbar
+  und von der primären „Speichern“-Aktion sowie den `.map-btn`/
+  `.info-btn`-Stilen unterscheidbar.
+- Nebeneffekt (Verbesserung): ein echtes `<button>`-Element ist für
+  assistive Technologien zuverlässiger als Aktion erkennbar als ein
+  Label, das auf ein verstecktes Datei-Feld zeigt; zusätzlich
+  `aria-label` ergänzt.
+- `type="button"` explizit gesetzt, damit der Button innerhalb des
+  Formulars kein versehentliches Absenden (Speichern) auslöst.
+
+### Ausdrücklich unverändert
+
+- Upload-Validierung, Backend-Anbindung (`image_upload`-Komponente),
+  Datenmodell (`Bild.hochgeladen`), externe-URL-Eingabe, Hauptbild-Logik,
+  Entfernen von Bildern: keine Änderungen. Reine Anpassung des
+  Auslöse-Elements in `hofkarte-panel.js`.
+
+## [0.16.0] - Unveröffentlicht
+
 ### Hinzugefügt
 
 - **Geführter Bilder-Upload** in der Verwaltungsoberfläche

@@ -313,9 +313,10 @@ Sicherheitsprüfung in `images.py`):
   derselben Entity zur Verfügung, nicht als eigene Entities oder
   Galerie.
 - **Geführter Upload:** In der Verwaltungsoberfläche kann ein Bild
-  direkt hochgeladen werden (Dateiauswahl, JPEG/PNG/GIF, max. 10 MB) –
-  alternativ bleibt die manuelle Eingabe einer externen Bild-Adresse
-  verfügbar. Hochgeladene Bilder werden über Home Assistants eigene
+  über einen dedizierten Button „📤 Bild hochladen“ direkt hochgeladen
+  werden (Dateiauswahl, JPEG/PNG/GIF, max. 10 MB) – alternativ bleibt
+  die manuelle Eingabe einer externen Bild-Adresse verfügbar.
+  Hochgeladene Bilder werden über Home Assistants eigene
   `image_upload`-Komponente gespeichert und ausgeliefert (kein eigener
   Upload-Mechanismus). Wird ein hochgeladenes Bild entfernt, wird die
   zugrunde liegende Datei ebenfalls gelöscht.
