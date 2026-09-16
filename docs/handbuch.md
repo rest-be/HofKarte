@@ -204,39 +204,28 @@ Mehrdeutigkeits-Auflösung vorgenommen (seltener Grenzfall).
 
 ## 7. Standort und Entfernung
 
-### Koordinaten eingeben (LV95/EPSG:2056)
+### Koordinaten eingeben (WGS84)
 
-In der Verwaltungsoberfläche werden Hofladen-Koordinaten im Schweizer
-Landeskoordinatensystem **LV95** erfasst (Ostwert **E** und Nordwert
-**N**, jeweils in Metern, z. B. E ≈ 2'600'000–2'700'000, N ≈
-1'150'000–1'250'000 im Mittelland). Ein deutlich sichtbarer, blau
-hinterlegter Infobutton (ⓘ) neben den Feldern zeigt eine kurze
-Erklärung direkt im Formular.
+In der Verwaltungsoberfläche werden Hofladen-Koordinaten als
+**WGS84-Dezimalgrad** erfasst (Latitude/Longitude) – demselben Format,
+in dem Home Assistant selbst Standorte angibt und in dem HofKarte die
+Koordinaten speichert. Ein deutlich sichtbarer, blau hinterlegter
+Infobutton (ⓘ) neben den Feldern zeigt eine kurze Erklärung direkt im
+Formular.
 
 **Standort auf einer Karte ansehen:** Sowohl in „Bearbeiten“ als auch
 in der Detailansicht (Kapitel 4) steht neben den Koordinaten ein Button
-„🗺️ Auf Karte anzeigen“ zur Verfügung. Ein Klick öffnet den Standort in
-einem neuen Browser-Tab auf [map.geo.admin.ch](https://map.geo.admin.ch)
-(amtlicher Schweizer Kartendienst). Der Button ist ausgegraut/deaktiviert,
-solange für den Hofladen keine gültigen Koordinaten hinterlegt sind. Die
-Kartenansicht ist rein informativ – es lassen sich dort keine Daten
+„🗺️ Auf Google Maps anzeigen“ zur Verfügung. Ein Klick öffnet den
+Standort anhand der gespeicherten WGS84-Koordinaten in einem neuen
+Browser-Tab auf Google Maps. Der Button ist ausgegraut/deaktiviert,
+solange für den Hofladen keine gültigen Koordinaten hinterlegt sind.
+Die Kartenansicht ist rein informativ – es lassen sich dort keine Daten
 verändern.
 
-**Woher bekomme ich die LV95-Koordinaten eines Hofladens?**
-Auf [map.geo.admin.ch](https://map.geo.admin.ch) den gewünschten Ort
-suchen, mit der rechten Maustaste auf den genauen Standort klicken –
-die Koordinaten werden dort direkt als LV95 (E/N) angezeigt und können
-kopiert werden.
-
-Intern speichert HofKarte die Koordinaten weiterhin im international
-gebräuchlichen WGS84-Format (wie von Home Assistant selbst verwendet);
-die Umrechnung geschieht automatisch beim Speichern bzw. Anzeigen –
-das ist für die normale Nutzung nicht relevant.
-
-**Genauigkeit der Umrechnung:** Die LV95-Umrechnung nutzt die von
-swisstopo veröffentlichten Näherungsformeln (Genauigkeit ca. 1–5 Meter)
-– ausreichend, um einen Hofladen einem Gebäude zuzuordnen, aber nicht
-vermessungstechnisch exakt.
+**Woher bekomme ich die Koordinaten eines Hofladens?** Auf Google Maps
+oder einem anderen Kartendienst den gewünschten Ort suchen, mit der
+rechten Maustaste auf den genauen Standort klicken – die angezeigten
+Zahlen sind Latitude, Longitude und können direkt übernommen werden.
 
 ### Entfernung berechnen
 

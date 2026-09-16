@@ -7,36 +7,19 @@
  * Backend-Endpunkte nötig (die Detailansicht liest nur bereits
  * geladene Daten).
  *
- * LV95-Koordinaten: Das Backend/Datenmodell speichert weiterhin WGS84
- * (latitude/longitude), siehe custom_components/hofkarte/lv95.py für
- * die Begründung. Dieses Panel zeigt/erfasst LV95 und rechnet lokal um.
- * Die Umrechnungsformeln sind ein bewusstes, dokumentiertes Duplikat der
- * Python-Referenzimplementierung (lv95.py) - Browser und Backend teilen
- * keine gemeinsame Laufzeitumgebung, ein Build-Schritt wäre eine neue,
- * hier nicht gewünschte Abhängigkeit.
+ * Koordinaten: Eingabe/Anzeige erfolgt direkt im selben Format, in dem
+ * das Backend/Datenmodell speichert (WGS84-Dezimalgrad,
+ * ``Hofladen.latitude``/``longitude``) – keine Umrechnung nötig.
  */
 
-// --- LV95 <-> WGS84 (swisstopo-Näherungsformeln, siehe lv95.py) -----------
-
-function wgs84ToLv95(lat, lon) {
-  const phi = (lat * 3600 - 169028.66) / 10000;
-  const lam = (lon * 3600 - 26782.5) / 10000;
-  const e = 2600072.37 + 211455.93 * lam - 10938.51 * lam * phi - 0.36 * lam * phi ** 2 - 44.54 * lam ** 3;
-  const n = 1200147.07 + 308807.95 * phi + 3745.25 * lam ** 2 + 76.63 * phi ** 2 - 194.56 * lam ** 2 * phi + 119.79 * phi ** 3;
-  return { easting: e, northing: n };
+function isValidWgs84(lat, lon) {
+  return Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
 }
 
-function lv95ToWgs84(easting, northing) {
-  const y = (easting - 2600000) / 1000000;
-  const x = (northing - 1200000) / 1000000;
-  const lam = 2.6779094 + 4.728982 * y + 0.791484 * y * x + 0.1306 * y * x ** 2 - 0.0436 * y ** 3;
-  const phi = 16.9023892 + 3.238272 * x - 0.270978 * y ** 2 - 0.002528 * x ** 2 - 0.0447 * y ** 2 * x - 0.0140 * x ** 3;
-  return { lat: (phi * 100) / 36, lon: (lam * 100) / 36 };
-}
-
-const LV95_BOUNDS = { eMin: 2485000, eMax: 2834000, nMin: 1075000, nMax: 1296000 };
-function isValidLv95(e, n) {
-  return e >= LV95_BOUNDS.eMin && e <= LV95_BOUNDS.eMax && n >= LV95_BOUNDS.nMin && n <= LV95_BOUNDS.nMax;
+/** Google-Maps-Link für eine WGS84-Koordinate (offizielles URL-Schema,
+ * siehe https://developers.google.com/maps/documentation/urls/get-started). */
+function googleMapsUrl(lat, lon) {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
 }
 
 const WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
@@ -56,7 +39,7 @@ class HofkartePanel extends HTMLElement {
     this.viewing = null;
     this.message = "";
     this.error = "";
-    this.showLv95Info = false;
+    this.showCoordInfo = false;
     this.attachShadow({ mode: "open" });
   }
 
@@ -113,8 +96,8 @@ class HofkartePanel extends HTMLElement {
 
   validate(d) {
     if (!d.name.trim()) throw new Error("Name darf nicht leer sein.");
-    if (d.latitude !== null && d.latitude !== "" && (d.latitude < -90 || d.latitude > 90)) throw new Error("Die umgerechnete Latitude liegt ausserhalb des gültigen Bereichs (-90 bis 90). Bitte LV95-Werte prüfen.");
-    if (d.longitude !== null && d.longitude !== "" && (d.longitude < -180 || d.longitude > 180)) throw new Error("Die umgerechnete Longitude liegt ausserhalb des gültigen Bereichs (-180 bis 180). Bitte LV95-Werte prüfen.");
+    if (d.latitude !== null && d.latitude !== "" && (d.latitude < -90 || d.latitude > 90)) throw new Error("Latitude muss zwischen -90 und 90 liegen.");
+    if (d.longitude !== null && d.longitude !== "" && (d.longitude < -180 || d.longitude > 180)) throw new Error("Longitude muss zwischen -180 und 180 liegen.");
     for (const row of d.oeffnungszeiten) if (!row.beginn || !row.ende || row.beginn === row.ende) throw new Error("Öffnungszeiten enthalten ungültige oder unvollständige Zeiten.");
     if (d.website && d.website.trim() && !this.isPlausibleUrl(d.website.trim())) throw new Error("Die Webseite muss eine gültige http(s)-Adresse sein (z. B. https://www.beispiel.ch).");
   }
@@ -126,66 +109,35 @@ class HofkartePanel extends HTMLElement {
     } catch { return false; }
   }
 
-  /** LV95-Eingabefelder auslesen und für die Speicherung nach WGS84
-   * umrechnen. Wurden die Felder gegenüber dem beim Öffnen des Formulars
-   * berechneten Ausgangswert NICHT verändert, werden die ursprünglich
-   * gespeicherten WGS84-Werte unverändert zurückgegeben (kein
-   * "stilles" Neu-Runden bereits vorhandener Koordinaten bei jedem
-   * Speichern, siehe lv95.py).
-   */
-  resolveCoordinates(f, original) {
-    const eastingRaw = f.elements["lv95_easting"]?.value ?? "";
-    const northingRaw = f.elements["lv95_northing"]?.value ?? "";
-    if (eastingRaw === "" && northingRaw === "") return { latitude: null, longitude: null };
+  /** WGS84-Koordinatenfelder auslesen. Da Eingabe und Speicherformat
+   * identisch sind (beide WGS84-Dezimalgrad), ist keine Umrechnung
+   * nötig – die Werte werden nur validiert. */
+  resolveCoordinates(f) {
+    const latRaw = f.elements["latitude"]?.value ?? "";
+    const lonRaw = f.elements["longitude"]?.value ?? "";
+    if (latRaw === "" && lonRaw === "") return { latitude: null, longitude: null };
 
-    const easting = Number(eastingRaw);
-    const northing = Number(northingRaw);
-    if (!Number.isFinite(easting) || !Number.isFinite(northing)) {
-      throw new Error("LV95-Koordinaten müssen Zahlen sein.");
+    const lat = Number(latRaw);
+    const lon = Number(lonRaw);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      throw new Error("Latitude/Longitude müssen Zahlen sein.");
     }
-    if (!isValidLv95(easting, northing)) {
-      throw new Error("Die LV95-Koordinaten liegen ausserhalb des plausiblen Bereichs für die Schweiz/Liechtenstein (E: 2'485'000–2'834'000, N: 1'075'000–1'296'000). Bitte prüfen, ob evtl. E/N vertauscht oder WGS84-Werte eingegeben wurden.");
+    if (!isValidWgs84(lat, lon)) {
+      throw new Error("Latitude muss zwischen -90 und 90 und Longitude zwischen -180 und 180 liegen.");
     }
-
-    if (
-      original?.latitude != null && original?.longitude != null &&
-      Number(f.elements["lv95_original_easting"]?.value) === easting &&
-      Number(f.elements["lv95_original_northing"]?.value) === northing
-    ) {
-      // Unverändert: ursprüngliche WGS84-Werte beibehalten (kein
-      // zusätzlicher Rundungsschritt ohne Not).
-      return { latitude: original.latitude, longitude: original.longitude };
-    }
-
-    const { lat, lon } = lv95ToWgs84(easting, northing);
     return { latitude: lat, longitude: lon };
   }
 
-  /** Gemeinsame Kartenlogik für "Bearbeiten" und "Details" (siehe
-   * Anforderung: identisches Verhalten in beiden Ansichten).
-   *
-   * map.geo.admin.ch (amtlicher Schweizer Kartendienst) akzeptiert
-   * LV95-Koordinaten nativ über den URL-Parameter "center" – es ist
-   * **keine** Umwandlung nach WGS84/EPSG:4326 nötig (bereits vorhandene
-   * LV95-Werte werden unverändert in die URL übernommen). Öffnet in
-   * einem neuen Tab, verändert keine Daten (rein lesender externer
-   * Link), keine neue Abhängigkeit.
-   */
-  mapUrl(easting, northing) {
-    const e = Math.round(easting);
-    const n = Math.round(northing);
-    return `https://map.geo.admin.ch/?center=${e},${n}&z=10&crosshair=marker`;
-  }
-
-  /** Karten-Button (bzw. deaktivierter Platzhalter ohne gültige
-   * Koordinaten) – identische Darstellung in Bearbeiten und Details. */
-  mapButton(lv95) {
-    const gueltig = lv95 && isValidLv95(lv95.easting, lv95.northing);
-    if (!gueltig) {
-      return `<button type="button" class="map-btn" disabled title="Keine gültigen Koordinaten hinterlegt">🗺️ Auf Karte anzeigen</button>`;
+  /** Gemeinsame Kartenlogik für "Bearbeiten" und "Details" (identisches
+   * Verhalten in beiden Ansichten). Öffnet Google Maps anhand der
+   * gespeicherten WGS84-Koordinaten in einem neuen Tab, verändert keine
+   * Daten (rein lesender externer Link), keine neue Abhängigkeit. */
+  mapButton(lat, lon) {
+    if (!isValidWgs84(lat, lon)) {
+      return `<button type="button" class="map-btn" disabled title="Keine gültigen Koordinaten hinterlegt">🗺️ Auf Google Maps anzeigen</button>`;
     }
-    const url = this.mapUrl(lv95.easting, lv95.northing);
-    return `<a class="map-btn" href="${this.escAttr(url)}" target="_blank" rel="noopener noreferrer" title="Standort auf map.geo.admin.ch anzeigen (neuer Tab)">🗺️ Auf Karte anzeigen</a>`;
+    const url = googleMapsUrl(lat, lon);
+    return `<a class="map-btn" href="${this.escAttr(url)}" target="_blank" rel="noopener noreferrer" title="Standort auf Google Maps anzeigen (neuer Tab)">🗺️ Auf Google Maps anzeigen</a>`;
   }
 
   formData() {
@@ -196,7 +148,7 @@ class HofkartePanel extends HTMLElement {
     data.adresse = value("adresse") || null; data.plz = value("plz") || null;
     data.ort = value("ort") || null; data.land = value("land") || null;
     data.website = value("website") || null;
-    const koordinaten = this.resolveCoordinates(f, this.editing);
+    const koordinaten = this.resolveCoordinates(f);
     data.latitude = koordinaten.latitude; data.longitude = koordinaten.longitude;
     data.oeffnungszeiten = this.readOpeningHours(f);
     data.sonderoeffnungszeiten = [...f.querySelectorAll("[data-special]")].map(row => ({ datum_von: row.querySelector("[name=datum_von]").value, datum_bis: row.querySelector("[name=datum_bis]").value, geschlossen: row.querySelector("[name=geschlossen]").checked, beginn: row.querySelector("[name=beginn]").value || null, ende: row.querySelector("[name=ende]").value || null }));
@@ -232,7 +184,7 @@ class HofkartePanel extends HTMLElement {
     catch (err) { this.error = err?.message || "Löschen fehlgeschlagen."; this.render(); }
   }
 
-  start(item = null) { this.error = ""; this.viewing = null; this.showLv95Info = false; this.editing = item ? this.clone(item) : this.empty(); this.render(); }
+  start(item = null) { this.error = ""; this.viewing = null; this.showCoordInfo = false; this.editing = item ? this.clone(item) : this.empty(); this.render(); }
   cancel() { this.editing = null; this.error = ""; this.render(); }
   view(item) { this.error = ""; this.editing = null; this.viewing = item; this.render(); }
   closeView() { this.viewing = null; this.render(); }
@@ -313,8 +265,7 @@ class HofkartePanel extends HTMLElement {
   }
 
   listCard(item) {
-    const lv95 = (item.latitude != null && item.longitude != null) ? wgs84ToLv95(item.latitude, item.longitude) : null;
-    const koordText = lv95 ? `LV95 ${Math.round(lv95.easting).toLocaleString("de-CH")} / ${Math.round(lv95.northing).toLocaleString("de-CH")}` : "Keine Koordinaten";
+    const koordText = (item.latitude != null && item.longitude != null) ? `${item.latitude.toFixed(5)}, ${item.longitude.toFixed(5)}` : "Keine Koordinaten";
     return `<section class="card">
       <h2>${this.esc(item.name)}</h2>
       <div>${this.esc([item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ")) || "<span class=muted>Keine Adresse</span>"}</div>
@@ -333,7 +284,7 @@ class HofkartePanel extends HTMLElement {
   detail() {
     const d = this.viewing;
     const adresse = [d.adresse, [d.plz, d.ort].filter(Boolean).join(" "), d.land].filter(Boolean).join(", ");
-    const lv95 = (d.latitude != null && d.longitude != null) ? wgs84ToLv95(d.latitude, d.longitude) : null;
+    const hatKoordinaten = d.latitude != null && d.longitude != null;
 
     return `<div class="top">
         <div><h1>${this.esc(d.name)}</h1><div class="muted">Detailansicht – nur Anzeige</div></div>
@@ -351,9 +302,9 @@ class HofkartePanel extends HTMLElement {
       <section class="card detail-section">
         <h3>Standort / Koordinaten</h3>
         <div class="coord-row">
-          <div class="muted">${lv95 ? `LV95: E ${Math.round(lv95.easting).toLocaleString("de-CH")} / N ${Math.round(lv95.northing).toLocaleString("de-CH")}` : "Keine Koordinaten hinterlegt"}</div>
+          <div class="muted">${hatKoordinaten ? `Latitude ${d.latitude.toFixed(6)}, Longitude ${d.longitude.toFixed(6)}` : "Keine Koordinaten hinterlegt"}</div>
         </div>
-        <div class="coord-actions">${this.mapButton(lv95)}</div>
+        <div class="coord-actions">${this.mapButton(d.latitude, d.longitude)}</div>
       </section>
 
       ${this.websiteLinkBlock(d.website)}
@@ -433,10 +384,8 @@ class HofkartePanel extends HTMLElement {
 
   editor() {
     const d = this.editing;
-    const original = this.editing && this.editing.id ? this.items.find(x => x.id === this.editing.id) : null;
-    const lv95 = (d.latitude != null && d.latitude !== "" && d.longitude != null && d.longitude !== "") ? wgs84ToLv95(Number(d.latitude), Number(d.longitude)) : null;
-    const eastingValue = lv95 ? Math.round(lv95.easting * 100) / 100 : "";
-    const northingValue = lv95 ? Math.round(lv95.northing * 100) / 100 : "";
+    const latValue = (d.latitude != null && d.latitude !== "") ? d.latitude : "";
+    const lonValue = (d.longitude != null && d.longitude !== "") ? d.longitude : "";
 
     const specials = (d.sonderoeffnungszeiten || []).map(x => `<div class="special" data-special><label>Von<input type=date name=datum_von value="${x.datum_von || ""}"></label><label>Bis<input type=date name=datum_bis value="${x.datum_bis || ""}"></label><label>Beginn<input type=time name=beginn value="${x.beginn || ""}"></label><label>Ende<input type=time name=ende value="${x.ende || ""}"></label><label>Geschlossen<input type=checkbox name=geschlossen ${x.geschlossen ? "checked" : ""}></label><button type=button class=secondary data-remove-special>−</button></div>`).join("");
     const text = (field) => (d[field] || []).map(x => x.name).join("\n");
@@ -470,18 +419,16 @@ class HofkartePanel extends HTMLElement {
         </section>
 
         <section class=card>
-          <h2>Standort / Koordinaten <span class="muted" style="font-weight:normal;font-size:.7em">(LV95 / EPSG:2056)</span></h2>
+          <h2>Standort / Koordinaten <span class="muted" style="font-weight:normal;font-size:.7em">(WGS84)</span></h2>
           <div class="coord-row">
             <div class="field-row two">
-              <label>E (Ostwert)<input name="lv95_easting" type="number" step="any" value="${eastingValue}" placeholder="z. B. 2600980"></label>
-              <label>N (Nordwert)<input name="lv95_northing" type="number" step="any" value="${northingValue}" placeholder="z. B. 1197450"></label>
+              <label>Latitude<input name="latitude" type="number" step="any" value="${latValue}" placeholder="z. B. 46.9480"></label>
+              <label>Longitude<input name="longitude" type="number" step="any" value="${lonValue}" placeholder="z. B. 7.4474"></label>
             </div>
-            <button type="button" class="info-btn" data-toggle-lv95-info title="Was ist LV95? (Erklärung anzeigen)" aria-label="Was ist LV95? Erklärung anzeigen">ⓘ</button>
+            <button type="button" class="info-btn" data-toggle-coord-info title="Was sind Latitude/Longitude? (Erklärung anzeigen)" aria-label="Was sind Latitude/Longitude? Erklärung anzeigen">ⓘ</button>
           </div>
-          <div class="coord-actions">${this.mapButton(lv95)}</div>
-          <input type="hidden" name="lv95_original_easting" value="${eastingValue}">
-          <input type="hidden" name="lv95_original_northing" value="${northingValue}">
-          ${this.showLv95Info ? this.lv95InfoBox() : ""}
+          <div class="coord-actions">${this.mapButton(latValue === "" ? NaN : Number(latValue), lonValue === "" ? NaN : Number(lonValue))}</div>
+          ${this.showCoordInfo ? this.coordInfoBox() : ""}
         </section>
 
         <section class=card>
@@ -509,19 +456,20 @@ class HofkartePanel extends HTMLElement {
       </form>`;
   }
 
-  lv95InfoBox() {
+  coordInfoBox() {
     return `<div class="info-box">
-      <strong>Was ist LV95?</strong><br>
-      LV95 (Landesvermessung 1995) ist das amtliche Schweizer
-      Koordinatensystem, technisch auch <code>EPSG:2056</code> genannt.
-      Es besteht aus zwei Werten in Metern:<br>
-      • <strong>E (Ostwert, auch „Easting“ oder „Y“)</strong> – ca.
-      2'480'000 bis 2'834'000<br>
-      • <strong>N (Nordwert, auch „Northing“ oder „X“)</strong> – ca.
-      1'075'000 bis 1'296'000<br>
-      Beide Werte findest du z. B. auf <a href="https://map.geo.admin.ch" target="_blank" rel="noopener noreferrer">map.geo.admin.ch</a>
-      (Rechtsklick auf den gewünschten Ort → Koordinaten werden
-      angezeigt).
+      <strong>Was sind Latitude/Longitude?</strong><br>
+      Latitude und Longitude (WGS84, Dezimalgrad) sind das weltweit
+      gebräuchliche Koordinatensystem, mit dem auch Home Assistant
+      selbst Standorte angibt. Es besteht aus zwei Werten:<br>
+      • <strong>Latitude (Breitengrad)</strong> – Wert zwischen -90 und
+      90 (Schweiz: ca. 45.8 bis 47.8)<br>
+      • <strong>Longitude (Längengrad)</strong> – Wert zwischen -180
+      und 180 (Schweiz: ca. 5.9 bis 10.5)<br>
+      Beide Werte findest du z. B. in Google Maps (Rechtsklick auf den
+      gewünschten Ort → die angezeigten Zahlen sind Latitude,
+      Longitude) oder über den Button „Auf Google Maps anzeigen“
+      unten, sobald bereits Koordinaten hinterlegt sind.
     </div>`;
   }
 
@@ -584,7 +532,7 @@ class HofkartePanel extends HTMLElement {
     this.shadowRoot.querySelector("[data-cancel]")?.addEventListener("click", () => this.cancel());
     this.shadowRoot.querySelector("form")?.addEventListener("submit", e => { e.preventDefault(); this.save(); });
 
-    this.shadowRoot.querySelector('[data-toggle-lv95-info]')?.addEventListener("click", () => { this.showLv95Info = !this.showLv95Info; this.render(); });
+    this.shadowRoot.querySelector('[data-toggle-coord-info]')?.addEventListener("click", () => { this.showCoordInfo = !this.showCoordInfo; this.render(); });
 
     this.shadowRoot.querySelectorAll('input[name^="day_mode_"]').forEach(radio => radio.addEventListener("change", (e) => {
       const day = e.target.name.split("_")[2];

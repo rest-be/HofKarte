@@ -138,40 +138,24 @@ Koordinaten eines Hofladens. Reine, HA-unabhängige Fachfunktionen;
 `is_valid_home_position` behandelt das Standardpaar `0.0/0.0` einer
 unkonfigurierten Installation als unbekannt.
 
-### LV95/EPSG:2056 (Koordinaten-Eingabeformat)
+### Koordinaten und Kartenanzeige (Google Maps)
 
-`lv95.py` implementiert die swisstopo-Näherungsformeln zur Umrechnung
-zwischen WGS84 und dem Schweizer Landeskoordinatensystem LV95.
-**Wichtig:** Das interne Datenmodell (`models.Hofladen.latitude`/
-`longitude`) bleibt WGS84 – LV95 ist ausschliesslich ein
-Eingabe-/Anzeigeformat der Verwaltungsoberfläche
-(`static/hofkarte-panel.js`, dort dieselben Formeln dupliziert, siehe
-Docstring in `lv95.py` für die Begründung). Diese Trennung bedeutet:
-
-- Keine Änderung an `models.py`, `parsing.py` oder `distance.py`.
-- Keine Migration bestehender Hofladen-Daten nötig.
-- Home-Assistant-Kompatibilität (Standortangabe, Kartenkarten,
-  `distance`-Sensor) bleibt vollständig erhalten.
-
-`lv95.py` wird vom Python-Code aktuell nicht direkt aufgerufen (die
-Umrechnung geschieht im Browser); es dient als getestete
-Referenzimplementierung und für mögliche künftige serverseitige
-Validierung.
-
-### Kartenanzeige (map.geo.admin.ch)
+Koordinaten werden in der Verwaltungsoberfläche als WGS84-Dezimalgrad
+erfasst und angezeigt – identisch zum internen Datenmodell
+(`models.Hofladen.latitude`/`longitude`). Es findet **keine
+Koordinatentransformation** statt: Eingabe-, Speicher- und
+Anzeigeformat sind durchgehend dasselbe.
 
 Sowohl „Bearbeiten“ als auch „Details“ bieten einen Button, der den
-Hofladen-Standort auf [map.geo.admin.ch](https://map.geo.admin.ch)
-öffnet (`hofkarte-panel.js`, Methoden `mapUrl`/`mapButton` – **eine**
-gemeinsame Implementierung für beide Ansichten, kein Code-Duplikat).
-map.geo.admin.ch akzeptiert LV95-Koordinaten nativ über den
-URL-Parameter `center` (amtlich dokumentiert) – es ist **keine**
-Umrechnung nach WGS84/EPSG:4326 nötig, obwohl intern WGS84 gespeichert
-wird (die bereits im Formular/in der Detailansicht vorliegenden
-LV95-Werte werden direkt weiterverwendet). Der Button ist deaktiviert,
-wenn keine gültigen Koordinaten vorliegen (`is_valid_lv95`, siehe
-`lv95.py`); die Kartenansicht ist ein rein lesender externer Link ohne
-neue Abhängigkeit.
+Hofladen-Standort auf Google Maps öffnet (`hofkarte-panel.js`,
+Funktionen `googleMapsUrl`/`mapButton` – **eine** gemeinsame
+Implementierung für beide Ansichten, kein Code-Duplikat). Die
+gespeicherten WGS84-Koordinaten werden direkt in Google Maps' offiziell
+dokumentiertes URL-Schema übernommen
+(`https://www.google.com/maps/search/?api=1&query={lat},{lon}`) – keine
+Umrechnung nötig. Der Button ist deaktiviert, wenn keine gültigen
+Koordinaten vorliegen (`isValidWgs84`); die Kartenansicht ist ein rein
+lesender externer Link ohne neue Abhängigkeit.
 
 ## Sortiment-Logik
 

@@ -132,8 +132,8 @@ sichtbar). Dort können Administratoren:
 
 - neue Hofläden erstellen,
 - bestehende Hofläden bearbeiten,
-- Stammdaten und Koordinaten ändern (Koordinateneingabe im Schweizer
-  System **LV95/EPSG:2056**, siehe unten),
+- Stammdaten und Koordinaten ändern (Koordinateneingabe als
+  WGS84-Dezimalgrad, siehe unten),
 - reguläre und Sonderöffnungszeiten bearbeiten (pro Wochentag:
   Geschlossen / 24 Stunden geöffnet / Zeiten festlegen, mit beliebig
   vielen Intervallen),
@@ -156,42 +156,27 @@ persistiert und ohne Neustart an Coordinator, Devices und Entities
 weitergegeben. Die Verwaltungsoberfläche verwendet ausschliesslich
 lokale Home-Assistant-Mechanismen (kein externer Dienst).
 
-### Koordinaten (LV95/EPSG:2056)
+### Koordinaten (WGS84)
 
-Die Verwaltungsoberfläche erfasst und zeigt Koordinaten im Schweizer
-Landeskoordinatensystem **LV95** (Ostwert E / Nordwert N, z. B. von
-[map.geo.admin.ch](https://map.geo.admin.ch) übernehmbar), statt der
-bisherigen WGS84-Dezimalgrad-Eingabe. Ein deutlich sichtbarer, blau
-hinterlegter Infobutton (ⓘ) neben den Eingabefeldern erklärt LV95 kurz
-direkt im Formular – sowohl in „Bearbeiten“ als auch farblich/gestalterisch
-konsistent zur restlichen Home-Assistant-Oberfläche (nutzt die
-Home-Assistant-Theme-Farbe `--info-color`, passt sich damit hellen wie
-dunklen Themes an).
+Die Verwaltungsoberfläche erfasst und zeigt Koordinaten als
+**WGS84-Dezimalgrad** (Latitude/Longitude) – identisch zum
+Speicherformat (`Hofladen.latitude`/`longitude`) und zu Home Assistants
+eigener Standortangabe, daher **ohne jede Umrechnung**. Ein deutlich
+sichtbarer, blau hinterlegter Infobutton (ⓘ) neben den Eingabefeldern
+erklärt Latitude/Longitude kurz direkt im Formular – farblich/
+gestalterisch konsistent zur restlichen Home-Assistant-Oberfläche
+(nutzt die Home-Assistant-Theme-Farbe `--info-color`, passt sich damit
+hellen wie dunklen Themes an).
 
-**Standort auf Karte anzeigen:** Neben den LV95-Koordinaten steht in
-„Bearbeiten“ **und** „Details“ ein Button „🗺️ Auf Karte anzeigen“ zur
-Verfügung, der den Standort in einem neuen Browser-Tab auf
-[map.geo.admin.ch](https://map.geo.admin.ch) öffnet (amtlicher Schweizer
-Kartendienst, unterstützt LV95-Koordinaten nativ – **keine** Umrechnung
-nach WGS84 nötig). Der Button ist deaktiviert, solange keine gültigen
-Koordinaten hinterlegt sind. Beide Ansichten nutzen dieselbe
-Hilfsfunktion (`mapUrl`/`mapButton` in `hofkarte-panel.js`) für
-identisches Verhalten. Öffnet nur eine externe, rein lesende Kartenansicht
-– verändert keine Daten.
-
-**Wichtig – keine Datenmodell-Änderung:** Intern speichert HofKarte
-Koordinaten weiterhin als WGS84-Dezimalgrad
-(`Hofladen.latitude`/`longitude`, siehe `docs/architecture.md`) – das
-ist zwingend, da Home Assistants eigene Mechanismen (Positionsangabe,
-`distance`-Sensor, Kartenkarten) ausschliesslich WGS84 verstehen. Die
-Umrechnung LV95 ↔ WGS84 erfolgt ausschliesslich im Browser
-(`custom_components/hofkarte/lv95.py` dokumentiert dieselben, dort
-referenzimplementierten Formeln). **Es ist daher keine Migration
-bestehender Daten nötig** – bereits gespeicherte Hofläden werden beim
-Öffnen der Bearbeitungsansicht automatisch von WGS84 nach LV95
-umgerechnet angezeigt; bleiben die Koordinatenfelder unverändert, wird
-beim Speichern der ursprüngliche WGS84-Wert unverändert beibehalten
-(kein wiederholtes Runden bei jedem Speichern).
+**Standort auf Karte anzeigen:** Neben den Koordinaten steht in
+„Bearbeiten“ **und** „Details“ ein Button „🗺️ Auf Google Maps anzeigen“
+zur Verfügung, der den Standort anhand der gespeicherten
+WGS84-Koordinaten in einem neuen Browser-Tab auf Google Maps öffnet.
+Der Button ist deaktiviert, solange keine gültigen Koordinaten
+hinterlegt sind. Beide Ansichten nutzen dieselbe Hilfsfunktion
+(`mapButton`/`googleMapsUrl` in `hofkarte-panel.js`) für identisches
+Verhalten. Öffnet nur eine externe, rein lesende Kartenansicht –
+verändert keine Daten.
 
 **Technischer Aufbau:** `frontend.py` registriert das Sidebar-Panel
 sowie die statischen JS-Assets; `management.py` stellt dafür
@@ -201,8 +186,7 @@ Coordinator (`async_save_hofladen`/`async_delete_hofladen`) – keine
 eigene Datenhaltung neben dem Coordinator. Die Detailansicht benötigt
 keinen eigenen Backend-Endpunkt: Sie zeigt read-only die über
 `hofkarte/management/list` bereits geladenen Daten des jeweiligen
-Hofladens an. Die LV95-Umrechnung findet ausschliesslich clientseitig
-in `static/hofkarte-panel.js` statt.
+Hofladens an.
 
 ## Bereitgestellte Devices
 
@@ -595,11 +579,6 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
   Adresse auflöst, wird nicht erkannt.
 - Keine eigene SQL-Datenbank – Persistenz erfolgt über Home Assistants
   `helpers.storage.Store` (JSON-Datei unter `.storage/`).
-- Die LV95-Umrechnung (`lv95.py`) nutzt die von swisstopo
-  veröffentlichten Näherungsformeln (Genauigkeit ca. 1–5 Meter im
-  Mittelland) – ausreichend für die Gebäudezuordnung eines Hofladens,
-  nicht vermessungstechnisch exakt. Für Liechtenstein/Grenzgebiete kann
-  die Genauigkeit geringfügig abweichen.
 
 ## Datenschutz- und Standort-Hinweise
 

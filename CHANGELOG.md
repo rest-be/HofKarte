@@ -8,6 +8,51 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- **Koordinaten von LV95 auf WGS84 umgestellt:** Die Verwaltungsoberfläche
+  erfasst und zeigt Koordinaten jetzt direkt als WGS84-Dezimalgrad
+  (Latitude/Longitude) – identisch zum Speicherformat
+  (`Hofladen.latitude`/`longitude`). Es findet keine
+  Koordinatentransformation mehr statt (Eingabe-, Speicher- und
+  Anzeigeformat sind durchgehend gleich).
+- **Karten-Button öffnet jetzt Google Maps** statt map.geo.admin.ch,
+  anhand der gespeicherten WGS84-Koordinaten
+  (`https://www.google.com/maps/search/?api=1&query={lat},{lon}`,
+  offizielles Google-Maps-URL-Schema). Identisches Verhalten in
+  „Bearbeiten“ und „Details“ über eine gemeinsame Funktion
+  (`googleMapsUrl`/`mapButton`), unverändert deaktiviert ohne gültige
+  Koordinaten.
+- Infobutton-Text von einer LV95-Erklärung auf eine
+  Latitude/Longitude-Erklärung umgestellt.
+
+### Entfernt
+
+- `lv95.py` und `tests/test_lv95.py`: durch die Umstellung auf WGS84
+  entfällt die Koordinatenumrechnung vollständig; das Modul wurde zu
+  totem Code (von keiner anderen Datei mehr referenziert, verifiziert)
+  und entsprechend entfernt statt belassen.
+
+### Behoben
+
+- **Bug in der neuen Kartenlogik:** `Number("")` ergibt in JavaScript
+  `0`, nicht `NaN`. Ohne gesonderte Prüfung hätte der Karten-Button bei
+  fehlenden Koordinaten fälschlich als aktiv gegolten und auf
+  Koordinate (0, 0) verwiesen. Durch einen expliziten
+  Leerstring-Check vor der Zahlkonvertierung behoben und per Test
+  verifiziert.
+
+### Ausdrücklich unverändert
+
+- Backend (`management.py`, `coordinator.py`, `models.py`,
+  `parsing.py`, `distance.py`), WebSocket-Vertrag, Datenmodell,
+  gespeichertes Datenformat: keine Änderungen. Bestehende
+  Hofladen-Daten (bereits WGS84) sind ohne jede Migration weiterhin
+  gültig. Übrige GUI (Liste, Öffnungszeiten-Editor, Sortiment,
+  Gruppierung, Info-Button-Styling) unverändert.
+
+## [0.15.0] - Unveröffentlicht
+
 ### Hinzugefügt
 
 - **Karten-Button** neben den LV95-Koordinaten, identisch in
