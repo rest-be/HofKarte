@@ -181,7 +181,17 @@ implementiert **keinen eigenen** Upload-Endpunkt, sondern nutzt Home
 Assistants eingebaute `image_upload`-Komponente vollständig:
 
 - **Upload:** `POST /api/image/upload` (Multipart-Formular), liefert
-  eine `image_id` zurück.
+  eine `image_id` zurück. **Erfordert Authentifizierung**
+  (`ImageUploadView.requires_auth` ist nicht überschrieben, erbt also
+  `True` von `HomeAssistantView`) – im Unterschied zur Auslieferung
+  unten. Der clientseitige `fetch()`-Aufruf muss deshalb explizit einen
+  `Authorization: Bearer <token>`-Header mit `this.hass.auth.accessToken`
+  setzen; ohne diesen Header schlägt der Upload mit „Login attempt
+  failed“/„invalid authentication“ im Home-Assistant-Log fehl, obwohl
+  man in der Oberfläche angemeldet ist (behobener Bug, siehe
+  CHANGELOG). WebSocket-Befehle (z. B. `image/delete`, `this.call()`)
+  sind davon nicht betroffen, da die WebSocket-Verbindung bereits beim
+  Verbindungsaufbau authentifiziert wird.
 - **Auslieferung:** `GET /api/image/serve/{image_id}/original`
   (`requires_auth = False` in dieser Home-Assistant-Komponente – exakt
   passend zur bestehenden `image.py`-Entity, die eine öffentlich ohne

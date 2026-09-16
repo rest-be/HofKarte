@@ -8,6 +8,30 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Kritischer Bug – Bilder-Upload schlug immer fehl:** Der
+  Upload-Aufruf (`fetch("/api/image/upload", ...)`) sendete keine
+  Home-Assistant-Authentifizierung mit. Home Assistants `/api/*`-
+  Endpunkte erfordern einen `Authorization: Bearer <token>`-Header
+  (kein Cookie-basiertes Login) – `ImageUploadView` verlangt zudem
+  explizit Authentifizierung (im Unterschied zur Auslieferung über
+  `ImageServeView`, die bewusst ohne Auth auskommt). Ohne den Header
+  schlug jeder Upload-Versuch fehl und Home Assistant protokollierte
+  „Login attempt failed“/„invalid authentication“, obwohl die
+  Benutzerin/der Benutzer regulär angemeldet war. Behoben durch
+  Ergänzen des Headers mit `this.hass.auth.accessToken`
+  (`hofkarte-panel.js`, `uploadBild`). Zusätzlich wird ein `401`-Fehler
+  jetzt mit einer eigenen, verständlichen Meldung („Anmeldung
+  abgelaufen“) statt eines generischen Fehlers angezeigt.
+- WebSocket-Befehle (`image/delete`, alle `hofkarte/management/*`)
+  waren von diesem Bug **nicht** betroffen, da die WebSocket-Verbindung
+  bereits beim Verbindungsaufbau authentifiziert wird – nur der
+  einzelne, separate HTTP-`fetch()`-Aufruf für den eigentlichen
+  Datei-Upload war betroffen.
+
+## [0.16.1] - Unveröffentlicht
+
 ### Geändert
 
 - **Start-Button für den Bilder-Upload:** Der bisherige Einstiegspunkt

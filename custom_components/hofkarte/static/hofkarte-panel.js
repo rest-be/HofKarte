@@ -181,7 +181,21 @@ class HofkartePanel extends HTMLElement {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const response = await fetch("/api/image/upload", { method: "POST", body: formData });
+      // Home Assistants /api/*-Endpunkte erfordern eine Authentifizierung
+      // per Bearer-Token (kein Cookie-basiertes Login) – ohne den
+      // Authorization-Header schlägt der Upload mit "invalid
+      // authentication" fehl, obwohl man in der Oberfläche angemeldet
+      // ist. this.hass.auth.accessToken wird vom Frontend automatisch
+      // aktuell gehalten (Token-Refresh), siehe auch this.call(), das für
+      // WebSocket-Befehle bereits über dieselbe hass-Verbindung läuft.
+      const response = await fetch("/api/image/upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.hass.auth.accessToken}` },
+        body: formData,
+      });
+      if (response.status === 401) {
+        throw new Error("Anmeldung abgelaufen. Bitte Seite neu laden und erneut versuchen.");
+      }
       if (!response.ok) {
         throw new Error(response.status === 413 ? "Datei ist zu gross." : `Upload fehlgeschlagen (${response.status}).`);
       }
