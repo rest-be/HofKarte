@@ -157,7 +157,7 @@ def test_parse_koordinate_kein_zahlwert() -> None:
 def test_parse_oeffnungszeit_mitternachtsueberschreitung_ist_gueltig() -> None:
     """Ein Ende vor dem Beginn ist gültig und bedeutet Mitternachtsüberschreitung.
 
-    Regel geändert in Einheit 7 (Öffnungszeiten-Berechnung): zuvor wurde
+    Regel (siehe opening_hours.py): zuvor wurde
     'ende' vor 'beginn' abgelehnt; jetzt wird dies als Intervall über
     Mitternacht hinweg interpretiert (z. B. 22:00–02:00), siehe
     ``opening_hours.py``.

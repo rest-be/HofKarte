@@ -1,4 +1,4 @@
-"""Automatisiert prüfbare HACS-/Manifest-Korrektheit (Einheit 14).
+"""Automatisiert prüfbare HACS-/Manifest-Korrektheit.
 
 Prüft strukturelle Anforderungen an ``manifest.json`` und ``hacs.json``,
 die vor einem Release automatisiert verifizierbar sind. Ersetzt keine
@@ -16,7 +16,18 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _HOFKARTE_DIR = _REPO_ROOT / "custom_components" / "hofkarte"
 
-_SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
+_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def _version_tuple(version: str) -> tuple[int, ...]:
+    """Eine Versionszeichenkette für einen korrekten *numerischen*
+    Vergleich in ein Tupel überführen. Ein reiner Stringvergleich wäre
+    für das seit dem MVP-Release verwendete Home-Assistant-Versionsschema
+    (JAHR.MONAT.LAUFNUMMER, z. B. "2026.10.0") falsch: lexikografisch
+    wäre "2026.10.0" < "2026.9.0", da "1" < "9" als erstes abweichendes
+    Zeichen - numerisch ist Oktober aber later als September.
+    """
+    return tuple(int(teil) for teil in version.split("."))
 
 
 def _load_manifest() -> dict:
@@ -56,16 +67,31 @@ def test_manifest_domain_stimmt_mit_ordnername_ueberein() -> None:
     assert manifest["domain"] == _HOFKARTE_DIR.name
 
 
-def test_manifest_version_folgt_semantic_versioning() -> None:
+def test_manifest_version_folgt_kalenderversionierung() -> None:
+    """Seit dem MVP-Release folgt HofKarte dem Home-Assistant-eigenen
+    Versionierungsschema JAHR.MONAT.LAUFNUMMER (z. B. "2026.9.0") statt
+    Semantic Versioning. Das Format ist syntaktisch identisch zu
+    MAJOR.MINOR.PATCH (drei durch Punkte getrennte Zahlen) - die
+    Bedeutung der Teile hat sich aber geändert, siehe CHANGELOG."""
     manifest = _load_manifest()
-    assert _SEMVER_PATTERN.match(manifest["version"]), (
-        f"Version '{manifest['version']}' entspricht nicht MAJOR.MINOR.PATCH"
+    assert _VERSION_PATTERN.match(manifest["version"]), (
+        f"Version '{manifest['version']}' entspricht nicht "
+        "JAHR.MONAT.LAUFNUMMER (drei durch Punkte getrennte Zahlen)."
     )
 
 
-def test_manifest_config_flow_ist_aktiviert() -> None:
+def test_version_tuple_vergleicht_numerisch_nicht_lexikografisch() -> None:
+    """Regressionstest für den Grund, warum _version_tuple() statt eines
+    reinen Stringvergleichs nötig ist: Oktober (zweistelliger Monat) muss
+    numerisch nach September kommen, auch wenn "10" lexikografisch vor
+    "9" steht."""
+    assert _version_tuple("2026.10.0") > _version_tuple("2026.9.0")
+    assert not ("2026.10.0" > "2026.9.0")  # zur Verdeutlichung: String-Vergleich wäre falsch
+
+
+
     """HofKarte wird ausschliesslich über den Config Flow eingerichtet
-    (keine YAML-Konfiguration, siehe Einheit 2)."""
+    (keine YAML-Konfiguration, siehe config_flow.py)."""
     manifest = _load_manifest()
     assert manifest["config_flow"] is True
 
@@ -79,7 +105,7 @@ def test_manifest_hat_keine_unerwarteten_python_abhaengigkeiten() -> None:
 
 def test_manifest_deklariert_http_abhaengigkeit() -> None:
     """Ohne diese Abhängigkeit ist ``hass.http`` beim Setup nicht
-    zuverlässig verfügbar (siehe CHANGELOG, behobener Bug in Einheit 10)."""
+    zuverlässig verfügbar (siehe CHANGELOG, behobener Bug)."""
     manifest = _load_manifest()
     assert "http" in manifest.get("dependencies", [])
 
@@ -111,7 +137,7 @@ def test_hacs_json_deklariert_minimale_ha_version() -> None:
 
 def test_manifest_version_stimmt_mit_neuestem_changelog_eintrag_ueberein() -> None:
     """Die Manifest-Version muss der zuletzt dokumentierten Version im
-    CHANGELOG entsprechen (Versionierung konsistent halten, Einheit 13)."""
+    CHANGELOG entsprechen (Versionierung konsistent halten)."""
     manifest = _load_manifest()
     changelog = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
@@ -123,7 +149,12 @@ def test_manifest_version_stimmt_mit_neuestem_changelog_eintrag_ueberein() -> No
     # Version entsprechen (bereits im CHANGELOG nachgezogen) oder um genau
     # eine Version "voraus" sein (Änderung gerade erst vorgenommen, der
     # zugehörige CHANGELOG-Eintrag steht noch unter "[Unveröffentlicht]").
-    assert manifest["version"] >= neueste_dokumentierte_version, (
+    # Numerischer Vergleich (nicht String-Vergleich!) ist beim seit dem
+    # MVP-Release verwendeten Schema JAHR.MONAT.LAUFNUMMER zwingend
+    # nötig, siehe _version_tuple().
+    assert _version_tuple(manifest["version"]) >= _version_tuple(
+        neueste_dokumentierte_version
+    ), (
         f"manifest.json ({manifest['version']}) liegt hinter dem "
         f"CHANGELOG ({neueste_dokumentierte_version}) zurück."
     )

@@ -98,8 +98,8 @@ Eintrag **HofKarte** (nur für Administrator:innen-Konten sichtbar). Dort
 können Hofläden verwaltet werden:
 
 - **Neuer Hofladen:** über die Verwaltungsseite anlegen (Name,
-  Beschreibung, Adresse, PLZ/Ort, Land, Koordinaten, Webseite,
-  Öffnungszeiten, Sortiment, Bilder).
+  Beschreibung, Bemerkung, Adresse, PLZ/Ort, Land, Koordinaten,
+  Webseite, Öffnungszeiten, Sortiment, Bilder).
 - **Bearbeiten:** bestehenden Hofladen in der Liste auswählen, Felder
   ändern, speichern.
 - **Details ansehen:** über den Button „Details“ eine **reine

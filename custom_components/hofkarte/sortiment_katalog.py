@@ -1,4 +1,4 @@
-"""Standardkatalog für die editierbaren Fachbereiche (Einheit 8).
+"""Standardkatalog für die editierbaren Fachbereiche.
 
 Bietet Hilfsfunktionen, um aus den Vorschlagswerten in ``const.py``
 (``STANDARD_ZAHLUNGSARTEN``) direkt verwendbare rohe Datensätze zu

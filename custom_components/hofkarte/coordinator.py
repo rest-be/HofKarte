@@ -52,11 +52,11 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
         ``update_interval`` und ``fetch_timeout_seconds`` sind bewusst
         Konstruktorparameter (statt fest verdrahteter Werte) und damit
         konfigurierbar und testbar. Eine benutzerseitige Einstellung über
-        einen Options Flow ist nicht Teil dieser Einheit, kann aber ohne
+        einen Options Flow ist aktuell nicht umgesetzt, kann aber ohne
         Änderung an dieser Klasse ergänzt werden.
 
-        ``config_entry`` wird bewusst explizit durchgereicht (Einheit 12,
-        Qualität): Ohne explizite Angabe ermittelt
+        ``config_entry`` wird bewusst explizit durchgereicht: Ohne
+        explizite Angabe ermittelt
         ``DataUpdateCoordinator`` die Config Entry implizit über einen
         Kontextvariablen-Fallback (``config_entries.current_entry``) –
         ein von Home Assistant selbst als veraltet markiertes Verhalten,
@@ -94,7 +94,7 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
 
         Für Diagnostics (``diagnostics.py``) – bewusst als öffentliche
         Property statt direktem Zugriff auf ``_provider`` von aussen,
-        um die Kapselung konsistent einzuhalten (Einheit 12, Qualität).
+        um die Kapselung konsistent einzuhalten.
         """
         return type(self._provider).__name__
 
@@ -259,8 +259,8 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
         """Einen Hofladen mit beliebigen Feldern anlegen oder aktualisieren.
 
         Im Unterschied zu ``async_update_hofladen_sortiment`` (auf die
-        fünf Fachbereiche aus Einheit 8 beschränkt) erlaubt diese
-        Funktion das Setzen beliebiger Hofladen-Felder (Name, Adresse,
+        zwei Fachbereiche Angebote und Zahlungsarten beschränkt) erlaubt
+        diese Funktion das Setzen beliebiger Hofladen-Felder (Name, Adresse,
         Koordinaten, Öffnungszeiten, Bilder, ...). Wird von der
         grafischen Verwaltungsoberfläche verwendet (siehe
         ``management.py``), die stets den vollständigen, vom Formular

@@ -10,7 +10,7 @@ Home-Assistant-Standortdaten (``hass.config.latitude``/``longitude``):
 Auch wenn diese Daten fachlich nicht "geheim" sind (öffentliche
 Hofladen-Informationen), sind es nutzerspezifische Daten, die in einer
 zur Fehlersuche geteilten und damit potenziell öffentlich einsehbaren
-Diagnosedatei nichts verloren haben (Regeln dieser Einheit: „Keine
+Diagnosedatei nichts verloren haben (Grundsatz: „Keine
 vertraulichen Konfigurationswerte in Logs oder Diagnostics“). Es werden
 ausschliesslich anonymisierte Zähler und technische Statusinformationen
 ausgegeben.

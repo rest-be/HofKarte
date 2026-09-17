@@ -182,7 +182,7 @@ async def test_adding_hofladen_via_coordinator_creates_device(
     hass: HomeAssistant,
 ) -> None:
     """Ein über den Coordinator hinzugefügter Hofladen muss automatisch ein
-    Device erhalten (Coordinator-Listener aus Einheit 5)."""
+    Device erhalten (siehe Coordinator-Listener in device.py)."""
     entry = _make_entry(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()

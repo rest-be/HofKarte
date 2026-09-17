@@ -4,7 +4,7 @@ Enthält ausschliesslich reine, testbare Fachfunktionen (Haversine-
 Distanz, Rundung für die Anzeige). Keine Abhängigkeit von ``hass``, keine
 Speicherung von Positionsdaten, keine Netzwerkkommunikation – die
 Berechnung erfolgt vollständig lokal aus den übergebenen Koordinaten
-(siehe Regeln dieser Einheit: „Keine Standortdaten persistieren“, „Keine
+(Grundsatz: „Keine Standortdaten persistieren“, „Keine
 Standortübertragung an externe Dienste“).
 
 Referenzpunkt ist stets die konfigurierte Home-Assistant-Position

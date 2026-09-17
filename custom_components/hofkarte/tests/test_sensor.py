@@ -108,7 +108,7 @@ async def test_unique_ids_follow_expected_pattern(hass: HomeAssistant) -> None:
 
 
 async def test_native_value_none_when_hofladen_present(hass: HomeAssistant) -> None:
-    """Solange Einheit 7 nicht implementiert ist, ist der Wert unbekannt."""
+    """Ohne hinterlegte Öffnungszeiten ist der Wert unbekannt."""
     provider = _FakeProvider([{"id": "hof-1", "name": "Hofladen Eins"}])
     coordinator = HofKarteUpdateCoordinator(hass, provider)
     await coordinator.async_config_entry_first_refresh()
@@ -166,7 +166,7 @@ async def test_sensoren_dupliziert_sortiment_attribute_nicht(
 ) -> None:
     """Sortiment und Eigenschaften dürfen nicht auf diese Sensoren
     dupliziert werden – sie sind ausschliesslich am Binary Sensor
-    "Geöffnet" exponiert (siehe attributes.py, Regeln dieser Einheit:
+    "Geöffnet" exponiert (siehe attributes.py, Grundsatz:
     grosse Datenmengen nicht bei jeder State-Änderung duplizieren)."""
     provider = _FakeProvider(
         [

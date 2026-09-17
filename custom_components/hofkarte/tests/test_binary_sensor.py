@@ -265,8 +265,7 @@ async def test_update_sortiment_wirkt_sich_ohne_reload_auf_attribute_aus(
     hass: HomeAssistant,
 ) -> None:
     """Eine über den Coordinator vorgenommene Sortiment-Änderung muss sich
-    ohne Reload in den State-Attributen niederschlagen (Ergänzung zu
-    Einheit 8: User Editierbar)."""
+    ohne Reload in den State-Attributen niederschlagen."""
     entry = _make_entry(hass)
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()

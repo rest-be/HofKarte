@@ -51,7 +51,7 @@ class HofKarteGeoeffnetBinarySensor(HofKarteEntity, BinarySensorEntity):
     Zahlungsarten) als ``extra_state_attributes``
     (siehe ``attributes.py``). Diese Informationen werden bewusst nur an
     dieser einen Entity exponiert und nicht an den Sensoren „Nächste
-    Öffnung“/„Nächste Schliessung“ dupliziert (Regeln dieser Einheit:
+    Öffnung“/„Nächste Schliessung“ dupliziert (Grundsatz:
     grosse Datenmengen nicht bei jeder State-Änderung duplizieren).
     """
 

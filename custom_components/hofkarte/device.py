@@ -1,10 +1,11 @@
 """Device-Repräsentation für Hofläden.
 
 Jeder Hofladen wird als logisches Home-Assistant-Device abgebildet – kein
-physisches Gerät (siehe Regeln dieser Einheit). Dieses Modul kapselt
+physisches Gerät. Dieses Modul kapselt
 ausschliesslich die Erstellung der ``DeviceInfo``-Struktur sowie die
 Synchronisation mit der Device Registry. Es enthält bewusst keine
-Entities (folgen in einer späteren Einheit).
+Entity-Logik – Entities werden in eigenen Modulen implementiert (siehe
+``binary_sensor.py``, ``sensor.py``, ``image.py``).
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ def build_device_identifier(hofladen: Hofladen) -> tuple[str, str]:
     """Stabilen Device-Identifier für einen Hofladen erzeugen.
 
     Basiert ausschliesslich auf der stabilen ``Hofladen.id`` aus dem
-    Datenmodell (siehe Einheit 3) und wechselt daher nie zwischen
+    Datenmodell (siehe ``models.py``) und wechselt daher nie zwischen
     Neustarts, Reloads oder Coordinator-Updates.
     """
     return (DOMAIN, hofladen.id)
@@ -37,8 +38,7 @@ def build_device_info(hofladen: Hofladen) -> dr.DeviceInfo:
     Es werden bewusst keine ``manufacturer``- oder ``model``-Angaben
     gesetzt: Ein Hofladen ist kein physisches Gerät mit Hersteller oder
     Modell, und das fachliche Datenmodell (``models.Hofladen``) kennt
-    diese Konzepte nicht. Erfundene Werte sind laut den Regeln dieser
-    Einheit nicht zulässig.
+    diese Konzepte nicht. Erfundene Werte sind daher nicht zulässig.
     """
     return dr.DeviceInfo(
         identifiers={build_device_identifier(hofladen)},

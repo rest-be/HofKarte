@@ -1,7 +1,7 @@
 """Sortiment und Eigenschaften als Entity-Attribute.
 
 Angebote und Zahlungsarten eines Hofladens sind fachlich keine Messwerte
-und rechtfertigen keine eigenen Entities (Regeln dieser Einheit: „Keine
+und rechtfertigen keine eigenen Entities (Grundsatz: „Keine
 künstlichen Messwerte“, „Keine unnötigen Entities“). Stattdessen werden
 sie als ``extra_state_attributes`` einer einzigen bestehenden Entity
 bereitgestellt (Binary Sensor „Geöffnet“, siehe ``binary_sensor.py``)

@@ -1,4 +1,4 @@
-"""End-zu-End-Test des in Einheit 14 vorgegebenen Nutzungsszenarios.
+"""End-zu-End-Test eines vollständigen, realistischen Nutzungsszenarios.
 
 Bildet den kompletten, im Umsetzungsplan beschriebenen Ablauf nach
 (soweit innerhalb einer Testsuite ohne echten HACS-/Browser-Kontext
@@ -50,7 +50,7 @@ def _make_entry(hass: HomeAssistant) -> MockConfigEntry:
 async def test_vollstaendiges_end_zu_end_szenario_mit_mehreren_hoflaeden(
     hass: HomeAssistant,
 ) -> None:
-    """Kompletter Ablauf laut Einheit 14 mit zwei unterscheidbaren Hofläden."""
+    """Kompletter Ablauf mit zwei unterscheidbaren Hofläden."""
     # --- Integration hinzufügen / Config Flow abschliessen -----------------
     entry = _make_entry(hass)
     result = await hass.config_entries.async_setup(entry.entry_id)

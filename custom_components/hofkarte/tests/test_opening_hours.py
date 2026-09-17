@@ -1,6 +1,6 @@
 """Tests für ``opening_hours.py`` – die Öffnungszeiten-Berechnung.
 
-Deckt mindestens die in Einheit 7 geforderten Fälle ab: offen innerhalb
+Deckt mindestens folgende Fälle ab: offen innerhalb
 eines Intervalls, geschlossen vor Öffnung, geschlossen nach Schliessung,
 zwei Intervalle am selben Tag, Mitternachtsüberschreitung, Sonderöffnung,
 Sonder-Schliessung, Wochenwechsel sowie ein Zeitzonen-/DST-Grenzfall.

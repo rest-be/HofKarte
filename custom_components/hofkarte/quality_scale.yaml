@@ -1,9 +1,8 @@
 # Home-Assistant-Integration-Quality-Scale-Selbsteinschätzung für HofKarte.
 #
-# Ehrliche Einschätzung nach Abschluss von Einheit 14. Nicht erfüllte
-# Kriterien sind mit "todo" markiert und im technischen Grund erläutert
-# statt vorgetäuscht zu werden (siehe Umsetzungsplan, Einheit 14:
-# "Kriterium konkret benennen, technischen Grund dokumentieren, keine
+# Ehrliche Einschätzung. Nicht erfüllte Kriterien sind mit "todo" markiert
+# und im technischen Grund erläutert statt vorgetäuscht zu werden
+# ("Kriterium konkret benennen, technischen Grund dokumentieren, keine
 # Scheinimplementierung bauen"). "exempt" markiert Kriterien, die für
 # HofKarte fachlich nicht zutreffen (z. B. keine Authentifizierung, kein
 # Push-Discovery).
@@ -50,8 +49,8 @@ rules:
       Funktional gleichwertig, aber nicht die aktuell empfohlene
       Home-Assistant-Konvention. Eine Umstellung würde __init__.py sowie
       alle Plattform-Dateien betreffen (jede async_setup_entry-Funktion) -
-      das ist laut Grenzen dieser Einheit ("keine grundlegende
-      Architekturänderung") bewusst zurückgestellt.
+      das ist laut dem Grundsatz "keine grundlegende
+      Architekturänderung" bewusst zurückgestellt.
   test-before-configure:
     status: exempt
     comment: |
@@ -158,7 +157,7 @@ rules:
       fehlerhaften Hofladen-Datensätzen). Ungültige Datensätze werden
       aktuell nur geloggt und übersprungen (siehe coordinator.py),
       erscheinen aber nicht als sichtbares Repair-Issue im
-      Home-Assistant-UI. Kandidat für eine künftige Einheit.
+      Home-Assistant-UI. Kandidat für eine künftige Erweiterung.
   stale-devices: done
 
   # --- Platinum --------------------------------------------------------------

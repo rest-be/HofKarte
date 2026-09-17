@@ -3,7 +3,7 @@
 Dieses Modul enthält ausschliesslich die interne fachliche Darstellung
 eines Hofladens. Es kennt keine Rohdatenformate, keine Home-Assistant-
 Entities, keine Persistenz und keine Netzwerklogik – das ist bewusst nicht
-Teil dieser Einheit. Die Überführung von Rohdaten in dieses Modell erfolgt
+Aufgabe dieses Moduls. Die Überführung von Rohdaten in dieses Modell erfolgt
 getrennt in ``parsing.py``.
 
 Alle Datenstrukturen sind unveränderlich (``frozen``), damit einmal
@@ -78,7 +78,7 @@ class Oeffnungszeit:
     Es handelt sich um wiederkehrende Uhrzeiten ohne festes Datum, keine
     absoluten Zeitpunkte. Die Auswertung gegen die tatsächliche
     Home-Assistant-Zeitzone (für den berechneten Öffnungsstatus) ist
-    bewusst nicht Teil dieser Einheit.
+    Aufgabe von ``opening_hours.py``, nicht dieses Moduls.
     """
 
     wochentag: int
@@ -109,7 +109,7 @@ class Hofladen:
 
     ``id`` ist die stabile, eindeutige Kennung des Hofladens. Sie wird von
     der Datenquelle vorgegeben (siehe ``parsing.py``) und darf sich über
-    die Zeit nicht ändern, da spätere Einheiten (Devices, Entities) sich
+    die Zeit nicht ändern, da Devices und Entities sich
     darauf verlassen.
 
     ``bemerkung`` ist ein zusätzliches, von ``beschreibung`` unabhängiges

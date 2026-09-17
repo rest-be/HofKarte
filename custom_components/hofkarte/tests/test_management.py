@@ -329,7 +329,7 @@ async def test_async_register_websocket_commands_registriert_alle_drei(
 
 
 # ---------------------------------------------------------------------------
-# Fehlerbehandlung: HofKarte nicht (mehr) eingerichtet (Einheit 12)
+# Fehlerbehandlung: HofKarte nicht (mehr) eingerichtet
 # ---------------------------------------------------------------------------
 
 
@@ -395,7 +395,7 @@ async def test_ws_save_nicht_unterstuetzt_ergibt_eigenen_fehlercode(
     hass: HomeAssistant,
 ) -> None:
     """Ein nicht schreibfähiger Provider muss als 'not_supported' gemeldet
-    werden, nicht als 'invalid_data' (Einheit 12: Fehler klar unterscheiden)."""
+    werden, nicht als 'invalid_data' (Fehlerarten klar unterscheiden)."""
     provider = _ReadOnlyFakeProvider()
     coordinator = HofKarteUpdateCoordinator(hass, provider)
     await coordinator.async_config_entry_first_refresh()
@@ -424,7 +424,7 @@ async def test_ws_save_nicht_unterstuetzt_ergibt_eigenen_fehlercode(
 async def test_management_greift_nicht_mehr_direkt_auf_provider_zu() -> None:
     """Qualitätssicherung: management.py darf nicht mehr über
     ``coordinator._provider`` auf den Data Provider zugreifen (Kapselung
-    über die öffentliche Coordinator-API, siehe Einheit 12)."""
+    über die öffentliche Coordinator-API)."""
     import inspect
 
     from custom_components.hofkarte import management

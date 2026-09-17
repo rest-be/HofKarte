@@ -115,7 +115,7 @@ class HofKarteEntfernungSensor(HofKarteEntity, SensorEntity):
     konfigurierte Position der Home-Assistant-Installation selbst – als
     Referenzpunkt. Das ist ein stabiler Konfigurationswert, kein von der
     Integration verfolgter oder gespeicherter Standort (siehe
-    ``distance.py``, Regeln dieser Einheit: „Keine Standortdaten
+    ``distance.py``, Grundsatz: „Keine Standortdaten
     persistieren“, „Keine Standortübertragung an externe Dienste“).
 
     Ein Distance Sensor ist hier fachlich sinnvoll: Der Zweck von

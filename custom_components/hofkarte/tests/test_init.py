@@ -116,7 +116,7 @@ async def test_unload_entry(hass: HomeAssistant) -> None:
 
 async def test_unload_entry_entfernt_frontend_panel(hass: HomeAssistant) -> None:
     """Beim Entladen der Config Entry muss auch das Sidebar-Panel wieder
-    entfernt werden (Einheit 12: Reload/Unload robust behandeln)."""
+    entfernt werden (Reload/Unload müssen robust funktionieren)."""
     entry = MockConfigEntry(
         domain=DOMAIN, title="HofKarte", data={CONF_NAME: "HofKarte"}
     )
@@ -136,7 +136,7 @@ async def test_mehrfacher_reload_erzeugt_keine_duplikate(
     hass: HomeAssistant,
 ) -> None:
     """Mehrere aufeinanderfolgende Reloads dürfen weder Devices noch
-    Entities duplizieren (Einheit 12: Reload/Unload robust behandeln)."""
+    Entities duplizieren (Reload/Unload müssen robust funktionieren)."""
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
 

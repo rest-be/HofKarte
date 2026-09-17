@@ -3,10 +3,50 @@
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei
 dokumentiert.
 
-Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
-die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
+Das Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
-## [Unveröffentlicht]
+**Versionierung:** Ab dem MVP-Release (`2026.9.0`) folgt HofKarte dem
+Versionierungsschema von Home Assistant selbst:
+`JAHR.MONAT.LAUFNUMMER` (z. B. `2026.9.0`, `2026.9.1`, `2026.10.0`).
+Frühere Versionen (`0.1.0` bis `0.18.1`) folgten während der
+Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
+Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
+unten als historische Entwicklungsdokumentation erhalten.
+
+## [2026.9.0] - 2026-09-17
+
+### Erstes offizielles Release (MVP)
+
+- HofKarte wird mit dieser Version erstmals offiziell veröffentlicht.
+  Alle bisherigen Versionen (`0.1.0`–`0.18.1`, siehe unten) waren
+  interne Entwicklungsstände ohne offizielle Veröffentlichung.
+- **Neue Versionierung:** Umstellung von einer an Semantic Versioning
+  angelehnten Zählung auf das Home-Assistant-eigene Kalenderschema
+  `JAHR.MONAT.LAUFNUMMER` (siehe Hinweis oben).
+- **Dokumentation vollständig überarbeitet:** Referenzen auf interne
+  Entwicklungs-„Einheiten“ (Bauabschnitte aus dem ursprünglichen,
+  internen Umsetzungsplan) vollständig aus Code-Kommentaren,
+  Docstrings, README, CHANGELOG, `docs/handbuch.md`,
+  `docs/architecture.md` und `quality_scale.yaml` entfernt und durch
+  beschreibende, auf den tatsächlichen Code bezogene Erklärungen
+  ersetzt. `docs/handbuch.md` und `docs/architecture.md` wurden gegen
+  den aktuellen Code verifiziert; dabei ein fehlendes Feld ergänzt
+  (Kapitel 4 des Handbuchs nannte „Bemerkung“ nicht in der Liste der
+  beim Anlegen eines Hofladens verfügbaren Felder).
+- **Testinfrastruktur-Korrektur:** Der Vergleich der Manifest-Version
+  gegen den neuesten CHANGELOG-Eintrag
+  (`test_manifest_und_hacs.py`) verglich Versionen bisher als reine
+  Zeichenketten. Das wäre mit dem neuen Kalenderschema ab einem
+  zweistelligen Monat falsch gewesen (`"2026.10.0" >= "2026.9.0"` ist
+  als Stringvergleich **falsch**, da `"1" < "9"`). Behoben durch einen
+  numerischen Tupel-Vergleich, mit eigenem Regressionstest
+  (`test_version_tuple_vergleicht_numerisch_nicht_lexikografisch`).
+- Alle 306 automatisierten Tests grün, `pyflakes`/`mypy` sauber (siehe
+  Testbericht in der Auslieferung dieser Version). Keine funktionalen
+  Änderungen an der Integration selbst in diesem Release – ausschliesslich
+  Dokumentation, Versionierung und die oben genannte Testkorrektur.
+
+## [0.18.1] - Unveröffentlicht
 
 ### Geändert
 
@@ -457,8 +497,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Alle Beispiel-YAMLs (README + Handbuch) gegen echte Entity-Namen,
   Action-Namen und Parameter aus dem Code geprüft und als YAML
   validiert.
-- Keine Code-Änderungen in dieser Einheit nötig; Tests unverändert
-  grün (292/292).
+- Keine Code-Änderungen nötig; Tests unverändert grün (292/292).
 
 ## [0.13.2] - Unveröffentlicht
 
@@ -503,7 +542,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Mehrfacher Config-Entry-Reload, Entity-/Unique-ID-Stabilität über
   Reloads hinweg: durch Tests bestätigt.
 - Mehrere Config Entries: nicht vorgesehen (Single-Instance-Architektur,
-  siehe Einheit 2); dokumentiert statt implementiert.
+  siehe `config_flow.py`); dokumentiert statt implementiert.
 
 ## [0.13.1] - Unveröffentlicht
 
@@ -530,15 +569,14 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
   durch frühere, teils externe Bearbeitungen entstanden waren: ein
   Eintrag stand oberhalb der eigentlichen Dateiüberschrift (Änderungen
   am Stammdatenformular/`website`-Feld, jetzt in `[0.10.3]`
-  zusammengeführt); ein weiterer Eintrag (`[0.10.0] - Einheit 10`, native
+  zusammengeführt); ein weiterer Eintrag (`[0.10.0]`, native
   Seitenleiste/WebSocket-API) stand fälschlich nach `[0.1.0]` statt in
   chronologischer Reihenfolge – Inhalt ebenfalls verlustfrei in
   `[0.10.3]` zusammengeführt. Die Versionsliste ist jetzt durchgehend
   absteigend sortiert ohne Duplikate oder verwaiste Einträge.
 - `camera.py` (inkl. zugehöriger Tests) erneut entfernt – wiederholt
   aufgetauchte, unverdrahtete Implementierung, die der getroffenen
-  Architekturentscheidung (natives `image`-Entity, siehe Einheit 11)
-  widerspricht.
+  Architekturentscheidung (natives `image`-Entity) widerspricht.
 - Fehlendes `.gitignore` am Repository-Root ergänzt (bisher gelangten
   `__pycache__`-Ordner ins Repository).
 
@@ -604,7 +642,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 ### Entfernt
 
 - `camera.py` (inkl. `test_camera.py`, `test_camera_fetch.py`): erneut
-  aufgetauchte, unverdrahtete Implementierung, die der in Einheit 11
+  aufgetauchte, unverdrahtete Implementierung, die der bereits
   getroffenen Architekturentscheidung (natives `image`-Entity)
   widerspricht.
 
@@ -618,7 +656,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
   die Hofladen-Daten nicht geändert haben.
 - Zeitpunktgenaue, zusätzliche Status-Aktualisierung exakt bei
   Öffnungs-/Schliesszeitpunkten (statt nur alle 15 Minuten): wäre neue
-  Funktionalität ohne klaren Bedarf (Grenzen dieser Einheit: „Keine neue
+  Funktionalität ohne klaren Bedarf (Grundsatz: „Keine neue
   Funktionalität ohne Bedarf“); das bestehende, konfigurierbare
   Update-Intervall gilt als angemessen für diesen Anwendungsfall.
 
@@ -643,8 +681,8 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - „Weitere Bilder“ (über das Hauptbild hinaus) werden als
   `extra_state_attributes` (`weitere_bilder`) an derselben Image-Entity
   bereitgestellt statt als eigene Entities oder Galerie (Grenzen dieser
-  Einheit: „Keine React-Galerie“) – analog zum Sortiment-Attribute-Muster
-  aus Einheit 8.
+  Grundsatz: „Keine React-Galerie“) – analog zum bestehenden
+  Sortiment-Attribute-Muster.
 - Cache-Invalidierung bei Bildänderung: Ändert sich die Hauptbild-URL
   eines Hofladens (z. B. über das Verwaltungspanel), wird Home
   Assistants interner Bild-Cache (`ImageEntity._cached_image`)
@@ -699,8 +737,8 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 ### Bewusst nicht implementiert
 
 - Optionale Diagnostics/Zusatzinformationen (im Plan als „optional“
-  genannt): Gegenstand der eigenen, kommenden Einheit „Diagnostics,
-  Fehlerbehandlung, Performance und Qualität“.
+  genannt): Gegenstand eines eigenen, späteren Arbeitsschritts
+  „Diagnostics, Fehlerbehandlung, Performance und Qualität“.
 
 ## [0.11.0] - Unveröffentlicht
 
@@ -745,8 +783,8 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
   wodurch die Coroutine selbst (statt eines Dicts) als Rückgabewert
   ankam und `homeassistant.exceptions.HomeAssistantError:
   service_reponse_invalid` auslöste. Behoben durch eine eigene
-  `async def _service_handler(call)`-Funktion. Durch die Tests dieser
-  Einheit gefunden und sofort behoben.
+  `async def _service_handler(call)`-Funktion. Durch die eigene
+  Testsuite gefunden und sofort behoben.
 
 ### Bewusst nicht implementiert
 
@@ -757,7 +795,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Separate Actions je Filterdimension: eine einzige Such-Action mit
   mehreren optionalen Parametern deckt alle geforderten Fälle ab.
 - Keine proprietäre REST-API, keine globale Suche über andere
-  Home-Assistant-Integrationen hinweg (Grenzen dieser Einheit).
+  Home-Assistant-Integrationen hinweg.
 
 ## [0.10.3] - Unveröffentlicht
 
@@ -808,8 +846,8 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Architekturentscheid: eigene grafische Verwaltungsoberfläche
 
-- Bestätigt und beibehalten: Abweichend vom ursprünglichen Plan für
-  Einheit 10 („Keine eigene UI“, „Keine proprietäre REST-API“) verwaltet
+- Bestätigt und beibehalten: Abweichend vom ursprünglichen Plan
+  („Keine eigene UI“, „Keine proprietäre REST-API“) verwaltet
   HofKarte Hofläden über ein eigenes Sidebar-Panel mit
   WebSocket-Backend (`frontend.py`, `management.py`) statt über
   Home-Assistant-Actions/Services. Diese Abweichung ist bewusst und
@@ -818,7 +856,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Architekturentscheid: Datenquelle final festgelegt
 
-- Löst die seit Einheit 4 offene Architekturentscheidung: Home Assistant
+- Löst eine zuvor offene Architekturentscheidung: Home Assistant
   ist sowohl Laufzeitumgebung als auch Verwaltungsoberfläche für
   HofKarte. Die vom Benutzer gepflegten Hofläden werden in einem
   integrationsinternen, persistenten Store gehalten (Home Assistants
@@ -842,7 +880,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
   Reload durchführt und bestätigt, dass ein zuvor hinzugefügter Hofladen
   diesen übersteht.
 
-### Weitere Korrekturen (Abgleich Einheit 1–9)
+### Weitere Korrekturen
 
 - Veraltete Dokumentation im Config Flow und Parsing zum inzwischen
   festgelegten Data Provider entfernt.
@@ -873,7 +911,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
-- Ergänzung zu Einheit 8: Sortiment und Eigenschaften eines **bestehenden**
+- Sortiment und Eigenschaften eines **bestehenden**
   Hofladens sind jetzt nutzereditierbar.
 - `data_provider.py`: `MutableHofladenDataProvider.async_update_raw_hofladen`
   (teilweise Aktualisierung eines bestehenden Rohdatensatzes), neue
@@ -970,7 +1008,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 ### Bewusst nicht dupliziert
 
 - Die Sensoren „Nächste Öffnung“/„Nächste Schliessung“ tragen diese
-  Attribute nicht (Regeln dieser Einheit: grosse Datenmengen nicht bei
+  Attribute nicht (Grundsatz: grosse Datenmengen nicht bei
   jeder State-Änderung duplizieren) – durch einen expliziten Test
   abgesichert.
 
@@ -988,7 +1026,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - Binary Sensor „Geöffnet“ sowie die Sensoren „Nächste Öffnung“ und
   „Nächste Schliessung“ liefern nun echte berechnete Werte statt des
   bisherigen Platzhalter-Zustands „unbekannt“.
-- Umfangreiche Tests für alle in Einheit 7 geforderten Mindestfälle:
+- Umfangreiche Tests für alle geforderten Mindestfälle:
   offen innerhalb eines Intervalls, geschlossen vor Öffnung, geschlossen
   nach Schliessung, zwei Intervalle am selben Tag, Mitternacht (vor/nach/
   nach Ende), Sonderöffnung, Sonder-Schliessung (Einzeltag und
@@ -1000,8 +1038,8 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
   Sonderöffnungszeit) gelockert. Bisher wurde `ende <= beginn`
   grundsätzlich abgelehnt; nun ist nur noch `ende == beginn` ungültig.
   `ende < beginn` ist gültig und wird als Mitternachtsüberschreitung
-  interpretiert. Diese Änderung war notwendig, um die von Einheit 7
-  geforderte Mitternachtsüberschreitung überhaupt abbilden zu können
+  interpretiert. Diese Änderung war notwendig, um die geforderte
+  Mitternachtsüberschreitung überhaupt abbilden zu können
   (Grenzen: „Keine Änderung der Entitätsarchitektur außer soweit für
   korrekte Zustände notwendig“).
 - Bestehende Parsing-Tests entsprechend angepasst: der bisherige Test
@@ -1031,9 +1069,9 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - `async_setup_hofladen_entities`-Helper (`entity.py`): legt Entities für
   alle aktuellen und künftig über den Coordinator hinzukommenden
   Hofläden an, ohne dass ein Reload nötig ist.
-- Vorgesehenes Berechnungsmodul `opening_hours.py` (in dieser Einheit
-  noch als Stub, liefert `None`; die robuste Implementierung folgt in
-  Einheit 7).
+- Vorgesehenes Berechnungsmodul `opening_hours.py` (zu diesem
+  Zeitpunkt noch als Stub, liefert `None`; die robuste Implementierung
+  folgt in einer späteren Version).
 - Tests für Entity-Erzeugung, `unique_id`-Muster, Device-Zuordnung,
   fehlende Device Class beim Binary Sensor, Verfügbarkeit, sowie die
   dynamische Entity-Erzeugung bei neu hinzugefügten Hofläden.

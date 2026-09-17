@@ -4,20 +4,14 @@ Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden (Direktvermarkter, Selbstbedienungsläden,
 Hofläden mit und ohne Personal).
 
-> **Status:** Dokumentation für Git-Publikation und Anwendungshandbuch
-> (Einheit 15). Die Integration ist funktional vollständig, getestet und
-> releasefähig (Einheiten 1–14). Diese Einheit ergänzt ausschliesslich
-> Dokumentation: ein vollständiges Anwendungshandbuch
-> ([`docs/handbuch.md`](docs/handbuch.md)), eine
-> Architekturdokumentation ([`docs/architecture.md`](docs/architecture.md)),
-> `CONTRIBUTING.md` und `SECURITY.md`. Ergänzt um zwei vorangegangene
-> Architekturentscheide: (1) Home Assistant ist sowohl Laufzeit- als
-> auch Verwaltungsoberfläche für HofKarte – die vom Benutzer gepflegten
+> **Status:** MVP-Release. Die Integration ist funktional vollständig
+> und getestet. Home Assistant ist sowohl Laufzeit- als auch
+> Verwaltungsoberfläche für HofKarte – die vom Benutzer gepflegten
 > Hofläden werden in einem integrationsinternen, persistenten Store
-> gehalten (keine externe Datenbank, kein externer Dienst); (2) HofKarte
-> bietet zusätzlich zu den Home-Assistant-Entities eine **eigene
-> grafische Verwaltungsoberfläche** (Sidebar-Panel) für Administratoren
-> – eine bewusste, dokumentierte Abweichung vom ursprünglichen Plan.
+> gehalten (keine externe Datenbank, kein externer Dienst). Zusätzlich
+> zu den regulären Home-Assistant-Entities bietet HofKarte eine
+> **eigene grafische Verwaltungsoberfläche** (Sidebar-Panel) für
+> Administrator:innen.
 
 **📖 Für die vollständige Anleitung als Endanwender:in siehe das
 [Anwendungshandbuch](docs/handbuch.md)** – Installation, Ersteinrichtung,
@@ -678,12 +672,15 @@ pytest custom_components/hofkarte/tests
 
 ### Release-Prozess und Versionierung
 
-- Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/)
-  (`MAJOR.MINOR.PATCH`), siehe `manifest.json` → `version`.
+- **Versionierung folgt dem Schema von Home Assistant selbst:**
+  `JAHR.MONAT.LAUFNUMMER` (z. B. `2026.9.0` = erste Veröffentlichung im
+  September 2026, `2026.9.1` = zweite Veröffentlichung im selben Monat).
+  Kein Semantic Versioning (`MAJOR.MINOR.PATCH`) – die drei Zahlen
+  haben hier eine andere Bedeutung. Siehe `manifest.json` → `version`.
 - Ein Release besteht aus: `manifest.json`-Version erhöhen,
   `CHANGELOG.md` mit den nutzerrelevanten Änderungen ergänzen, Commit,
   und ein GitHub Release mit **exakt demselben Versions-String** als
-  Tag erstellen (z. B. `0.13.0`). HACS erkennt neue Versionen über die
+  Tag erstellen (z. B. `2026.9.0`). HACS erkennt neue Versionen über die
   GitHub-Releases-API.
 - `hacs.json` deklariert die minimal unterstützte Home-Assistant-Version
   (`homeassistant`). Diese sollte bei Verwendung neuerer

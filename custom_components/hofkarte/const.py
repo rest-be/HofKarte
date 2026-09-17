@@ -11,7 +11,7 @@ DEFAULT_NAME = "HofKarte"
 DEFAULT_UPDATE_INTERVAL = timedelta(minutes=15)
 DEFAULT_FETCH_TIMEOUT_SECONDS = 30
 
-# Sortiment und Eigenschaften (Einheit 8 / Ergänzung „User Editierbar“):
+# Sortiment und Eigenschaften (User Editierbar):
 # Vorschlagswerte für den Fachbereich Zahlungsarten. Nutzer sind nicht auf
 # diese Werte beschränkt – jeder beliebige Name ist zulässig (siehe
 # parsing.py); dies ist lediglich ein sinnvoller Startkatalog, den z. B.

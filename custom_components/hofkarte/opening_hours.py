@@ -1,7 +1,7 @@
 """Berechnung des Öffnungsstatus von Hofläden.
 
 Dies ist die alleinig vorgesehene Stelle für die
-Öffnungszeiten-Berechnungslogik (siehe Einheit 6, Grenzen: „Keine neue
+Öffnungszeiten-Berechnungslogik (Grundsatz: „Keine neue
 Berechnungslogik außerhalb des dafür vorgesehenen Moduls“). Sensoren und
 der Binary Sensor rufen ausschliesslich die Funktionen dieses Moduls auf
 und enthalten selbst keine Berechnungslogik.
@@ -45,7 +45,7 @@ von 02:00 auf 03:00 vorgestellt wird) oder in den doppelt vorkommenden
 Bereich beim Zurückstellen fallen, wird die von Python/``zoneinfo``
 standardmässig gewählte Auflösung (erstes Vorkommen, ``fold=0``)
 verwendet. Eine explizite Disambiguierung für diese seltenen Grenzfälle
-ist nicht Teil dieser Einheit.
+ist bewusst nicht umgesetzt (siehe README, „Bekannte Einschränkungen“).
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ def _intervalle_fuer_datum(
     """Effektive Öffnungsintervalle für ein einzelnes Datum.
 
     Sonderöffnungszeiten überschreiben die regulären Öffnungszeiten
-    vollständig, wie in den Regeln dieser Einheit gefordert.
+    vollständig (siehe ``models.Sonderoeffnungszeit``).
     """
     sonder = _finde_sonderoeffnungszeit(hofladen, datum)
     if sonder is not None:

@@ -1,4 +1,4 @@
-"""Automatisiert prüfbare Konsistenz von Übersetzungen (Einheit 13/14).
+"""Automatisiert prüfbare Konsistenz von Übersetzungen.
 
 Deckt genau das ab, was ohne menschliche Sprachprüfung automatisiert
 verifizierbar ist: valides JSON, strukturelle Übereinstimmung zwischen

@@ -5,7 +5,7 @@ Alle Schreibzugriffe laufen ausschliesslich über die öffentlichen
 ``async_delete_hofladen``) – nicht direkt über den zugrunde liegenden
 ``HofladenDataProvider``. Das hält die in ``coordinator.py``
 implementierte Fail-Fast-Validierung und Refresh-Logik an einer
-einzigen Stelle, statt sie hier zu duplizieren (Einheit 12, Qualität).
+einzigen Stelle, statt sie hier zu duplizieren.
 """
 
 from __future__ import annotations
@@ -58,8 +58,7 @@ def _get_coordinator(hass: HomeAssistant) -> HofKarteUpdateCoordinator:
 
     Wirft ``ValueError``, falls HofKarte nicht (oder mehrfach) geladen
     ist. Aufrufer müssen dies abfangen und als sauberen WebSocket-Fehler
-    zurückmelden statt die Exception unbehandelt durchzureichen (siehe
-    Einheit 12: Fehlerbehandlung).
+    zurückmelden statt die Exception unbehandelt durchzureichen.
     """
     entries = hass.data.get(DOMAIN, {})
     if len(entries) != 1:

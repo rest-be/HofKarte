@@ -61,7 +61,7 @@ def find_hoflaeden(
       die Zahlungsarten des Hofladens (siehe ``models.Hofladen``).
     - ``nur_geoeffnet``: Wenn ``True``, werden nur aktuell geöffnete
       Hofläden geliefert (nutzt ``opening_hours.is_open`` – keine eigene
-      Berechnungslogik, siehe Einheit 6/7). Ein Hofladen ohne bekannten
+      Berechnungslogik, siehe ``opening_hours.py``). Ein Hofladen ohne bekannten
       Öffnungsstatus (``is_open`` liefert ``None``) gilt dabei als nicht
       passend, da nicht bestätigt werden kann, dass er geöffnet ist.
       ``now`` wird dafür benötigt; ist ``nur_geoeffnet`` gesetzt und

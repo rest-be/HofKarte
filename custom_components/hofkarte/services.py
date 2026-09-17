@@ -10,13 +10,13 @@ Home Assistant stellt mit der eingebauten Action
 bereit, coordinator-basierte Entities (wie alle HofKarte-Entities, siehe
 ``entity.py``) gezielt zu aktualisieren. Eine eigene
 „Hofladen-Daten aktualisieren“-Action würde dies nur unnötig
-duplizieren und wird daher bewusst **nicht** implementiert (Regeln
-dieser Einheit: „Keine Actions bauen, die ... unnötig duplizieren“).
+duplizieren und wird daher bewusst **nicht** implementiert (Grundsatz:
+„Keine Actions bauen, die ... unnötig duplizieren“).
 
 Analog wird auf separate Actions je Filterdimension (Angebot,
 Zahlungsart) verzichtet – eine einzige, klar strukturierte Such-Action
-mit mehreren optionalen, UND-verknüpften Filterparametern deckt alle in
-der Einheit genannten Fälle ab, ohne naheliegend redundanten Code zu
+mit mehreren optionalen, UND-verknüpften Filterparametern deckt alle
+genannten Fälle ab, ohne naheliegend redundanten Code zu
 erzeugen.
 """
 
@@ -56,7 +56,7 @@ def _get_coordinator(hass: HomeAssistant) -> HofKarteUpdateCoordinator:
     """Den (einzigen) HofKarte-Coordinator ermitteln.
 
     HofKarte ist als Single-Instance-Integration ausgelegt (siehe
-    Einheit 2); der Zugriff über den einzigen Eintrag ist daher
+    ``config_flow.py``); der Zugriff über den einzigen Eintrag ist daher
     eindeutig – analog zu ``management._get_coordinator``.
     """
     entries = list(hass.data.get(DOMAIN, {}).values())

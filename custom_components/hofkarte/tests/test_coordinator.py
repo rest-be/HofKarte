@@ -181,7 +181,7 @@ async def test_add_hofladen_not_supported_by_read_only_provider(
 
 
 # ---------------------------------------------------------------------------
-# async_update_hofladen_sortiment (Ergänzung zu Einheit 8: User Editierbar)
+# async_update_hofladen_sortiment (Sortiment nutzereditierbar)
 # ---------------------------------------------------------------------------
 
 
@@ -330,7 +330,7 @@ async def test_update_sortiment_nicht_unterstuetzt_bei_read_only_provider(
 
 
 # ---------------------------------------------------------------------------
-# async_save_hofladen (Einheit 12: Kapselung für management.py)
+# async_save_hofladen (Kapselung für management.py)
 # ---------------------------------------------------------------------------
 
 
@@ -412,7 +412,7 @@ async def test_save_hofladen_nicht_unterstuetzt_bei_read_only_provider(
 
 
 # ---------------------------------------------------------------------------
-# async_delete_hofladen (Einheit 12: Kapselung für management.py)
+# async_delete_hofladen (Kapselung für management.py)
 # ---------------------------------------------------------------------------
 
 
@@ -453,7 +453,7 @@ async def test_delete_hofladen_nicht_unterstuetzt_bei_read_only_provider(
 
 
 # ---------------------------------------------------------------------------
-# Diagnostics-Unterstützung (Einheit 12)
+# Diagnostics-Unterstützung
 # ---------------------------------------------------------------------------
 
 

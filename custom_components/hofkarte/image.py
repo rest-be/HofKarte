@@ -1,7 +1,7 @@
 """Image Entity für das Hauptbild eines Hofladens.
 
 Nutzt Home Assistants natives ``image``-Entity-Platform
-(Architekturentscheid, Einheit 11): Nur eine echte Image-Entity wird von
+(Architekturentscheid): Nur eine echte Image-Entity wird von
 Home-Assistant-Dashboards automatisch als Bild dargestellt (Picture-Card,
 Bildvorschau in der Entity-Liste, ``entity_picture``) – ein beliebiges
 Attribut mit einer URL würde das nicht tun.
@@ -12,7 +12,7 @@ URL-Validierung und Hauptbild-Ermittlung erfolgen ausschliesslich in
 Home Assistants ``ImageEntity`` kümmert sich über ihren eigenen,
 bereits vorhandenen Proxy-Mechanismus (``/api/image_proxy/...``) um das
 Abrufen und Zwischenspeichern der Bild-Bytes; es wird bewusst keine
-eigene Fetch-/Caching-Pipeline implementiert (Regeln dieser Einheit:
+eigene Fetch-/Caching-Pipeline implementiert (Grundsatz:
 „keine unnötige lokale Bildkopie erzeugen“).
 """
 
@@ -123,10 +123,10 @@ class HofKarteHauptbildImage(HofKarteEntity, ImageEntity):
         """Weitere (sichere) Bilder ausser dem Hauptbild.
 
         Home Assistant kennt keine native Mehrbild-/Galerie-Darstellung
-        pro Entity (Grenzen dieser Einheit: „Keine React-Galerie“).
-        Weitere Bilder werden daher – analog zu den Sortiment-Attributen
-        aus Einheit 8 – als kompakte Liste an dieser einen Entity
-        bereitgestellt statt als eigene Entities.
+        pro Entity. Weitere Bilder werden daher – analog zu den
+        Sortiment-Attributen (siehe ``attributes.py``) – als kompakte
+        Liste an dieser einen Entity bereitgestellt statt als eigene
+        Entities.
         """
         hofladen = self.hofladen
         if hofladen is None:

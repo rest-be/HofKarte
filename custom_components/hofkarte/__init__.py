@@ -3,7 +3,7 @@
 Die Einrichtung erfolgt ausschliesslich über den Config Flow (siehe
 ``config_flow.py``). Eine YAML-Konfiguration ist nicht vorgesehen.
 
-Diese Einheit richtet zusätzlich zu den Devices (Einheit 5) die
+Dieses Modul richtet zusätzlich zu den Devices (siehe ``device.py``) die
 Hofladen-Entities (Binary Sensor „Geöffnet“, Sensoren „Nächste
 Öffnung“/„Nächste Schliessung“) über die Plattformen ``binary_sensor``
 und ``sensor`` ein.
