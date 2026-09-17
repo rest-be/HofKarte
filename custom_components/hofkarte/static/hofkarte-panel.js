@@ -431,6 +431,7 @@ class HofkartePanel extends HTMLElement {
       .top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
       .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:20px}
       .card{background:var(--ha-card-background,var(--card-background-color));border-radius:12px;padding:16px;box-shadow:var(--ha-card-box-shadow,0 1px 3px #0002)}
+      form > section.card{margin-bottom:20px}
       .card h2{margin-top:0}
       .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
       button{border:0;border-radius:8px;padding:9px 14px;background:var(--primary-color);color:var(--text-primary-color,#fff);cursor:pointer;font-size:.95em}
@@ -459,6 +460,8 @@ class HofkartePanel extends HTMLElement {
       .day-mode{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px;font-size:.9em}
       .day-mode label{display:flex;align-items:center;gap:5px;margin:0;font-weight:normal}
       .interval-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin:6px 0}
+      .interval-row input[type=time]{max-width:140px}
+      .special input[type=time]{max-width:140px}
       .special{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin:8px 0}
       @media(max-width:700px){.special{grid-template-columns:1fr 1fr}}
       .notice{padding:10px;margin:12px 0;border-radius:8px;background:var(--info-color,#2196f3);color:white}
@@ -634,7 +637,7 @@ class HofkartePanel extends HTMLElement {
           <div class="fields">
             <div class="field-row">${this.input("Name", "name", d.name, true)}</div>
             <div class="field-row">${this.input("Beschreibung", "beschreibung", d.beschreibung || "")}</div>
-            <div class="field-row">${this.input("Bemerkung", "bemerkung", d.bemerkung || "")}</div>
+            ${this.area("Bemerkung", "bemerkung", d.bemerkung || "")}
           </div>
         </section>
 
@@ -644,13 +647,6 @@ class HofkartePanel extends HTMLElement {
             <div class="field-row">${this.input("Adresse", "adresse", d.adresse || "")}</div>
             <div class="field-row two">${this.input("PLZ", "plz", d.plz || "")}${this.input("Ort", "ort", d.ort || "")}</div>
             <div class="field-row">${this.input("Land", "land", d.land || "")}</div>
-          </div>
-        </section>
-
-        <section class=card>
-          <h2>Kontakt &amp; Webseite</h2>
-          <div class="fields">
-            <div class="field-row">${this.input("Webseite", "website", d.website || "")}</div>
           </div>
         </section>
 
@@ -668,6 +664,13 @@ class HofkartePanel extends HTMLElement {
         </section>
 
         <section class=card>
+          <h2>Kontakt &amp; Webseite</h2>
+          <div class="fields">
+            <div class="field-row">${this.input("Webseite", "website", d.website || "")}</div>
+          </div>
+        </section>
+
+        <section class=card>
           <h2>Öffnungszeiten</h2>
           ${this.openingHoursEditor(d.oeffnungszeiten || [])}
           <h3>Sonderöffnungszeiten</h3>
@@ -676,7 +679,7 @@ class HofkartePanel extends HTMLElement {
         </section>
 
         <section class=card>
-          <h2>Angebote und Eigenschaften</h2>
+          <h2>Angebote und Zahlungsarten</h2>
           <p class=muted>Ein Eintrag pro Zeile.</p>
           ${this.area("Angebote", "angebote", angeboteText)}
           ${this.area("Zahlungsarten", "zahlungsarten", text("zahlungsarten"))}

@@ -8,6 +8,28 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- **Ansicht „Hofladen bearbeiten“ neu geordnet und gestaltet** – rein
+  visuell, keine funktionalen oder datenbezogenen Änderungen:
+  - Reihenfolge der Gruppierungen angepasst: Allgemeine Informationen →
+    Adresse → Standort/Koordinaten → Kontakt & Webseite →
+    Öffnungszeiten → Angebote und Zahlungsarten → Bilder (Standort/
+    Koordinaten steht jetzt vor Kontakt & Webseite statt danach).
+  - Sektion „Angebote und Eigenschaften“ in **„Angebote und
+    Zahlungsarten“** umbenannt (passend zum tatsächlichen Inhalt, seit
+    Verkaufsarten/Merkmale entfernt wurden); Handbuch-Kapitel 8
+    entsprechend mitbenannt.
+  - Feld „Bemerkung“ ist jetzt ein Textfeld mit derselben Höhe wie
+    „Angebote“/„Zahlungsarten“ (zuvor ein einzeiliges Eingabefeld).
+  - Die Zeitfelder „Von“/„Bis“ (Öffnungszeiten) sowie „Beginn“/„Ende“
+    (Sonderöffnungszeiten) sind schmaler gestaltet (`max-width: 140px`)
+    statt die volle verfügbare Breite auszufüllen.
+  - Sichtbarer Abstand zwischen den Gruppierungen ergänzt, analog zur
+    bereits bestehenden Detailansicht (`margin-bottom: 20px`).
+
+## [0.18.0] - Unveröffentlicht
+
 ### Behoben
 
 - **Kritischer Bug – Geolocation-Button meldete fälschlich

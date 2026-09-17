@@ -18,7 +18,7 @@ für die Entwickler-/Architekturdokumentation siehe
 5. [Entities](#5-entities)
 6. [Öffnungszeiten](#6-öffnungszeiten)
 7. [Standort und Entfernung](#7-standort-und-entfernung)
-8. [Angebote und Eigenschaften](#8-angebote-und-eigenschaften)
+8. [Angebote und Zahlungsarten](#8-angebote-und-zahlungsarten)
 9. [Actions und Automationen](#9-actions-und-automationen)
 10. [Dashboard-Beispiele](#10-dashboard-beispiele)
 11. [Fehlerbehebung](#11-fehlerbehebung)
@@ -300,7 +300,7 @@ eines Freigabe-Dialogs – das ist eine grundsätzliche
 Browser-Einschränkung, keine Fehlfunktion von HofKarte. Abhilfe:
 Home Assistant über HTTPS oder über `localhost` aufrufen.
 
-## 8. Angebote und Eigenschaften
+## 8. Angebote und Zahlungsarten
 
 Jeder Hofladen kann in zwei Fachbereichen gepflegt werden (über die
 Verwaltungsoberfläche, Kapitel 4):
