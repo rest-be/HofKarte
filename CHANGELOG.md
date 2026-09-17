@@ -8,6 +8,71 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Kritischer Bug – Geolocation-Button meldete fälschlich
+  „Standortzugriff wurde verweigert“:** Browser gewähren
+  Geolocation-Zugriff ausschliesslich in einem sicheren Kontext (HTTPS
+  oder `localhost`). Wird Home Assistant wie im Heimnetz üblich über
+  einfaches `http://` aufgerufen (z. B. `http://192.168.1.50:8123`),
+  lehnt der Browser den Zugriff automatisch als `PERMISSION_DENIED` ab
+  – **ohne jemals einen Freigabe-Dialog anzuzeigen**. Das erschien
+  fälschlich als tatsächliche Ablehnung, obwohl die Nutzerin/der
+  Nutzer nie gefragt wurde. Behoben durch eine explizite
+  `window.isSecureContext`-Prüfung in `ermittleGeraeteEntfernung()`
+  (`hofkarte-panel.js`) **vor** dem eigentlichen Geolocation-Aufruf,
+  mit eigener, klar unterscheidbarer Fehlermeldung („Standortermittlung
+  erfordert eine sichere Verbindung (HTTPS) oder den Aufruf über
+  localhost.“).
+
+### Geändert
+
+- **„Angebote“ ohne Gruppen:** Das erst kürzlich eingeführte
+  `gruppen`-Feld an `models.Angebot` wurde wieder entfernt – ein
+  Angebot ist jetzt wieder ausschliesslich `id`/`name`, eine schlichte
+  Namensliste ohne Gruppierung. Betrifft `models.py`, `parsing.py`
+  (Migration vereinfacht: Kategorien und Produkte werden seit dieser
+  Änderung gleichermassen zu flachen Angebot-Einträgen, eine
+  `kategorie_ids`-Auflösung findet nicht mehr statt), `attributes.py`
+  (Attribut `angebote` jetzt eine einfache Namensliste),
+  `hofkarte-panel.js` (Editor-Feld ohne `Name|Gruppe`-Syntax,
+  Detailansicht als flache Liste statt Gruppierung). Bereits
+  gespeicherte Angebote mit `gruppen`-Feld werden beim Einlesen
+  fehlerfrei verarbeitet, das Feld aber ignoriert (kein Fehler, kein
+  Absturz, die Information geht bewusst verloren).
+- **„Verkaufsarten“ und „Merkmale“ ersatzlos entfernt:** Die
+  Fachbereiche `Verkaufsart` und `Merkmal` existieren nicht mehr.
+  Betrifft `models.py`, `parsing.py`, `attributes.py`, `search.py`
+  (Filter-Parameter `verkaufsart`/`merkmal` entfernt), `services.py` +
+  `strings.json`/`translations/{en,de}.json`/`services.yaml`
+  (Action-Parameter der `hofkarte.hoflaeden_suchen`-Action entfernt –
+  bewusste, dokumentierte Ausnahme von „keine Breaking Changes“),
+  `coordinator.py` (`async_update_hofladen_sortiment`: Parameter
+  entfernt), `const.py`/`sortiment_katalog.py` (Vorschlagskataloge
+  entfernt; `STANDARD_ZAHLUNGSARTEN` bleibt unverändert bestehen),
+  `hofkarte-panel.js` (Editor-Felder und Detailansicht-Abschnitte
+  entfernt). Bereits gespeicherte Daten mit diesen Feldern werden beim
+  Einlesen fehlerfrei verarbeitet, die Felder aber nicht mehr
+  ausgewertet.
+
+### Hinzugefügt
+
+- **Neues Feld „Bemerkung“** (`models.Hofladen.bemerkung`): optionales
+  Freitextfeld auf Hofladen-Ebene, unabhängig von `beschreibung` –
+  gedacht für interne Notizen. Editierbar im Bearbeitungsformular
+  (Sektion „Allgemeine Informationen“), sichtbar in der Detailansicht
+  in einem eigenen Abschnitt (kein leerer Bereich, wenn nicht gesetzt).
+  Bewusst auf Hofladen-Ebene angesiedelt statt je Angebot, da Angebote
+  seit obiger Vereinfachung keine weitere Struktur mehr tragen.
+
+### Ausdrücklich unverändert
+
+- Bilder-Upload, serverseitige Entfernungs-Entity, Zahlungsarten,
+  Öffnungszeiten, WebSocket-Vertrag der Verwaltungsoberfläche
+  (`hofkarte/management/*`): keine Änderungen.
+
+## [0.17.0] - Unveröffentlicht
+
 ### Hinzugefügt
 
 - **Entfernung vom aktuellen Gerät:** Neuer Button „📍 Entfernung von

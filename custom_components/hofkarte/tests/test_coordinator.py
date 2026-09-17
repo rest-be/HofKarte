@@ -192,7 +192,7 @@ async def test_update_sortiment_aendert_gewaehltes_feld(hass: HomeAssistant) -> 
             {
                 "id": "hof-1",
                 "name": "Hofladen Eins",
-                "merkmale": [{"id": "bio", "name": "Bio"}],
+                "angebote": [{"id": "honig", "name": "Honig"}],
                 "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
             }
         ]
@@ -209,12 +209,12 @@ async def test_update_sortiment_aendert_gewaehltes_feld(hass: HomeAssistant) -> 
     )
 
     assert [z.name for z in ergebnis.zahlungsarten] == ["Bargeld", "TWINT"]
-    assert [m.name for m in ergebnis.merkmale] == ["Bio"]  # unverändert
+    assert [a.name for a in ergebnis.angebote] == ["Honig"]  # unverändert
 
     # Auch im Coordinator (nach Refresh) muss die Änderung sichtbar sein.
     aktualisiert = coordinator.data["hof-1"]
     assert [z.name for z in aktualisiert.zahlungsarten] == ["Bargeld", "TWINT"]
-    assert [m.name for m in aktualisiert.merkmale] == ["Bio"]
+    assert [a.name for a in aktualisiert.angebote] == ["Honig"]
 
 
 async def test_update_sortiment_mehrere_fachbereiche_gleichzeitig(
@@ -229,14 +229,12 @@ async def test_update_sortiment_mehrere_fachbereiche_gleichzeitig(
 
     ergebnis = await coordinator.async_update_hofladen_sortiment(
         "hof-1",
-        angebote=[{"id": "kartoffeln", "name": "Kartoffeln", "gruppen": ["Gemüse"]}],
-        verkaufsarten=[{"id": "hofladen", "name": "Hofladen"}],
-        merkmale=[{"id": "bio", "name": "Bio"}],
+        angebote=[{"id": "kartoffeln", "name": "Kartoffeln"}],
+        zahlungsarten=[{"id": "bar", "name": "Bargeld"}],
     )
 
     assert [a.name for a in ergebnis.angebote] == ["Kartoffeln"]
-    assert [v.name for v in ergebnis.verkaufsarten] == ["Hofladen"]
-    assert [m.name for m in ergebnis.merkmale] == ["Bio"]
+    assert [z.name for z in ergebnis.zahlungsarten] == ["Bargeld"]
 
 
 async def test_update_sortiment_leere_liste_leert_feld(hass: HomeAssistant) -> None:
@@ -246,7 +244,7 @@ async def test_update_sortiment_leere_liste_leert_feld(hass: HomeAssistant) -> N
             {
                 "id": "hof-1",
                 "name": "Hofladen Eins",
-                "merkmale": [{"id": "bio", "name": "Bio"}],
+                "angebote": [{"id": "honig", "name": "Honig"}],
             }
         ]
     )
@@ -254,10 +252,10 @@ async def test_update_sortiment_leere_liste_leert_feld(hass: HomeAssistant) -> N
     await coordinator.async_config_entry_first_refresh()
 
     ergebnis = await coordinator.async_update_hofladen_sortiment(
-        "hof-1", merkmale=[]
+        "hof-1", angebote=[]
     )
 
-    assert ergebnis.merkmale == ()
+    assert ergebnis.angebote == ()
 
 
 async def test_update_sortiment_ohne_parameter_aendert_nichts(
@@ -269,7 +267,7 @@ async def test_update_sortiment_ohne_parameter_aendert_nichts(
             {
                 "id": "hof-1",
                 "name": "Hofladen Eins",
-                "merkmale": [{"id": "bio", "name": "Bio"}],
+                "angebote": [{"id": "honig", "name": "Honig"}],
             }
         ]
     )
@@ -278,7 +276,7 @@ async def test_update_sortiment_ohne_parameter_aendert_nichts(
 
     ergebnis = await coordinator.async_update_hofladen_sortiment("hof-1")
 
-    assert [m.name for m in ergebnis.merkmale] == ["Bio"]
+    assert [a.name for a in ergebnis.angebote] == ["Honig"]
 
 
 async def test_update_sortiment_unbekannte_id_wirft_fehler(
@@ -291,7 +289,7 @@ async def test_update_sortiment_unbekannte_id_wirft_fehler(
 
     with pytest.raises(HofladenNotFoundError):
         await coordinator.async_update_hofladen_sortiment(
-            "unbekannt", merkmale=[{"id": "bio", "name": "Bio"}]
+            "unbekannt", angebote=[{"id": "honig", "name": "Honig"}]
         )
 
 
@@ -308,13 +306,13 @@ async def test_update_sortiment_ungueltige_daten_wirft_fehler_und_aendert_nichts
 
     with pytest.raises(HofladenValidationError):
         await coordinator.async_update_hofladen_sortiment(
-            "hof-1", merkmale=[{"id": "bio"}]  # 'name' fehlt
+            "hof-1", angebote=[{"id": "honig"}]  # 'name' fehlt
         )
 
     # Der Datensatz darf durch den fehlgeschlagenen Versuch nicht verändert
     # worden sein.
     unveraendert = coordinator.data["hof-1"]
-    assert unveraendert.merkmale == ()
+    assert unveraendert.angebote == ()
 
 
 async def test_update_sortiment_nicht_unterstuetzt_bei_read_only_provider(
@@ -327,7 +325,7 @@ async def test_update_sortiment_nicht_unterstuetzt_bei_read_only_provider(
 
     with pytest.raises(NotImplementedError):
         await coordinator.async_update_hofladen_sortiment(
-            "hof-1", merkmale=[{"id": "bio", "name": "Bio"}]
+            "hof-1", angebote=[{"id": "honig", "name": "Honig"}]
         )
 
 

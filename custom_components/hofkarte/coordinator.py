@@ -183,18 +183,18 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
         *,
         angebote: list[dict[str, Any]] | None = None,
         zahlungsarten: list[dict[str, Any]] | None = None,
-        verkaufsarten: list[dict[str, Any]] | None = None,
-        merkmale: list[dict[str, Any]] | None = None,
     ) -> Hofladen:
         """Sortiment und Eigenschaften eines bestehenden Hofladens durch
         die Nutzerin/den Nutzer bearbeiten.
 
-        Bewusst auf genau diese vier Fachbereiche beschränkt (Angebote,
-        Zahlungsarten, Verkaufsarten, Merkmale) – andere Felder eines
-        Hofladens (Name, Adresse, Öffnungszeiten, ...) werden über diese
-        Funktion nicht verändert. „Angebote“ ersetzt seit der
-        Zusammenlegung von Kategorien und Produkten (siehe CHANGELOG)
-        die früheren, getrennten Parameter ``kategorien``/``produkte``.
+        Bewusst auf genau diese zwei Fachbereiche beschränkt (Angebote,
+        Zahlungsarten) – andere Felder eines Hofladens (Name, Adresse,
+        Öffnungszeiten, ...) werden über diese Funktion nicht verändert.
+        „Angebote“ ersetzt seit der Zusammenlegung von Kategorien und
+        Produkten (siehe CHANGELOG) die früheren, getrennten Parameter
+        ``kategorien``/``produkte``. Die früheren Fachbereiche
+        „Verkaufsarten“ und „Merkmale“ wurden ersatzlos entfernt (siehe
+        CHANGELOG) – entsprechende Parameter existieren daher nicht mehr.
 
         Jeder Parameter, der nicht ``None`` ist, ersetzt die entsprechende
         Sammlung vollständig; ``None`` bedeutet „unverändert lassen“. Um
@@ -237,10 +237,6 @@ class HofKarteUpdateCoordinator(DataUpdateCoordinator[dict[str, Hofladen]]):
             updates["angebote"] = angebote
         if zahlungsarten is not None:
             updates["zahlungsarten"] = zahlungsarten
-        if verkaufsarten is not None:
-            updates["verkaufsarten"] = verkaufsarten
-        if merkmale is not None:
-            updates["merkmale"] = merkmale
 
         if not updates:
             # Nichts zu ändern: aktuellen, bereits validen Stand liefern.

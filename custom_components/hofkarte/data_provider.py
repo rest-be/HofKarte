@@ -18,8 +18,8 @@ Testdaten-Implementierung ohne Persistenz
 
 ``MutableHofladenDataProvider`` deckt sowohl das Hinzufügen neuer
 Hofläden als auch das teilweise Aktualisieren bestehender Hofläden ab
-(z. B. um die nutzereditierbaren Fachbereiche aus Einheit 8 – Kategorien,
-Produkte, Zahlungsarten, Verkaufsarten, Merkmale – zu ändern).
+(z. B. um die nutzereditierbaren Fachbereiche Angebote und
+Zahlungsarten zu ändern, siehe CHANGELOG).
 """
 
 from __future__ import annotations

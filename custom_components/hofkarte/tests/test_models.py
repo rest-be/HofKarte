@@ -19,14 +19,13 @@ def test_hofladen_minimal_defaults() -> None:
     assert hofladen.id == "hof-1"
     assert hofladen.name == "Hofladen Müller"
     assert hofladen.beschreibung is None
+    assert hofladen.bemerkung is None
     assert hofladen.latitude is None
     assert hofladen.longitude is None
     assert hofladen.oeffnungszeiten == ()
     assert hofladen.sonderoeffnungszeiten == ()
     assert hofladen.angebote == ()
     assert hofladen.zahlungsarten == ()
-    assert hofladen.verkaufsarten == ()
-    assert hofladen.merkmale == ()
     assert hofladen.bilder == ()
 
 
@@ -62,13 +61,26 @@ def test_sonderoeffnungszeit_geschlossen_ohne_uhrzeiten() -> None:
 
 def test_angebot_equality_by_value() -> None:
     """Frozen Dataclasses vergleichen nach Wert, nicht nach Identität."""
-    assert Angebot(id="kartoffeln", name="Kartoffeln", gruppen=("Gemüse",)) == Angebot(
-        id="kartoffeln", name="Kartoffeln", gruppen=("Gemüse",)
+    assert Angebot(id="kartoffeln", name="Kartoffeln") == Angebot(
+        id="kartoffeln", name="Kartoffeln"
     )
 
 
-def test_angebot_default_gruppen_ist_leer() -> None:
-    """Ein Angebot ohne Gruppenzuordnung muss gültig sein."""
-    angebot = Angebot(id="honig", name="Honig")
+def test_bemerkung_ist_optional() -> None:
+    """Ein Hofladen ohne Bemerkung muss gültig sein (Default None)."""
+    hofladen = Hofladen(id="hof-2", name="Hofladen")
 
-    assert angebot.gruppen == ()
+    assert hofladen.bemerkung is None
+
+
+def test_bemerkung_und_beschreibung_sind_unabhaengige_felder() -> None:
+    """Bemerkung ist ein eigenständiges Feld, unabhängig von Beschreibung."""
+    hofladen = Hofladen(
+        id="hof-3",
+        name="Hofladen",
+        beschreibung="Öffentlich sichtbare Beschreibung.",
+        bemerkung="Interne Notiz, nicht für die Öffentlichkeit gedacht.",
+    )
+
+    assert hofladen.beschreibung == "Öffentlich sichtbare Beschreibung."
+    assert hofladen.bemerkung == "Interne Notiz, nicht für die Öffentlichkeit gedacht."

@@ -27,8 +27,8 @@ Fehlerbehebung, Datenschutz und Support in einem Dokument.
 ## Zweck
 
 HofKarte verwaltet Hofläden lokal in Home Assistant: Stammdaten,
-Öffnungszeiten, Sortiment (Angebote, Zahlungsarten, Verkaufsarten,
-Merkmale) und Bilder. Jeder Hofladen erscheint als Device
+Öffnungszeiten, Sortiment (Angebote, Zahlungsarten) und Bilder. Jeder
+Hofladen erscheint als Device
 mit Entities für Öffnungsstatus, nächste Öffnung/Schliessung, Entfernung
 zum eigenen Zuhause und Hauptbild. Eine Home-Assistant-Action erlaubt
 das Durchsuchen und Filtern aus Automationen und Skripten heraus. Es
@@ -140,8 +140,11 @@ sichtbar). Dort können Administratoren:
 - reguläre und Sonderöffnungszeiten bearbeiten (pro Wochentag:
   Geschlossen / 24 Stunden geöffnet / Zeiten festlegen, mit beliebig
   vielen Intervallen),
-- Angebote (vormals getrennt: Kategorien/Produkte), Zahlungsarten,
-  Verkaufsarten und Merkmale bearbeiten,
+- Angebote (vormals getrennt: Kategorien/Produkte, seither zusätzlich
+  auf eine schlichte Namensliste ohne Gruppierung vereinfacht) und
+  Zahlungsarten bearbeiten,
+- eine optionale Bemerkung erfassen (freies Textfeld, unabhängig von
+  der Beschreibung),
 - Hofläden kontrolliert löschen.
 
 Zusätzlich gibt es eine **read-only Detailansicht** je Hofladen
@@ -262,32 +265,33 @@ seltenen Grenzfälle).
 ### Sortiment und Eigenschaften
 
 **Architekturentscheid:** Die früher getrennten Fachbereiche
-„Kategorien“ und „Produkte“ wurden zu einem einheitlichen Fachbereich
-**„Angebote“** zusammengelegt. Ein Angebot ist ein konkreter Artikel
-bzw. eine Leistung mit optional einer oder mehreren frei formulierten
-Gruppen-Bezeichnungen (vormals „Kategorie“) direkt am Angebot – ohne
-separat gepflegte, über IDs referenzierte Kategorienliste. Bestehende,
-im alten Format gespeicherte Daten werden beim Einlesen automatisch und
-verlustfrei migriert (siehe „Unter der Haube“ unten); auch eine
-Kategorie ganz ohne zugeordnete Produkte bleibt dabei als eigenständiges
-Angebot mit leeren Gruppen erhalten.
+„Kategorien“ und „Produkte“ wurden zunächst zu einem gemeinsamen
+Fachbereich „Angebote“ zusammengelegt und danach – nach weiterer
+Vereinfachung – auf eine **schlichte Namensliste ohne Gruppierung**
+reduziert: Ein Angebot ist heute nur noch ein Name (z. B.
+„Kartoffeln“), ohne separate Kategorien-/Gruppen-Zuordnung. Ein
+zwischenzeitlich eingeführtes Gruppen-Feld wurde wieder entfernt, da
+der Mehrwert der Gruppierung den zusätzlichen Pflegeaufwand nicht
+rechtfertigte. Bestehende, im alten Format gespeicherte Daten
+(getrennte „Kategorien“/„Produkte“) werden beim Einlesen automatisch zu
+flachen Angeboten migriert (siehe „Unter der Haube“ unten); ein
+eventuell noch vorhandenes Gruppen-Feld wird dabei ignoriert.
 
-Angebote, Zahlungsarten, Verkaufsarten und Merkmale sind fachlich keine
-Messwerte und rechtfertigen keine eigenen Sensoren. Sie werden daher
-als Zusatzattribute **ausschliesslich** am Binary Sensor „Geöffnet“
-bereitgestellt (`custom_components/hofkarte/attributes.py`). Diese vier
-Fachbereiche können pro Hofladen über die Verwaltungsseite bearbeitet
-werden.
+**Ebenfalls entfernt:** Die früheren Fachbereiche „Verkaufsarten“ und
+„Merkmale“ existieren nicht mehr. Bestehende Daten mit diesen Feldern
+werden beim Einlesen weiterhin fehlerfrei verarbeitet, die Felder aber
+nicht mehr angezeigt oder durchsucht.
+
+Angebote und Zahlungsarten sind fachlich keine Messwerte und
+rechtfertigen keine eigenen Sensoren. Sie werden daher als
+Zusatzattribute **ausschliesslich** am Binary Sensor „Geöffnet“
+bereitgestellt (`custom_components/hofkarte/attributes.py`). Diese
+beiden Fachbereiche können pro Hofladen über die Verwaltungsseite
+bearbeitet werden.
 
 ```yaml
-angebote:
-  - name: "Kartoffeln"
-    gruppen: ["Gemüse"]
-  - name: "Honig"
-    gruppen: []
+angebote: ["Kartoffeln", "Honig"]
 zahlungsarten: ["Bargeld", "TWINT"]
-verkaufsarten: ["Ab-Hof-Verkauf"]
-merkmale: ["Bio"]
 ```
 
 - Fehlende Sammlungen ergeben stets eine leere Liste, nie einen
@@ -321,6 +325,14 @@ aktuellen Gerät berechnet (dieselbe Haversine-Formel, in
 `hofkarte-panel.js` dupliziert). Der Gerätestandort wird dabei
 ausschliesslich lokal im Browser verwendet, nicht gespeichert und nicht
 an das Backend übertragen.
+
+**Wichtig – sichere Verbindung erforderlich:** Browser gewähren
+Geolocation-Zugriff ausschliesslich in einem „sicheren Kontext“
+(HTTPS oder `localhost`). Wird Home Assistant wie im Heimnetz üblich
+über einfaches `http://` aufgerufen (z. B. `http://192.168.1.50:8123`),
+zeigt der Button die Meldung „Standortermittlung erfordert eine sichere
+Verbindung“ – das ist keine Fehlfunktion, sondern eine grundsätzliche
+Browser-Einschränkung, die durch HofKarte nicht umgangen werden kann.
 
 ### Bilder
 
@@ -370,10 +382,8 @@ Für Automationen, Skripte und Dashboards steht die Action
 | Parameter        | Typ     | Bedeutung                                              |
 |-------------------|---------|----------------------------------------------------------|
 | `suchbegriff`     | Text    | Freitextsuche (Gross-/Kleinschreibung egal) über Name, Beschreibung, Ort |
-| `angebot`         | Text    | Exakter Name eines Angebots **oder** einer seiner Gruppen |
-| `verkaufsart`     | Text    | Exakter Name einer Verkaufsart                            |
+| `angebot`         | Text    | Exakter Name eines Angebots                              |
 | `zahlungsart`     | Text    | Exakter Name einer Zahlungsart                            |
-| `merkmal`         | Text    | Exakter Name eines Merkmals                               |
 | `nur_geoeffnet`   | Bool    | Nur aktuell geöffnete Hofläden                            |
 
 **Rückgabedaten** (`response_variable` in Skripten/Automationen
@@ -415,27 +425,27 @@ action:
       message: "Hofladen Müller hat gerade geöffnet."
 ```
 
-**Abendliche Ansage geöffneter Bio-Hofläden in der Nähe:**
+**Abendliche Ansage geöffneter Hofläden mit Kartoffeln in der Nähe:**
 
 ```yaml
-alias: "Bio-Hofläden Abendübersicht"
+alias: "Kartoffel-Hofläden Abendübersicht"
 trigger:
   - trigger: time
     at: "17:30:00"
 action:
   - action: hofkarte.hoflaeden_suchen
     data:
-      merkmal: Bio
+      angebot: Kartoffeln
       nur_geoeffnet: true
     response_variable: treffer
   - action: notify.mobile_app
     data:
       message: >-
         {% if treffer.anzahl_treffer > 0 %}
-          {{ treffer.anzahl_treffer }} Bio-Hofladen/-läden noch geöffnet:
+          {{ treffer.anzahl_treffer }} Hofladen/-läden mit Kartoffeln noch geöffnet:
           {{ treffer.hoflaeden | map(attribute='name') | join(', ') }}
         {% else %}
-          Aktuell ist kein Bio-Hofladen geöffnet.
+          Aktuell ist kein Hofladen mit Kartoffeln geöffnet.
         {% endif %}
 ```
 
@@ -454,10 +464,10 @@ nötig.
 
 Intern verwaltet HofKarte einen Hofladen als typisierte, unveränderliche
 Datenstruktur (`custom_components/hofkarte/models.py`) mit u. a.
-Stammdaten (Name, Beschreibung, Adresse, PLZ/Ort, Land, Koordinaten,
-Webseite), regelmässigen Öffnungszeiten und datumsbezogenen
-Sonderöffnungszeiten, Angeboten/Zahlungsarten/Verkaufsarten/Merkmalen
-sowie optionalen Bildern. Rohdaten werden über
+Stammdaten (Name, Beschreibung, Bemerkung, Adresse, PLZ/Ort, Land,
+Koordinaten, Webseite), regelmässigen Öffnungszeiten und
+datumsbezogenen Sonderöffnungszeiten, Angeboten/Zahlungsarten sowie
+optionalen Bildern. Rohdaten werden über
 `custom_components/hofkarte/parsing.py` in dieses Modell überführt und
 dabei validiert (`HofladenValidationError` bei ungültigen
 Pflichtfeldern; fehlende optionale Felder werden robust auf leere
@@ -510,10 +520,10 @@ Für programmatischen Zugriff (z. B. eigene Skripte) stehen
 `async_delete_hofladen` zur Verfügung; alle validieren Fail-Fast und
 lösen danach einen Refresh aus. `custom_components/hofkarte/sortiment_katalog.py`
 bietet ausserdem vorgefertigte, gültige Rohdaten für gängige
-Zahlungsarten, Verkaufsarten und Merkmale (Bargeld/Debitkarte/
-Kreditkarte/TWINT, Hofladen/Selbstbedienung/Verkaufsautomat/
-Ab-Hof-Verkauf, Bio/eigener Anbau/Parkplatz/barrierefrei) – ein
-Vorschlagskatalog, keine Einschränkung.
+Zahlungsarten (Bargeld/Debitkarte/Kreditkarte/TWINT) – ein
+Vorschlagskatalog, keine Einschränkung. Für „Angebote“ gibt es bewusst
+keinen Vorschlagskatalog, da es sich um frei formulierte Produktnamen
+ohne sinnvolle Standardwerte handelt.
 
 ## Diagnostics, Fehlerbehandlung und Qualität
 

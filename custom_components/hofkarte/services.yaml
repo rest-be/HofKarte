@@ -8,16 +8,8 @@ hoflaeden_suchen:
       example: "Kartoffeln"
       selector:
         text:
-    verkaufsart:
-      example: "Ab-Hof-Verkauf"
-      selector:
-        text:
     zahlungsart:
       example: "TWINT"
-      selector:
-        text:
-    merkmal:
-      example: "Bio"
       selector:
         text:
     nur_geoeffnet:

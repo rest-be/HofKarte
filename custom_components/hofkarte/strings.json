@@ -27,19 +27,11 @@
         },
         "angebot": {
           "name": "Offer",
-          "description": "Only farm shops with this exact offer name or group (e.g. product or category name)."
-        },
-        "verkaufsart": {
-          "name": "Type of sale",
-          "description": "Only farm shops with this exact type of sale (e.g. self-service)."
+          "description": "Only farm shops with this exact offer/product name."
         },
         "zahlungsart": {
           "name": "Payment method",
           "description": "Only farm shops accepting this exact payment method."
-        },
-        "merkmal": {
-          "name": "Feature",
-          "description": "Only farm shops with this exact feature (e.g. organic)."
         },
         "nur_geoeffnet": {
           "name": "Only currently open",

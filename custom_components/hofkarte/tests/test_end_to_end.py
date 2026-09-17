@@ -77,11 +77,9 @@ async def test_vollstaendiges_end_zu_end_szenario_mit_mehreren_hoflaeden(
                 {
                     "id": "kartoffeln",
                     "name": "Kartoffeln",
-                    "gruppen": ["Gemüse"],
                 }
             ],
             "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
-            "merkmale": [{"id": "bio", "name": "Bio"}],
         }
     )
     # Hofladen B: keine Öffnungszeiten hinterlegt (Status "unbekannt"),
@@ -149,8 +147,8 @@ async def test_vollstaendiges_end_zu_end_szenario_mit_mehreren_hoflaeden(
 
     # --- Angebote/Eigenschaften sehen (Sortiment-Attribute) ------------------
     attribute_a = hass.states.get(geoeffnet_a).attributes
-    assert attribute_a["angebote"] == [{"name": "Kartoffeln", "gruppen": ["Gemüse"]}]
-    assert attribute_a["merkmale"] == ["Bio"]
+    assert attribute_a["angebote"] == ["Kartoffeln"]
+    assert attribute_a["zahlungsarten"] == ["Bargeld"]
 
     # --- Entfernung prüfen -----------------------------------------------------
     hass.config.latitude = 46.9480  # Zuhause = exakt bei Hofladen A
@@ -171,7 +169,7 @@ async def test_vollstaendiges_end_zu_end_szenario_mit_mehreren_hoflaeden(
     treffer = await hass.services.async_call(
         DOMAIN,
         "hoflaeden_suchen",
-        {"angebot": "Gemüse"},
+        {"angebot": "Kartoffeln"},
         blocking=True,
         return_response=True,
     )

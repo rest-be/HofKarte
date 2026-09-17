@@ -1,12 +1,11 @@
 """Sortiment und Eigenschaften als Entity-Attribute.
 
-Angebote, Zahlungsarten, Verkaufsarten und Merkmale eines Hofladens sind
-fachlich keine Messwerte und rechtfertigen keine eigenen Entities
-(Regeln dieser Einheit: „Keine künstlichen Messwerte“, „Keine
-unnötigen Entities“). Stattdessen werden sie als ``extra_state_attributes``
-einer einzigen bestehenden Entity bereitgestellt (Binary Sensor
-„Geöffnet“, siehe ``binary_sensor.py``) statt auf mehrere Entities
-dupliziert zu werden.
+Angebote und Zahlungsarten eines Hofladens sind fachlich keine Messwerte
+und rechtfertigen keine eigenen Entities (Regeln dieser Einheit: „Keine
+künstlichen Messwerte“, „Keine unnötigen Entities“). Stattdessen werden
+sie als ``extra_state_attributes`` einer einzigen bestehenden Entity
+bereitgestellt (Binary Sensor „Geöffnet“, siehe ``binary_sensor.py``)
+statt auf mehrere Entities dupliziert zu werden.
 
 Dieses Modul ist die alleinige Stelle, die diese Rohdaten aus
 ``models.Hofladen`` in eine einfache, JSON-serialisierbare und stabile
@@ -14,10 +13,13 @@ Attributstruktur überführt (nur ``str``/``list``/``dict`` – keine
 dataclass-Instanzen direkt als State-Attribut).
 
 „Angebote“ ersetzt die früher getrennten Attribute ``kategorien`` und
-``produkte`` (siehe CHANGELOG, Zusammenlegung zu „Angebote“): ein
-Angebot trägt seine Gruppen-Zugehörigkeit (vormals „Kategorie“) direkt
-als einfache Textliste statt über eine separate, ID-referenzierte
-Kategorienliste.
+``produkte`` (siehe CHANGELOG, Zusammenlegung zu „Angebote“) und ist
+bewusst eine schlichte Liste von Namen ohne Gruppierung: ein zuvor
+eingeführtes ``gruppen``-Feld je Angebot wurde nach Rückmeldung wieder
+entfernt, da der Mehrwert der Gruppierung den zusätzlichen
+Pflegeaufwand nicht rechtfertigte (siehe CHANGELOG). Die Fachbereiche
+„Verkaufsarten“ und „Merkmale“ wurden aus demselben Grund ersatzlos
+entfernt; nur „Zahlungsarten“ bleibt neben „Angebote“ bestehen.
 """
 
 from __future__ import annotations
@@ -41,18 +43,6 @@ def _sortierte_namen(namen: list[str]) -> list[str]:
     return sorted(namen, key=str.casefold)
 
 
-def _angebot_eintraege(hofladen: Hofladen) -> list[dict[str, Any]]:
-    """Angebote inkl. ihrer Gruppen, alphabetisch nach Name sortiert."""
-    eintraege = [
-        {
-            "name": angebot.name,
-            "gruppen": _sortierte_namen(list(angebot.gruppen)),
-        }
-        for angebot in hofladen.angebote
-    ]
-    return sorted(eintraege, key=lambda eintrag: eintrag["name"].casefold())
-
-
 def build_sortiment_attributes(hofladen: Hofladen) -> dict[str, Any]:
     """Sortiment und Eigenschaften als stabile Attributstruktur.
 
@@ -62,14 +52,10 @@ def build_sortiment_attributes(hofladen: Hofladen) -> dict[str, Any]:
     stabile Struktur unabhängig vom Vollständigkeitsgrad der Daten.
     """
     return {
-        "angebote": _angebot_eintraege(hofladen),
+        "angebote": _sortierte_namen(
+            [angebot.name for angebot in hofladen.angebote]
+        ),
         "zahlungsarten": _sortierte_namen(
             [zahlungsart.name for zahlungsart in hofladen.zahlungsarten]
-        ),
-        "verkaufsarten": _sortierte_namen(
-            [verkaufsart.name for verkaufsart in hofladen.verkaufsarten]
-        ),
-        "merkmale": _sortierte_namen(
-            [merkmal.name for merkmal in hofladen.merkmale]
         ),
     }

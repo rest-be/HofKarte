@@ -5,8 +5,6 @@ from __future__ import annotations
 from custom_components.hofkarte.parsing import parse_hofladen
 from custom_components.hofkarte.sortiment_katalog import (
     slug,
-    standard_merkmale_rohdaten,
-    standard_verkaufsarten_rohdaten,
     standard_zahlungsarten_rohdaten,
 )
 
@@ -34,22 +32,6 @@ def test_standard_zahlungsarten_enthalten_erwartete_werte() -> None:
     assert len(ids) == len(set(ids))
 
 
-def test_standard_verkaufsarten_enthalten_erwartete_werte() -> None:
-    """Der Katalog muss exakt die vorgegebenen Standard-Verkaufsarten enthalten."""
-    rohdaten = standard_verkaufsarten_rohdaten()
-
-    namen = [eintrag["name"] for eintrag in rohdaten]
-    assert namen == ["Hofladen", "Selbstbedienung", "Verkaufsautomat", "Ab-Hof-Verkauf"]
-
-
-def test_standard_merkmale_enthalten_erwartete_werte() -> None:
-    """Der Katalog muss exakt die vorgegebenen Standard-Merkmale enthalten."""
-    rohdaten = standard_merkmale_rohdaten()
-
-    namen = [eintrag["name"] for eintrag in rohdaten]
-    assert namen == ["Bio", "eigener Anbau", "Parkplatz", "barrierefrei"]
-
-
 def test_standard_rohdaten_sind_gueltige_hofladen_eingabe() -> None:
     """Die erzeugten Rohdaten müssen ohne Anpassung von parse_hofladen
     akzeptiert werden (Round-Trip-Gültigkeit)."""
@@ -58,8 +40,6 @@ def test_standard_rohdaten_sind_gueltige_hofladen_eingabe() -> None:
             "id": "hof-1",
             "name": "Hofladen Eins",
             "zahlungsarten": standard_zahlungsarten_rohdaten(),
-            "verkaufsarten": standard_verkaufsarten_rohdaten(),
-            "merkmale": standard_merkmale_rohdaten(),
         }
     )
 
@@ -68,10 +48,4 @@ def test_standard_rohdaten_sind_gueltige_hofladen_eingabe() -> None:
         "Debitkarte",
         "Kreditkarte",
         "TWINT",
-    ]
-    assert [m.name for m in hofladen.merkmale] == [
-        "Bio",
-        "eigener Anbau",
-        "Parkplatz",
-        "barrierefrei",
     ]

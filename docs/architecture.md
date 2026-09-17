@@ -105,27 +105,45 @@ Coordinator-Listener automatisch auf später hinzukommende Hofläden
 
 `models.py` definiert das interne, unveränderliche (`frozen`
 Dataclasses) Datenmodell (`Hofladen`, `Oeffnungszeit`,
-`Sonderoeffnungszeit`, `Angebot`, `Zahlungsart`,
-`Verkaufsart`, `Merkmal`, `Bild`). `parsing.py` überführt rohe,
-JSON-kompatible `dict`-Daten in dieses Modell und validiert dabei
-(`HofladenValidationError` bei ungültigen Pflichtfeldern).
+`Sonderoeffnungszeit`, `Angebot`, `Zahlungsart`, `Bild`). `parsing.py`
+überführt rohe, JSON-kompatible `dict`-Daten in dieses Modell und
+validiert dabei (`HofladenValidationError` bei ungültigen
+Pflichtfeldern).
 
-**Architekturentscheid – Angebote statt Kategorien/Produkte:** Die
-früher getrennten Konzepte `Kategorie` (eigene, über IDs referenzierte
-Liste) und `Produkt` (referenziert Kategorien über `kategorie_ids`)
-wurden zu einem einzigen `Angebot(id, name, gruppen)` zusammengelegt.
-`gruppen` sind schlichte Textbezeichnungen direkt am Angebot – keine
-separate, global gepflegte Kategorienliste mehr. `parsing.py` enthält
-dafür `_migriere_kategorien_und_produkte_zu_angeboten`: eine
-verbindliche, idempotente Migration, die beim Einlesen alter Rohdaten
-(Schlüssel `kategorien`/`produkte`) automatisch greift, sobald der
-Schlüssel `angebote` fehlt. Jedes Produkt wird zu einem Angebot, seine
-`kategorie_ids` werden zu Gruppen-Namen aufgelöst; Kategorien ohne
-zugeordnete Produkte bleiben als eigenständige Angebote mit leeren
-Gruppen erhalten, damit kein Name stillschweigend verloren geht. Liegt
+**Architekturentscheid – Angebote statt Kategorien/Produkte, ohne
+Gruppierung:** Die früher getrennten Konzepte `Kategorie` (eigene, über
+IDs referenzierte Liste) und `Produkt` (referenziert Kategorien über
+`kategorie_ids`) wurden zunächst zu einem gemeinsamen `Angebot`
+zusammengelegt und danach – nach weiterer Vereinfachung – auf
+`Angebot(id, name)` reduziert: **keine Gruppierung mehr**. Ein
+zwischenzeitlich eingeführtes Feld `gruppen` (frei formulierte
+Textbezeichnungen direkt am Angebot) wurde wieder entfernt, da der
+Mehrwert der Gruppierung den zusätzlichen Pflegeaufwand nicht
+rechtfertigte (siehe CHANGELOG).
+
+`parsing.py` enthält weiterhin `_migriere_kategorien_und_produkte_zu_angeboten`:
+eine Migration, die beim Einlesen alter Rohdaten (Schlüssel
+`kategorien`/`produkte`) automatisch greift, sobald der Schlüssel
+`angebote` fehlt. Seit der Vereinfachung werden sowohl Kategorien als
+auch Produkte gleichermassen zu flachen Angebot-Einträgen (nur
+`id`/`name`) – eine `kategorie_ids`-Auflösung findet nicht mehr statt,
+da es keine Gruppierung mehr gibt, in die sie einfliessen könnte. Liegt
 bereits das neue Format vor (`angebote`-Schlüssel vorhanden), greift
-die Migration nicht – wiederholtes Einlesen verändert die Daten nicht
-(Idempotenz, siehe `tests/test_migration_kategorien_produkte_zu_angebote.py`).
+die Migration nicht (Idempotenz, siehe
+`tests/test_migration_kategorien_produkte_zu_angebote.py`). Ein
+eventuell noch vorhandenes `gruppen`-Feld an einzelnen Angeboten wird
+beim Einlesen ignoriert, nicht übernommen.
+
+**Ebenfalls entfernt:** Die Fachbereiche `Verkaufsart` und `Merkmal`
+wurden ersatzlos aus dem Datenmodell entfernt (siehe CHANGELOG).
+Bestehende Rohdaten mit diesen Feldern werden beim Einlesen weiterhin
+fehlerfrei verarbeitet (die Felder werden schlicht nicht mehr
+ausgewertet).
+
+**Neu: `Hofladen.bemerkung`** – ein von `beschreibung` unabhängiges,
+optionales Freitextfeld auf Hofladen-Ebene (nicht je Angebot, da
+Angebote seit der Vereinfachung bewusst keine weitere Struktur mehr
+tragen).
 
 Die Datenquelle ist final festgelegt (siehe CHANGELOG,
 „Architekturentscheid: Datenquelle final festgelegt“): ein
@@ -188,14 +206,26 @@ Nutzt `navigator.geolocation.getCurrentPosition` mit expliziter
 Fehlerbehandlung für verweigerte/nicht unterstützte/zeitüberschreitende
 Standortabfragen.
 
+**Behobener Bug – unsicherer Kontext fälschlich als „verweigert“
+gemeldet:** Browser gewähren Geolocation-Zugriff ausschliesslich in
+einem sicheren Kontext (HTTPS oder `localhost`, siehe
+[`window.isSecureContext`](https://developer.mozilla.org/docs/Web/API/Window/isSecureContext)).
+Auf einer per einfachem `http://` erreichten Home-Assistant-Instanz
+(im Heimnetz häufig, z. B. `http://192.168.1.50:8123`) lehnt der
+Browser den Zugriff automatisch mit `PERMISSION_DENIED` ab, **ohne
+jemals einen Freigabe-Dialog anzuzeigen** – das erschien fälschlich als
+tatsächliche Ablehnung durch die Nutzerin/den Nutzer. Behoben durch
+eine explizite `window.isSecureContext`-Prüfung **vor** dem eigentlichen
+Geolocation-Aufruf, mit eigener, klar unterscheidbarer Fehlermeldung.
+
 ## Sortiment-Logik
 
-`attributes.py` überführt Angebote/Zahlungsarten/Verkaufsarten/
-Merkmale eines Hofladens in eine stabile, JSON-taugliche
-Attributstruktur für den Binary Sensor „Geöffnet“ (siehe Handbuch,
+`attributes.py` überführt Angebote und Zahlungsarten eines Hofladens in
+eine stabile, JSON-taugliche Attributstruktur (jeweils eine schlichte
+Namensliste) für den Binary Sensor „Geöffnet“ (siehe Handbuch,
 Kapitel 8). `sortiment_katalog.py` bietet einen optionalen
-Vorschlagskatalog gängiger Werte (Zahlungsarten, Verkaufsarten,
-Merkmale – nicht für Angebote, da diese frei formuliert werden).
+Vorschlagskatalog gängiger Werte (nur für Zahlungsarten – nicht für
+Angebote, da diese frei formuliert werden).
 
 ## Bilder
 
@@ -262,10 +292,13 @@ einer fragilen Erkennung anhand des URL-Musters.
 
 `search.py` (`find_hoflaeden`) ist eine reine, HA-unabhängige
 Fachfunktion für die UND-verknüpfte Filterung. Der Parameter `angebot`
-prüft sowohl den Namen als auch die Gruppen eines Angebots (ersetzt die
-früher getrennten Parameter `kategorie`/`produkt`, siehe CHANGELOG).
-`services.py` bindet die Funktion als Home-Assistant-Action
-(`hofkarte.hoflaeden_suchen`) an.
+gleicht den Namen eines Angebots ab (ersetzt die früher getrennten
+Parameter `kategorie`/`produkt`, siehe CHANGELOG; eine zwischenzeitliche
+Erweiterung auf Gruppen-Abgleich wurde mit der Vereinfachung von
+Angeboten wieder zurückgenommen). Die Parameter `verkaufsart` und
+`merkmal` wurden ersatzlos entfernt, da die zugrunde liegenden
+Fachbereiche selbst entfallen sind. `services.py` bindet die Funktion
+als Home-Assistant-Action (`hofkarte.hoflaeden_suchen`) an.
 
 ## Grafische Verwaltungsoberfläche (Architekturabweichung)
 

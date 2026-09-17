@@ -25,37 +25,21 @@ class Zahlungsart:
 
 
 @dataclass(frozen=True, slots=True)
-class Verkaufsart:
-    """Eine Verkaufsart (z. B. „Ab-Hof-Verkauf“, „Marktstand“, „Lieferservice“)."""
-
-    id: str
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
-class Merkmal:
-    """Ein Merkmal des Hofladens (z. B. „Bio“, „Barrierefrei“, „Hofcafé“)."""
-
-    id: str
-    name: str
-
-
-@dataclass(frozen=True, slots=True)
 class Angebot:
     """Ein im Hofladen angebotener Artikel bzw. eine angebotene Leistung.
 
     Ersetzt die früher getrennten Konzepte ``Kategorie`` und ``Produkt``
-    (siehe CHANGELOG, Zusammenlegung zu „Angebote“). ``gruppen`` enthält
-    frei formulierte, schlichte Textbezeichnungen (z. B. ``"Gemüse"``,
-    ``"Bio"``) direkt am Angebot – bewusst **keine** eigene, über IDs
-    referenzierte Kategorienliste mehr, da diese Indirektion in der
-    Praxis mehr Pflegeaufwand als Nutzen brachte. Ein Angebot ohne
-    Gruppen ist gültig (z. B. ein Artikel ohne sinnvolle Einordnung).
+    (siehe CHANGELOG, Zusammenlegung zu „Angebote“). Bewusst eine
+    **schlichte Auflistung ohne Gruppierung**: Ein früherer Versuch,
+    Angebote zusätzlich mit frei formulierten Gruppen zu versehen
+    (Feld ``gruppen``), wurde nach Rückmeldung wieder entfernt, da der
+    Mehrwert der Gruppierung den zusätzlichen Pflegeaufwand nicht
+    rechtfertigte. Ein Angebot ist damit strukturell nur noch ``id`` und
+    ``name`` – ein reiner Produktname.
     """
 
     id: str
     name: str
-    gruppen: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,11 +111,20 @@ class Hofladen:
     der Datenquelle vorgegeben (siehe ``parsing.py``) und darf sich über
     die Zeit nicht ändern, da spätere Einheiten (Devices, Entities) sich
     darauf verlassen.
+
+    ``bemerkung`` ist ein zusätzliches, von ``beschreibung`` unabhängiges
+    Freitextfeld – gedacht für interne Notizen/Hinweise, die sich
+    inhaltlich von der (potenziell öffentlich sichtbaren) Beschreibung
+    unterscheiden sollen. Auf Hofladen-Ebene angesiedelt statt je Angebot,
+    da Angebote seit der Vereinfachung zu einer schlichten Namensliste
+    ohne weitere Struktur wurden (siehe ``Angebot``) und ein Bemerkungsfeld
+    je Angebot diese bewusste Vereinfachung wieder aufgehoben hätte.
     """
 
     id: str
     name: str
     beschreibung: str | None = None
+    bemerkung: str | None = None
     adresse: str | None = None
     plz: str | None = None
     ort: str | None = None
@@ -143,6 +136,4 @@ class Hofladen:
     sonderoeffnungszeiten: tuple[Sonderoeffnungszeit, ...] = ()
     angebote: tuple[Angebot, ...] = ()
     zahlungsarten: tuple[Zahlungsart, ...] = ()
-    verkaufsarten: tuple[Verkaufsart, ...] = ()
-    merkmale: tuple[Merkmal, ...] = ()
     bilder: tuple[Bild, ...] = ()

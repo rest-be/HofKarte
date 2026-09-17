@@ -164,8 +164,8 @@ Geräte & Dienste → HofKarte → Entities** einsehbar.
 
 ### Attribute
 
-- **Geöffnet** trägt zusätzlich die Attribute `angebote`,
-  `zahlungsarten`, `verkaufsarten`, `merkmale` (siehe Kapitel 8) – diese
+- **Geöffnet** trägt zusätzlich die Attribute `angebote` und
+  `zahlungsarten` (siehe Kapitel 8) – diese
   Informationen erscheinen **nicht** auf den anderen Entities, um
   Daten nicht mehrfach zu duplizieren.
 - **Hauptbild** trägt das Attribut `weitere_bilder` (Liste weiterer
@@ -292,27 +292,31 @@ ausschliesslich für diese einmalige Berechnung im Browser verwendet –
 er wird **nicht** gespeichert und **nicht** an Home Assistant
 übertragen (siehe Kapitel 14, Datenschutz).
 
+**Meldung „Standortermittlung erfordert eine sichere Verbindung“:**
+Browser erlauben Standortzugriff nur über HTTPS oder `localhost`. Wird
+Home Assistant über einfaches `http://` aufgerufen (im Heimnetz
+üblich, z. B. `http://192.168.1.50:8123`), erscheint diese Meldung statt
+eines Freigabe-Dialogs – das ist eine grundsätzliche
+Browser-Einschränkung, keine Fehlfunktion von HofKarte. Abhilfe:
+Home Assistant über HTTPS oder über `localhost` aufrufen.
+
 ## 8. Angebote und Eigenschaften
 
-Jeder Hofladen kann in vier Fachbereichen gepflegt werden (über die
+Jeder Hofladen kann in zwei Fachbereichen gepflegt werden (über die
 Verwaltungsoberfläche, Kapitel 4):
 
-- **Angebote** – konkrete Artikel bzw. Leistungen, z. B. „Kartoffeln“,
-  optional mit einer oder mehreren frei formulierten Gruppen versehen,
-  z. B. „Gemüse“. Ein Angebot ohne Gruppe ist ebenso zulässig. In der
-  Verwaltungsoberfläche als ein Eintrag pro Zeile erfasst, Syntax
-  `Name` bzw. `Name|Gruppe1,Gruppe2` (z. B. `Kartoffeln|Gemüse`).
+- **Angebote** – eine schlichte Liste konkreter Artikel bzw.
+  Leistungen, z. B. „Kartoffeln“, „Honig“. In der Verwaltungsoberfläche
+  als ein Eintrag pro Zeile erfasst – jede Zeile ist einfach der Name
+  des Angebots, ohne weitere Struktur oder Gruppierung.
 - **Zahlungsarten** – z. B. „Bargeld“, „TWINT“, „Debitkarte“,
   „Kreditkarte“.
-- **Verkaufsarten** – z. B. „Hofladen“, „Selbstbedienung“,
-  „Verkaufsautomat“, „Ab-Hof-Verkauf“.
-- **Merkmale** – z. B. „Bio“, „eigener Anbau“, „Parkplatz“,
-  „barrierefrei“.
 
-Für die drei zuletzt genannten Bereiche bietet HofKarte einen
-**Vorschlagskatalog** gängiger Werte (siehe README, Abschnitt „Unter der
-Haube“) – eigene, frei gewählte Bezeichnungen sind jederzeit ebenso
-zulässig.
+Für Zahlungsarten bietet HofKarte einen **Vorschlagskatalog** gängiger
+Werte (siehe README, Abschnitt „Unter der Haube“) – eigene, frei
+gewählte Bezeichnungen sind jederzeit ebenso zulässig. Für Angebote
+gibt es bewusst keinen Vorschlagskatalog, da es sich um frei formulierte
+Produktnamen ohne sinnvolle Standardwerte handelt.
 
 Diese Informationen erscheinen **nicht** als eigene Sensoren (das wären
 zu viele, fachlich nicht als Messwert geeignete Entities), sondern als
@@ -320,14 +324,30 @@ zu viele, fachlich nicht als Messwert geeignete Entities), sondern als
 in Automationen/Vorlagen über `state_attr(...)` auslesen, z. B.:
 
 ```jinja
-{{ state_attr('binary_sensor.hofladen_mueller_geoeffnet', 'merkmale') }}
+{{ state_attr('binary_sensor.hofladen_mueller_geoeffnet', 'angebote') }}
 ```
 
 **Hinweis für bestehende Installationen:** Waren „Kategorien“ und
 „Produkte“ vorher als getrennte Fachbereiche gepflegt, werden diese
-beim nächsten Öffnen automatisch und ohne Datenverlust in „Angebote“
-zusammengeführt – auch eine Kategorie ganz ohne zugeordnete Produkte
-bleibt dabei als eigenständiges Angebot ohne Gruppe erhalten.
+beim nächsten Öffnen automatisch in schlichte „Angebote“
+zusammengeführt (sowohl frühere Kategorienamen als auch Produktnamen
+werden dabei als eigenständige Angebote übernommen). Waren zuvor
+„Verkaufsarten“ oder „Merkmale“ gepflegt, sind diese Fachbereiche seit
+dieser Version **entfallen** – die bestehenden Daten gehen beim
+Einlesen keinen Fehler, die Informationen werden aber nicht mehr
+angezeigt. Ebenso wurde eine zwischenzeitlich eingeführte
+Gruppen-Zuordnung bei Angeboten wieder entfernt (kein Fehler beim
+Einlesen, die Zuordnung wird schlicht ignoriert).
+
+### Bemerkung
+
+Zusätzlich zur „Beschreibung“ (Kapitel 4) steht ein eigenständiges,
+optionales Feld **„Bemerkung“** zur Verfügung – gedacht für interne
+Notizen oder Hinweise, die sich inhaltlich von der Beschreibung
+unterscheiden sollen (z. B. „Nur nach telefonischer Anmeldung“). Wird
+im Bearbeitungsformular unter „Allgemeine Informationen“ erfasst und
+erscheint, sofern gesetzt, in der Detailansicht in einem eigenen
+Abschnitt.
 
 ## 9. Actions und Automationen
 
@@ -342,10 +362,8 @@ enger die Suche).
 | Parameter | Typ | Bedeutung |
 |---|---|---|
 | `suchbegriff` | Text | Freitextsuche (Gross-/Kleinschreibung egal, Teilstring-Treffer) über Name, Beschreibung, Ort. |
-| `angebot` | Text | Exakter Name eines Angebots **oder** einer seiner Gruppen. |
-| `verkaufsart` | Text | Exakter Name einer Verkaufsart. |
+| `angebot` | Text | Exakter Name eines Angebots. |
 | `zahlungsart` | Text | Exakter Name einer Zahlungsart. |
-| `merkmal` | Text | Exakter Name eines Merkmals. |
 | `nur_geoeffnet` | Ja/Nein | Nur aktuell geöffnete Hofläden. |
 
 **Rückgabe** (per `response_variable` in Skripten/Automationen
@@ -378,24 +396,24 @@ action:
 **Beispiel 3 – Skript mit Rückgabedaten (`response_variable`):**
 
 ```yaml
-alias: "Bio-Hofläden Abendübersicht"
+alias: "Kartoffel-Hofläden Abendübersicht"
 trigger:
   - trigger: time
     at: "17:30:00"
 action:
   - action: hofkarte.hoflaeden_suchen
     data:
-      merkmal: Bio
+      angebot: Kartoffeln
       nur_geoeffnet: true
     response_variable: treffer
   - action: notify.mobile_app
     data:
       message: >-
         {% if treffer.anzahl_treffer > 0 %}
-          {{ treffer.anzahl_treffer }} Bio-Hofladen/-läden noch geöffnet:
+          {{ treffer.anzahl_treffer }} Hofladen/-läden mit Kartoffeln noch geöffnet:
           {{ treffer.hoflaeden | map(attribute='name') | join(', ') }}
         {% else %}
-          Aktuell ist kein Bio-Hofladen geöffnet.
+          Aktuell ist kein Hofladen mit Kartoffeln geöffnet.
         {% endif %}
 ```
 

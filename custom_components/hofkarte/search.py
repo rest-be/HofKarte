@@ -33,28 +33,12 @@ def _enthaelt_suchbegriff(hofladen: Hofladen, suchbegriff: str) -> bool:
 def _hat_eintrag_mit_namen(
     eintraege: Iterable[object], gesuchter_name: str
 ) -> bool:
-    """Ob eine der Sammlungen (Zahlungsarten, Verkaufsarten, ...) einen
-    Eintrag mit exakt diesem Namen (case-insensitive) enthält."""
+    """Ob eine der Sammlungen (Angebote, Zahlungsarten) einen Eintrag mit
+    exakt diesem Namen (case-insensitive) enthält."""
     gesucht = gesuchter_name.casefold()
     return any(
         getattr(eintrag, "name", "").casefold() == gesucht for eintrag in eintraege
     )
-
-
-def _hat_angebot_mit_name_oder_gruppe(
-    angebote: Iterable[object], gesuchter_text: str
-) -> bool:
-    """Ob eines der Angebote exakt diesen Namen trägt oder exakt diese
-    Gruppe zugeordnet hat (case-insensitive). Deckt die früher getrennten
-    Filter „Kategorie“ und „Produkt“ über ein gemeinsames Kriterium ab,
-    seit beide Konzepte zu „Angebote“ zusammengelegt wurden."""
-    gesucht = gesuchter_text.casefold()
-    for angebot in angebote:
-        if getattr(angebot, "name", "").casefold() == gesucht:
-            return True
-        if any(gruppe.casefold() == gesucht for gruppe in getattr(angebot, "gruppen", ())):
-            return True
-    return False
 
 
 def find_hoflaeden(
@@ -62,9 +46,7 @@ def find_hoflaeden(
     *,
     suchbegriff: str | None = None,
     angebot: str | None = None,
-    verkaufsart: str | None = None,
     zahlungsart: str | None = None,
-    merkmal: str | None = None,
     nur_geoeffnet: bool | None = None,
     now: datetime | None = None,
 ) -> list[Hofladen]:
@@ -72,12 +54,11 @@ def find_hoflaeden(
 
     - ``suchbegriff``: Freitextsuche (case-insensitive Teilstring) über
       Name, Beschreibung und Ort.
-    - ``angebot``: exakter, case-insensitiver Abgleich gegen den Namen
-      **oder** eine der Gruppen eines Angebots (ersetzt die früher
-      getrennten Filter „Kategorie“ und „Produkt“, siehe CHANGELOG).
-    - ``verkaufsart``/``zahlungsart``/``merkmal``: exakter,
-      case-insensitiver Namensabgleich gegen die jeweilige Sammlung des
-      Hofladens (siehe ``models.Hofladen``).
+    - ``angebot``: exakter, case-insensitiver Namensabgleich gegen die
+      Angebote des Hofladens (schlichte Namensliste ohne Gruppierung,
+      siehe CHANGELOG).
+    - ``zahlungsart``: exakter, case-insensitiver Namensabgleich gegen
+      die Zahlungsarten des Hofladens (siehe ``models.Hofladen``).
     - ``nur_geoeffnet``: Wenn ``True``, werden nur aktuell geöffnete
       Hofläden geliefert (nutzt ``opening_hours.is_open`` – keine eigene
       Berechnungslogik, siehe Einheit 6/7). Ein Hofladen ohne bekannten
@@ -98,19 +79,11 @@ def find_hoflaeden(
     for hofladen in hoflaeden:
         if suchbegriff and not _enthaelt_suchbegriff(hofladen, suchbegriff):
             continue
-        if angebot and not _hat_angebot_mit_name_oder_gruppe(
-            hofladen.angebote, angebot
-        ):
-            continue
-        if verkaufsart and not _hat_eintrag_mit_namen(
-            hofladen.verkaufsarten, verkaufsart
-        ):
+        if angebot and not _hat_eintrag_mit_namen(hofladen.angebote, angebot):
             continue
         if zahlungsart and not _hat_eintrag_mit_namen(
             hofladen.zahlungsarten, zahlungsart
         ):
-            continue
-        if merkmal and not _hat_eintrag_mit_namen(hofladen.merkmale, merkmal):
             continue
         if nur_geoeffnet:
             assert now is not None  # durch die Prüfung oben sichergestellt

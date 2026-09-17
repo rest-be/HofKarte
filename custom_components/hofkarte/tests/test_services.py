@@ -103,7 +103,7 @@ async def test_suche_mit_angebot_filter(hass: HomeAssistant) -> None:
         {
             "id": "hof-1",
             "name": "Hofladen Eins",
-            "angebote": [{"id": "kartoffeln", "name": "Kartoffeln", "gruppen": ["Gemüse"]}],
+            "angebote": [{"id": "kartoffeln", "name": "Kartoffeln"}],
         }
     )
     await coordinator.async_add_hofladen({"id": "hof-2", "name": "Hofladen Zwei"})
@@ -111,7 +111,7 @@ async def test_suche_mit_angebot_filter(hass: HomeAssistant) -> None:
     ergebnis = await hass.services.async_call(
         DOMAIN,
         SERVICE_HOFLAEDEN_SUCHEN,
-        {"angebot": "Gemüse"},
+        {"angebot": "Kartoffeln"},
         blocking=True,
         return_response=True,
     )
@@ -127,7 +127,7 @@ async def test_suche_mit_mehreren_kombinierten_filtern(hass: HomeAssistant) -> N
         {
             "id": "hof-1",
             "name": "Hofladen Eins",
-            "angebote": [{"id": "kartoffeln", "name": "Kartoffeln", "gruppen": ["Gemüse"]}],
+            "angebote": [{"id": "kartoffeln", "name": "Kartoffeln"}],
             "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
         }
     )
@@ -135,7 +135,7 @@ async def test_suche_mit_mehreren_kombinierten_filtern(hass: HomeAssistant) -> N
         {
             "id": "hof-2",
             "name": "Hofladen Zwei",
-            "angebote": [{"id": "karotten", "name": "Karotten", "gruppen": ["Gemüse"]}],
+            "angebote": [{"id": "kartoffeln2", "name": "Kartoffeln"}],
             "zahlungsarten": [{"id": "twint", "name": "TWINT"}],
         }
     )
@@ -143,7 +143,7 @@ async def test_suche_mit_mehreren_kombinierten_filtern(hass: HomeAssistant) -> N
     ergebnis = await hass.services.async_call(
         DOMAIN,
         SERVICE_HOFLAEDEN_SUCHEN,
-        {"angebot": "Gemüse", "zahlungsart": "Bargeld"},
+        {"angebot": "Kartoffeln", "zahlungsart": "Bargeld"},
         blocking=True,
         return_response=True,
     )

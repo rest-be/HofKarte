@@ -99,7 +99,7 @@ class HofkartePanel extends HTMLElement {
   }
 
   empty() {
-    return { id: "", name: "", beschreibung: "", adresse: "", plz: "", ort: "", land: "", website: "", latitude: "", longitude: "", oeffnungszeiten: [], sonderoeffnungszeiten: [], angebote: [], zahlungsarten: [], verkaufsarten: [], merkmale: [], bilder: [] };
+    return { id: "", name: "", beschreibung: "", bemerkung: "", adresse: "", plz: "", ort: "", land: "", website: "", latitude: "", longitude: "", oeffnungszeiten: [], sonderoeffnungszeiten: [], angebote: [], zahlungsarten: [], bilder: [] };
   }
 
   clone(item) { return JSON.parse(JSON.stringify(item)); }
@@ -175,6 +175,23 @@ class HofkartePanel extends HTMLElement {
 
     if (!("geolocation" in navigator)) {
       this.deviceDistanceStatus = "Dieser Browser unterstützt keine Standortermittlung.";
+      this.render();
+      return;
+    }
+
+    // Browser gewähren Geolocation-Zugriff ausschliesslich in einem
+    // "sicheren Kontext" (HTTPS oder localhost). Wird Home Assistant
+    // wie im lokalen Netzwerk üblich über einfaches http:// aufgerufen
+    // (z. B. http://192.168.1.50:8123), lehnt der Browser den Zugriff
+    // automatisch als PERMISSION_DENIED ab, OHNE jemals einen
+    // Freigabe-Dialog anzuzeigen. Das führte bisher fälschlich zur
+    // Meldung "Standortzugriff wurde verweigert", obwohl der Nutzer nie
+    // gefragt wurde und in seinem Browser ganz allgemein
+    // Standortzugriffe erlaubt haben kann. Diese Prüfung unterscheidet
+    // den Fall klar von einer tatsächlichen Ablehnung durch die
+    // Nutzerin/den Nutzer.
+    if (!window.isSecureContext) {
+      this.deviceDistanceStatus = "Standortermittlung erfordert eine sichere Verbindung (HTTPS) oder den Aufruf über localhost.";
       this.render();
       return;
     }
@@ -342,6 +359,7 @@ class HofkartePanel extends HTMLElement {
     const value = (name) => f.elements[name]?.value ?? "";
     const data = this.clone(this.editing || this.empty());
     data.name = value("name"); data.beschreibung = value("beschreibung") || null;
+    data.bemerkung = value("bemerkung") || null;
     data.adresse = value("adresse") || null; data.plz = value("plz") || null;
     data.ort = value("ort") || null; data.land = value("land") || null;
     data.website = value("website") || null;
@@ -349,8 +367,7 @@ class HofkartePanel extends HTMLElement {
     data.latitude = koordinaten.latitude; data.longitude = koordinaten.longitude;
     data.oeffnungszeiten = this.readOpeningHours(f);
     data.sonderoeffnungszeiten = [...f.querySelectorAll("[data-special]")].map(row => ({ datum_von: row.querySelector("[name=datum_von]").value, datum_bis: row.querySelector("[name=datum_bis]").value, geschlossen: row.querySelector("[name=geschlossen]").checked, beginn: row.querySelector("[name=beginn]").value || null, ende: row.querySelector("[name=ende]").value || null }));
-    for (const field of ["zahlungsarten", "verkaufsarten", "merkmale"]) data[field] = this.lines(f.elements[field]?.value);
-    data.angebote = this.angebote(f.elements.angebote?.value);
+    for (const field of ["angebote", "zahlungsarten"]) data[field] = this.lines(f.elements[field]?.value);
     // Bilder: Liste selbst lebt in this.editing.bilder (Upload/Entfernen/
     // Hauptbild-Wechsel mutieren sie direkt, siehe uploadBild/removeBild/
     // setHauptbild) – hier nur die live editierbaren Beschreibungsfelder
@@ -380,16 +397,6 @@ class HofkartePanel extends HTMLElement {
   }
 
   lines(text) { return String(text || "").split("\n").map(x => x.trim()).filter(Boolean).map(name => ({ id: this.slug(name), name })); }
-  /** Ein "Angebote"-Textfeld (ein Eintrag pro Zeile, Syntax
-   * "Name" oder "Name|Gruppe1,Gruppe2") in Angebot-Rohdaten überführen.
-   * Ersetzt die früheren getrennten Felder "Kategorien"/"Produkte". */
-  angebote(text) {
-    return String(text || "").split("\n").map(x => x.trim()).filter(Boolean).map(line => {
-      const [name, gruppenText = ""] = line.split("|");
-      const gruppen = gruppenText.split(",").map(g => g.trim()).filter(Boolean);
-      return { id: this.slug(name), name: name.trim(), gruppen };
-    });
-  }
   slug(s) { return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "eintrag"; }
 
   async remove(id) {
@@ -519,6 +526,7 @@ class HofkartePanel extends HTMLElement {
       ${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}
 
       ${d.beschreibung ? `<section class="card detail-section"><h3>Allgemeine Informationen</h3><div>${this.esc(d.beschreibung)}</div></section>` : ""}
+      ${d.bemerkung ? `<section class="card detail-section"><h3>Bemerkung</h3><div>${this.esc(d.bemerkung)}</div></section>` : ""}
 
       <section class="card detail-section">
         <h3>Adresse</h3>
@@ -544,8 +552,6 @@ class HofkartePanel extends HTMLElement {
 
       ${this.detailAngeboteSection(d.angebote)}
       ${this.detailPillSection("Zahlungsarten", d.zahlungsarten)}
-      ${this.detailPillSection("Verkaufsarten", d.verkaufsarten)}
-      ${this.detailPillSection("Merkmale", d.merkmale)}
 
       ${(d.bilder || []).length ? `<section class="card detail-section"><h3>Bilder</h3><div class="thumbs">${d.bilder.map(b => `<img src="${this.escAttr(b.url)}" alt="${this.escAttr(b.beschreibung || d.name)}" loading="lazy">`).join("")}</div></section>` : ""}
     `;
@@ -601,41 +607,12 @@ class HofkartePanel extends HTMLElement {
     return `<section class="card detail-section"><h3>${label}</h3>${entries.map(e => `<span class="pill">${this.esc(e.name)}</span>`).join("")}</section>`;
   }
 
-  /** Angebote in der Detailansicht, nach Gruppen zusammengefasst (sofern
-   * vorhanden) – ersetzt die früher getrennten Abschnitte
-   * "Kategorien"/"Produkte". Angebote ohne Gruppe erscheinen gesammelt
-   * unter "Ohne Gruppe". */
+  /** Angebote in der Detailansicht – ersetzt die früher getrennten
+   * Abschnitte "Kategorien"/"Produkte". Seit der Vereinfachung auf eine
+   * schlichte Namensliste ohne Gruppierung reduziert (siehe CHANGELOG)
+   * - daher eine einfache Weiterleitung an detailPillSection. */
   detailAngeboteSection(angebote) {
-    if (!angebote || !angebote.length) return "";
-
-    const gruppenMap = new Map();
-    const ohneGruppe = [];
-    for (const angebot of angebote) {
-      if (!angebot.gruppen || !angebot.gruppen.length) {
-        ohneGruppe.push(angebot.name);
-        continue;
-      }
-      for (const gruppe of angebot.gruppen) {
-        if (!gruppenMap.has(gruppe)) gruppenMap.set(gruppe, []);
-        gruppenMap.get(gruppe).push(angebot.name);
-      }
-    }
-
-    const gruppenNamen = [...gruppenMap.keys()].sort((a, b) => a.localeCompare(b));
-    const gruppenHtml = gruppenNamen.map(gruppe => `
-      <div style="margin-bottom:8px">
-        <div class="muted" style="font-size:.85em;margin-bottom:4px">${this.esc(gruppe)}</div>
-        ${gruppenMap.get(gruppe).map(name => `<span class="pill">${this.esc(name)}</span>`).join("")}
-      </div>
-    `).join("");
-    const ohneGruppeHtml = ohneGruppe.length ? `
-      <div>
-        ${gruppenNamen.length ? `<div class="muted" style="font-size:.85em;margin-bottom:4px">Ohne Gruppe</div>` : ""}
-        ${ohneGruppe.map(name => `<span class="pill">${this.esc(name)}</span>`).join("")}
-      </div>
-    ` : "";
-
-    return `<section class="card detail-section"><h3>Angebote</h3>${gruppenHtml}${ohneGruppeHtml}</section>`;
+    return this.detailPillSection("Angebote", angebote);
   }
 
   // --- Editor ------------------------------------------------------------
@@ -647,7 +624,7 @@ class HofkartePanel extends HTMLElement {
 
     const specials = (d.sonderoeffnungszeiten || []).map(x => `<div class="special" data-special><label>Von<input type=date name=datum_von value="${x.datum_von || ""}"></label><label>Bis<input type=date name=datum_bis value="${x.datum_bis || ""}"></label><label>Beginn<input type=time name=beginn value="${x.beginn || ""}"></label><label>Ende<input type=time name=ende value="${x.ende || ""}"></label><label>Geschlossen<input type=checkbox name=geschlossen ${x.geschlossen ? "checked" : ""}></label><button type=button class=secondary data-remove-special>−</button></div>`).join("");
     const text = (field) => (d[field] || []).map(x => x.name).join("\n");
-    const angeboteText = (d.angebote || []).map(x => `${x.name}${x.gruppen?.length ? "|" + x.gruppen.join(",") : ""}`).join("\n");
+    const angeboteText = (d.angebote || []).map(x => x.name).join("\n");
 
     return `<div class="top"><div><h1>${d.id ? "Hofladen bearbeiten" : "Neuen Hofladen erstellen"}</h1><div class="muted">${d.id ? this.esc(d.id) : "Neue stabile ID wird beim Speichern erzeugt."}</div></div></div>
       ${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}
@@ -657,6 +634,7 @@ class HofkartePanel extends HTMLElement {
           <div class="fields">
             <div class="field-row">${this.input("Name", "name", d.name, true)}</div>
             <div class="field-row">${this.input("Beschreibung", "beschreibung", d.beschreibung || "")}</div>
+            <div class="field-row">${this.input("Bemerkung", "bemerkung", d.bemerkung || "")}</div>
           </div>
         </section>
 
@@ -699,11 +677,9 @@ class HofkartePanel extends HTMLElement {
 
         <section class=card>
           <h2>Angebote und Eigenschaften</h2>
-          <p class=muted>Ein Eintrag pro Zeile. Angebote können optional mit Gruppen als <code>Angebot|Gruppe1,Gruppe2</code> angegeben werden (z. B. <code>Kartoffeln|Gemüse</code>).</p>
+          <p class=muted>Ein Eintrag pro Zeile.</p>
           ${this.area("Angebote", "angebote", angeboteText)}
           ${this.area("Zahlungsarten", "zahlungsarten", text("zahlungsarten"))}
-          ${this.area("Verkaufsarten", "verkaufsarten", text("verkaufsarten"))}
-          ${this.area("Merkmale", "merkmale", text("merkmale"))}
         </section>
 
         <section class=card>

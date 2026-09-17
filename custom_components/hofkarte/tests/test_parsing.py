@@ -42,8 +42,7 @@ VOLLSTAENDIGER_ROHDATENSATZ = {
     ],
     "kategorien": [{"id": "gemuese", "name": "Gemüse"}],
     "zahlungsarten": [{"id": "bar", "name": "Bar"}],
-    "verkaufsarten": [{"id": "ab-hof", "name": "Ab-Hof-Verkauf"}],
-    "merkmale": [{"id": "bio", "name": "Bio"}],
+    "bemerkung": "Nur nach telefonischer Anmeldung.",
     "bilder": [{"url": "https://example.com/hof.jpg", "beschreibung": "Hofeingang"}],
 }
 
@@ -59,6 +58,7 @@ def test_parse_vollstaendiger_datensatz() -> None:
     assert hofladen.id == "hof-1"
     assert hofladen.name == "Hofladen Müller"
     assert hofladen.beschreibung == "Frisches Gemüse direkt ab Hof."
+    assert hofladen.bemerkung == "Nur nach telefonischer Anmeldung."
     assert hofladen.plz == "3000"
     assert hofladen.latitude == pytest.approx(46.948)
     assert hofladen.longitude == pytest.approx(7.4474)
@@ -79,12 +79,11 @@ def test_parse_vollstaendiger_datensatz() -> None:
     assert silvester.geschlossen is False
     assert silvester.beginn == time(9, 0)
 
-    assert len(hofladen.angebote) == 1
-    assert hofladen.angebote[0].name == "Kartoffeln"
-    assert hofladen.angebote[0].gruppen == ("Gemüse",)
+    # Kategorien und Produkte werden seit der Vereinfachung gleichermassen
+    # zu schlichten, flachen Angeboten (siehe test_migration_*.py).
+    angebot_namen = {angebot.name for angebot in hofladen.angebote}
+    assert angebot_namen == {"Kartoffeln", "Gemüse"}
     assert hofladen.zahlungsarten[0].name == "Bar"
-    assert hofladen.verkaufsarten[0].name == "Ab-Hof-Verkauf"
-    assert hofladen.merkmale[0].name == "Bio"
     assert hofladen.bilder[0].url == "https://example.com/hof.jpg"
 
 
@@ -95,6 +94,7 @@ def test_parse_unvollstaendiger_datensatz_nur_pflichtfelder() -> None:
     assert hofladen.id == "hof-2"
     assert hofladen.name == "Kleiner Hofladen"
     assert hofladen.beschreibung is None
+    assert hofladen.bemerkung is None
     assert hofladen.adresse is None
     assert hofladen.plz is None
     assert hofladen.latitude is None

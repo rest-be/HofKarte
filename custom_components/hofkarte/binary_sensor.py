@@ -48,7 +48,7 @@ class HofKarteGeoeffnetBinarySensor(HofKarteEntity, BinarySensorEntity):
     Semantik zu erfinden.
 
     Trägt zusätzlich Sortiment und Eigenschaften (Kategorien, Produkte,
-    Zahlungsarten, Verkaufsarten, Merkmale) als ``extra_state_attributes``
+    Zahlungsarten) als ``extra_state_attributes``
     (siehe ``attributes.py``). Diese Informationen werden bewusst nur an
     dieser einen Entity exponiert und nicht an den Sensoren „Nächste
     Öffnung“/„Nächste Schliessung“ dupliziert (Regeln dieser Einheit:

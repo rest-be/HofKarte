@@ -14,10 +14,10 @@ duplizieren und wird daher bewusst **nicht** implementiert (Regeln
 dieser Einheit: „Keine Actions bauen, die ... unnötig duplizieren“).
 
 Analog wird auf separate Actions je Filterdimension (Angebot,
-Verkaufsart, Zahlungsart, Merkmal) verzichtet – eine einzige, klar
-strukturierte Such-Action mit mehreren optionalen, UND-verknüpften
-Filterparametern deckt alle in der Einheit genannten Fälle ab, ohne
-naheliegend redundanten Code zu erzeugen.
+Zahlungsart) verzichtet – eine einzige, klar strukturierte Such-Action
+mit mehreren optionalen, UND-verknüpften Filterparametern deckt alle in
+der Einheit genannten Fälle ab, ohne naheliegend redundanten Code zu
+erzeugen.
 """
 
 from __future__ import annotations
@@ -46,9 +46,7 @@ _SERVICE_HOFLAEDEN_SUCHEN_SCHEMA = vol.Schema(
     {
         vol.Optional("suchbegriff"): cv.string,
         vol.Optional("angebot"): cv.string,
-        vol.Optional("verkaufsart"): cv.string,
         vol.Optional("zahlungsart"): cv.string,
-        vol.Optional("merkmal"): cv.string,
         vol.Optional("nur_geoeffnet"): cv.boolean,
     }
 )
@@ -94,9 +92,7 @@ async def _async_hoflaeden_suchen(
         coordinator.data.values() if coordinator.data else [],
         suchbegriff=call.data.get("suchbegriff"),
         angebot=call.data.get("angebot"),
-        verkaufsart=call.data.get("verkaufsart"),
         zahlungsart=call.data.get("zahlungsart"),
-        merkmal=call.data.get("merkmal"),
         nur_geoeffnet=nur_geoeffnet,
         now=now if nur_geoeffnet is not None else None,
     )

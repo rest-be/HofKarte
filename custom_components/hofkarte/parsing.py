@@ -29,10 +29,8 @@ from .models import (
     Angebot,
     Bild,
     Hofladen,
-    Merkmal,
     Oeffnungszeit,
     Sonderoeffnungszeit,
-    Verkaufsart,
     Zahlungsart,
 )
 
@@ -206,37 +204,34 @@ def _parse_angebot(raw: Any, index: int) -> Angebot:
     if not isinstance(name_value, str) or not name_value.strip():
         raise HofladenValidationError(f"{context}: 'name' fehlt oder ist leer.")
 
-    gruppen_raw = raw.get("gruppen", []) or []
-    if not isinstance(gruppen_raw, (list, tuple)):
-        raise HofladenValidationError(f"{context}: 'gruppen' muss eine Liste sein.")
-    gruppen = tuple(
-        str(gruppe).strip() for gruppe in gruppen_raw if str(gruppe).strip()
-    )
-
-    return Angebot(id=id_value.strip(), name=name_value.strip(), gruppen=gruppen)
+    # Ein eventuell noch vorhandenes 'gruppen'-Feld aus älteren, vor der
+    # Vereinfachung gespeicherten Rohdaten wird bewusst ignoriert
+    # (Angebote sind seit der Vereinfachung eine schlichte Namensliste
+    # ohne Gruppierung, siehe models.Angebot) - kein Fehler, kein
+    # Absturz; die Gruppen-Information geht dabei inhaltlich verloren.
+    return Angebot(id=id_value.strip(), name=name_value.strip())
 
 
 def _migriere_kategorien_und_produkte_zu_angeboten(
     raw: Mapping[str, Any],
 ) -> list[Any]:
     """Migriert die frühere, getrennte Struktur (``kategorien``/``produkte``)
-    verlustfrei in eine einheitliche Liste von Angebot-Rohdaten.
+    in eine einheitliche, flache Liste von Angebot-Rohdaten.
 
     **Idempotent:** Ist der Schlüssel ``angebote`` bereits vorhanden
     (neues Format), wird dieser unverändert zurückgegeben – die
     Migration greift ausschliesslich, wenn ausschliesslich die alten
-    Schlüssel ``kategorien``/``produkte`` vorhanden sind. Ein bereits
-    migrierter Datensatz wird durch erneutes Einlesen also nicht
-    nochmals verändert.
+    Schlüssel ``kategorien``/``produkte`` vorhanden sind.
 
-    Jedes bestehende Produkt wird zu einem Angebot; seine
-    ``kategorie_ids`` werden anhand der bestehenden ``kategorien``-Liste
-    zu Gruppen-**Namen** aufgelöst (unbekannte IDs bleiben als rohe ID
-    erhalten statt die Zuordnung stillschweigend zu verwerfen, analog
-    zum bisherigen Verhalten in ``attributes.py``). Kategorien ohne
-    zugeordnete Produkte („verwaiste“ Kategorien) werden als
-    eigenständige Angebote mit leeren ``gruppen`` erhalten, damit ihr
-    Name nicht stillschweigend verloren geht.
+    Angebote sind seit der Vereinfachung eine schlichte Namensliste ohne
+    Gruppierung (siehe ``models.Angebot``) – die frühere Unterscheidung
+    zwischen „Kategorie“ und „Produkt“ existiert dadurch nicht mehr:
+    Sowohl bestehende Kategorien als auch bestehende Produkte werden
+    gleichermassen zu flachen Angebot-Einträgen (nur ``id``/``name``).
+    Eine eventuelle Produkt-zu-Kategorie-Verknüpfung
+    (``kategorie_ids``) wird dabei nicht mehr ausgewertet, da es keine
+    Gruppierung mehr gibt, in die sie einfliessen könnte – auch das ist
+    ein bewusster, dokumentierter Informationsverlust (siehe CHANGELOG).
     """
     if "angebote" in raw:
         angebote_raw = raw.get("angebote") or []
@@ -247,50 +242,17 @@ def _migriere_kategorien_und_produkte_zu_angeboten(
     if not kategorien_raw and not produkte_raw:
         return []
 
-    kategorie_namen_je_id: dict[str, str] = {}
-    if isinstance(kategorien_raw, (list, tuple)):
-        for kategorie in kategorien_raw:
-            if isinstance(kategorie, Mapping):
-                kid, kname = kategorie.get("id"), kategorie.get("name")
-                if isinstance(kid, str) and isinstance(kname, str):
-                    kategorie_namen_je_id[kid] = kname
-
-    verwendete_kategorie_ids: set[str] = set()
     angebote: list[Any] = []
-
-    if isinstance(produkte_raw, (list, tuple)):
-        for produkt in produkte_raw:
-            if not isinstance(produkt, Mapping):
-                # Ungültig - unverändert weitergeben, _parse_angebot meldet
-                # den konkreten Fehler (Fail-Fast bleibt erhalten).
-                angebote.append(produkt)
+    for quelle in (produkte_raw, kategorien_raw):
+        if not isinstance(quelle, (list, tuple)):
+            continue
+        for eintrag in quelle:
+            if not isinstance(eintrag, Mapping):
+                # Ungültig - unverändert weitergeben, _parse_angebot
+                # meldet den konkreten Fehler (Fail-Fast bleibt erhalten).
+                angebote.append(eintrag)
                 continue
-            kategorie_ids = produkt.get("kategorie_ids") or []
-            gruppen: list[str] = []
-            if isinstance(kategorie_ids, (list, tuple)):
-                for kategorie_id in kategorie_ids:
-                    kategorie_id_str = str(kategorie_id)
-                    verwendete_kategorie_ids.add(kategorie_id_str)
-                    gruppen.append(
-                        kategorie_namen_je_id.get(kategorie_id_str, kategorie_id_str)
-                    )
-            angebote.append(
-                {
-                    "id": produkt.get("id"),
-                    "name": produkt.get("name"),
-                    "gruppen": gruppen,
-                }
-            )
-
-    if isinstance(kategorien_raw, (list, tuple)):
-        for kategorie in kategorien_raw:
-            if not isinstance(kategorie, Mapping):
-                continue
-            kategorie_id = kategorie.get("id")
-            if kategorie_id is not None and str(kategorie_id) not in verwendete_kategorie_ids:
-                angebote.append(
-                    {"id": kategorie_id, "name": kategorie.get("name"), "gruppen": []}
-                )
+            angebote.append({"id": eintrag.get("id"), "name": eintrag.get("name")})
 
     return angebote
 
@@ -348,6 +310,7 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
     name = _require_str(raw, "name")
 
     beschreibung = _optional_str(raw, "beschreibung")
+    bemerkung = _optional_str(raw, "bemerkung")
     adresse = _optional_str(raw, "adresse")
     plz = _optional_str(raw, "plz")
     ort = _optional_str(raw, "ort")
@@ -370,20 +333,13 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
         "zahlungsarten",
         lambda item, i: _parse_lookup(item, i, "Zahlungsart", Zahlungsart),
     )
-    verkaufsarten = _parse_list(
-        raw,
-        "verkaufsarten",
-        lambda item, i: _parse_lookup(item, i, "Verkaufsart", Verkaufsart),
-    )
-    merkmale = _parse_list(
-        raw, "merkmale", lambda item, i: _parse_lookup(item, i, "Merkmal", Merkmal)
-    )
     bilder = _parse_list(raw, "bilder", _parse_bild)
 
     return Hofladen(
         id=hofladen_id,
         name=name,
         beschreibung=beschreibung,
+        bemerkung=bemerkung,
         adresse=adresse,
         plz=plz,
         ort=ort,
@@ -395,7 +351,5 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
         sonderoeffnungszeiten=sonderoeffnungszeiten,
         angebote=angebote,
         zahlungsarten=zahlungsarten,
-        verkaufsarten=verkaufsarten,
-        merkmale=merkmale,
         bilder=bilder,
     )

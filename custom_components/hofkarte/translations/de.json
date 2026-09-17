@@ -27,19 +27,11 @@
         },
         "angebot": {
           "name": "Angebot",
-          "description": "Nur Hofläden mit exakt diesem Angebotsnamen oder dieser Gruppe (z. B. Produkt- oder Kategoriename)."
-        },
-        "verkaufsart": {
-          "name": "Verkaufsart",
-          "description": "Nur Hofläden mit exakt dieser Verkaufsart (z. B. Selbstbedienung)."
+          "description": "Nur Hofläden mit exakt diesem Angebots-/Produktnamen."
         },
         "zahlungsart": {
           "name": "Zahlungsart",
           "description": "Nur Hofläden, die exakt diese Zahlungsart akzeptieren."
-        },
-        "merkmal": {
-          "name": "Merkmal",
-          "description": "Nur Hofläden mit exakt diesem Merkmal (z. B. Bio)."
         },
         "nur_geoeffnet": {
           "name": "Nur aktuell geöffnete",

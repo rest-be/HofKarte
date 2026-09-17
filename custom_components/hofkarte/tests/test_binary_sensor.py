@@ -216,16 +216,8 @@ async def test_extra_state_attributes_contains_sortiment(hass: HomeAssistant) ->
             {
                 "id": "hof-1",
                 "name": "Hofladen Eins",
-                "angebote": [
-                    {
-                        "id": "kartoffeln",
-                        "name": "Kartoffeln",
-                        "gruppen": ["Gemüse"],
-                    }
-                ],
+                "angebote": [{"id": "kartoffeln", "name": "Kartoffeln"}],
                 "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
-                "verkaufsarten": [{"id": "ab-hof", "name": "Ab-Hof-Verkauf"}],
-                "merkmale": [{"id": "bio", "name": "Bio"}],
             }
         ]
     )
@@ -236,12 +228,8 @@ async def test_extra_state_attributes_contains_sortiment(hass: HomeAssistant) ->
     attribute = entity.extra_state_attributes
 
     assert attribute is not None
-    assert attribute["angebote"] == [
-        {"name": "Kartoffeln", "gruppen": ["Gemüse"]}
-    ]
+    assert attribute["angebote"] == ["Kartoffeln"]
     assert attribute["zahlungsarten"] == ["Bargeld"]
-    assert attribute["verkaufsarten"] == ["Ab-Hof-Verkauf"]
-    assert attribute["merkmale"] == ["Bio"]
 
 
 async def test_extra_state_attributes_visible_in_hass_state(
@@ -257,7 +245,7 @@ async def test_extra_state_attributes_visible_in_hass_state(
         {
             "id": "hof-neu",
             "name": "Neuer Hofladen",
-            "merkmale": [{"id": "bio", "name": "Bio"}],
+            "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
         }
     )
     await hass.async_block_till_done()
@@ -269,7 +257,7 @@ async def test_extra_state_attributes_visible_in_hass_state(
     state = hass.states.get(entity_id)
 
     assert state is not None
-    assert state.attributes.get("merkmale") == ["Bio"]
+    assert state.attributes.get("zahlungsarten") == ["Bargeld"]
     assert state.attributes.get("angebote") == []
 
 
@@ -288,7 +276,7 @@ async def test_update_sortiment_wirkt_sich_ohne_reload_auf_attribute_aus(
         {
             "id": "hof-edit",
             "name": "Editierbarer Hofladen",
-            "merkmale": [{"id": "bio", "name": "Bio"}],
+            "zahlungsarten": [{"id": "bar", "name": "Bargeld"}],
         }
     )
     await hass.async_block_till_done()
@@ -297,16 +285,16 @@ async def test_update_sortiment_wirkt_sich_ohne_reload_auf_attribute_aus(
     entity_id = entity_registry.async_get_entity_id(
         "binary_sensor", DOMAIN, f"{DOMAIN}_hof-edit_geoeffnet"
     )
-    assert hass.states.get(entity_id).attributes.get("merkmale") == ["Bio"]
+    assert hass.states.get(entity_id).attributes.get("zahlungsarten") == ["Bargeld"]
 
     await coordinator.async_update_hofladen_sortiment(
         "hof-edit",
-        merkmale=[
-            {"id": "bio", "name": "Bio"},
-            {"id": "parkplatz", "name": "Parkplatz"},
+        zahlungsarten=[
+            {"id": "bar", "name": "Bargeld"},
+            {"id": "twint", "name": "TWINT"},
         ],
     )
     await hass.async_block_till_done()
 
     state = hass.states.get(entity_id)
-    assert state.attributes.get("merkmale") == ["Bio", "Parkplatz"]
+    assert state.attributes.get("zahlungsarten") == ["Bargeld", "TWINT"]
