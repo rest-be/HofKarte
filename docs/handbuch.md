@@ -97,6 +97,30 @@ Nach der Einrichtung erscheint im Home-Assistant-Seitenmenü ein neuer
 Eintrag **HofKarte** (nur für Administrator:innen-Konten sichtbar). Dort
 können Hofläden verwaltet werden:
 
+### Übersicht: Kacheln oder Liste
+
+Oben auf der Übersichtsseite steht ein Umschalter „🔲 Kacheln“/„📋 Liste“
+zur Verfügung:
+
+- **Kacheln** (Standardansicht): eine Kachel pro Hofladen mit Hauptbild
+  (oder einem neutralen Platzhalter, falls keines hinterlegt ist),
+  Name, Adresse, anklickbarer Webseite (sofern hinterlegt und gültig),
+  einem Hinweis „🟢 Geöffnet“/„🔴 Geschlossen“/„Unbekannt“ sowie – bei
+  hinterlegten Koordinaten – einem Button zum Öffnen des Standorts auf
+  Google Maps.
+- **Liste:** eine Tabelle mit den Spalten Name, Adresse und Status,
+  **jede Spalte einzeln sortierbar** (Klick auf die Kopfzeile, erneuter
+  Klick kehrt die Richtung um). Ein Freitextfeld oberhalb der Tabelle
+  filtert nach Name oder Adresse; jede Zeile hat ebenfalls einen
+  Karten-Button.
+
+In beiden Ansichten öffnet ein Klick auf den **Namen** eines Hofladens
+direkt dessen Detailansicht (Kapitel 4 unten) – zusätzlich zu den
+bestehenden Buttons „Details“/„Bearbeiten“/„Löschen“. Der Hinweis
+„Geöffnet“/„Geschlossen“ wird serverseitig berechnet und stimmt daher
+stets mit dem tatsächlichen Zustand der Entity „Geöffnet“ (Kapitel 5)
+überein.
+
 - **Neuer Hofladen:** über die Verwaltungsseite anlegen (Name,
   Beschreibung, Bemerkung, Adresse, PLZ/Ort, Land, Koordinaten,
   Webseite, Öffnungszeiten, Sortiment, Bilder).

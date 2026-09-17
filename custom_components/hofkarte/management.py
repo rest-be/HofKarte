@@ -10,17 +10,20 @@ einzigen Stelle, statt sie hier zu duplizieren.
 
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, datetime, time
 from typing import Any
 from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import HofKarteUpdateCoordinator
 from .data_provider import HofladenNotFoundError
+from .images import get_main_image_url
+from .opening_hours import is_open
 from .parsing import HofladenValidationError
 
 WS_LIST = "hofkarte/management/list"
@@ -49,8 +52,32 @@ def _json_value(value: Any) -> Any:
     return value
 
 
-def _serialize_hofladen(hofladen: Any) -> dict[str, Any]:
-    return _json_value(hofladen)
+def _serialize_hofladen(hofladen: Any, *, now: datetime) -> dict[str, Any]:
+    """Rohdaten eines Hofladens für die Verwaltungsoberfläche serialisieren.
+
+    Ergänzt zusätzlich zu den gespeicherten Feldern zwei serverseitig
+    berechnete Werte, damit die Verwaltungsoberfläche (Kacheln-/
+    Listenansicht, siehe Issue #1) bestehende, teils sicherheitsrelevante
+    Fachlogik nicht ein zweites Mal, möglicherweise abweichend, in
+    JavaScript nachbauen muss:
+
+    - ``geoeffnet`` (``True``/``False``/``None`` für „unbekannt“) über
+      ``opening_hours.is_open`` – exakt dieselbe Funktion, die auch der
+      Binary Sensor „Geöffnet“ verwendet (siehe ``binary_sensor.py``).
+    - ``hauptbild_url`` (``str | None``) über ``images.get_main_image_url``
+      – exakt dieselbe Funktion (inkl. Sicherheitsprüfung gegen
+      private/interne IP-Literale), die auch das ``image``-Entity für
+      das tatsächliche Hauptbild verwendet (siehe ``image.py``).
+
+    ``now`` wird bewusst von den Aufrufern übergeben (nicht hier selbst
+    über ``dt_util.now()`` ermittelt), damit alle Hofläden einer
+    einzelnen Anfrage konsistent gegen denselben Zeitpunkt bewertet
+    werden.
+    """
+    daten = _json_value(hofladen)
+    daten["geoeffnet"] = is_open(hofladen, now)
+    daten["hauptbild_url"] = get_main_image_url(hofladen.bilder)
+    return daten
 
 
 def _get_coordinator(hass: HomeAssistant) -> HofKarteUpdateCoordinator:
@@ -81,9 +108,15 @@ def ws_list(
         connection.send_error(msg["id"], "not_ready", str(err))
         return
 
+    jetzt = dt_util.now()
     connection.send_result(
         msg["id"],
-        {"hoflaeden": [_serialize_hofladen(v) for v in coordinator.data.values()]},
+        {
+            "hoflaeden": [
+                _serialize_hofladen(v, now=jetzt)
+                for v in coordinator.data.values()
+            ]
+        },
     )
 
 
@@ -115,7 +148,9 @@ async def ws_save(
         connection.send_error(msg["id"], "not_supported", str(err))
         return
 
-    connection.send_result(msg["id"], {"hofladen": _serialize_hofladen(parsed)})
+    connection.send_result(
+        msg["id"], {"hofladen": _serialize_hofladen(parsed, now=dt_util.now())}
+    )
 
 
 @websocket_api.websocket_command(

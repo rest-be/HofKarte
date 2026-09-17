@@ -13,6 +13,46 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.1-dev.1] - Unveröffentlicht (develop)
+
+### Hinzugefügt
+
+- **Issue #1 – Übersicht als Kacheln oder Liste:** Neuer Umschalter
+  „🔲 Kacheln“/„📋 Liste“ oberhalb der Hofladen-Übersicht
+  (`hofkarte-panel.js`).
+  - **Kacheln:** erweitert um Hauptbild (mit neutralem Platzhalter ohne
+    gültiges Bild), klickbaren Namen (öffnet die Detailansicht,
+    zusätzlich zum bestehenden „Details“-Button), anklickbare Webseite,
+    Öffnungsstatus-Badge und einen Karten-Button bei hinterlegten
+    Koordinaten.
+  - **Liste (neu):** sortierbare Tabelle (Name, Adresse, Status – jede
+    Spalte einzeln, beide Richtungen), Freitextfilter über Name/Adresse,
+    Karten-Button je Zeile. Vollständig clientseitig, kein neuer
+    Backend-Endpunkt für Sortierung/Filterung nötig.
+  - Website-Link- und Karten-Logik aus der bestehenden Detailansicht
+    wiederverwendet (`websiteLinkHtml`/`mapButton`, aus
+    `websiteLinkBlock` extrahiert) statt dupliziert.
+- **`management.py` liefert zwei neue, serverseitig berechnete Felder**
+  über `ws_list`/`ws_save`, um Duplikation sicherheitsrelevanter bzw.
+  zeitzonenabhängiger Logik in JavaScript zu vermeiden:
+  - `geoeffnet` (`true`/`false`/`null`) über die bestehende
+    `opening_hours.is_open` – dieselbe Funktion wie beim Binary Sensor
+    „Geöffnet“.
+  - `hauptbild_url` (`str | None`) über die bestehende
+    `images.get_main_image_url` – dieselbe Funktion (inkl.
+    Sicherheitsprüfung) wie beim `image`-Entity.
+- 8 neue Backend-Tests (`test_management.py`): `geoeffnet` für
+  offen/geschlossen/unbekannt, `hauptbild_url` mit/ohne Bild, sowie je
+  ein End-zu-Ende-Test über die echten WebSocket-Handler `ws_list` und
+  `ws_save`.
+
+### Ausdrücklich unverändert
+
+- Detailansicht, Bearbeitungsansicht, Bilder-Upload, WebSocket-Verträge
+  `hofkarte/management/save|delete` (Parameter unverändert – `ws_list`/
+  `ws_save` liefern lediglich zwei zusätzliche Felder, keine Breaking
+  Changes), Zahlungsarten-Logik: keine Änderungen.
+
 ## [2026.9.0] - 2026-09-17
 
 ### Erstes offizielles Release (MVP)

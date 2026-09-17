@@ -61,6 +61,10 @@ class HofkartePanel extends HTMLElement {
     this.showCoordInfo = false;
     this.deviceDistance = null; // { km } - clientseitig ermittelte Entfernung vom aktuellen Gerät
     this.deviceDistanceStatus = ""; // Lade-/Fehlermeldung während der Ermittlung
+    this.uebersichtsAnsicht = "kacheln"; // "kacheln" | "liste" (Issue #1)
+    this.listenSortSpalte = null; // "name" | "adresse" | "geoeffnet"
+    this.listenSortRichtung = "asc"; // "asc" | "desc"
+    this.listenFilter = ""; // Freitextfilter in der Listenansicht
     this.attachShadow({ mode: "open" });
   }
 
@@ -430,6 +434,23 @@ class HofkartePanel extends HTMLElement {
       main{max-width:1200px;margin:0 auto;padding:24px}
       .top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
       .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:20px}
+      .view-toggle{display:flex;gap:8px;margin-top:16px}
+      .tile-card{display:flex;flex-direction:column;gap:6px}
+      .tile-image{width:100%;height:140px;object-fit:cover;border-radius:8px;margin-bottom:4px}
+      .tile-image-placeholder{display:flex;align-items:center;justify-content:center;background:var(--secondary-background-color);font-size:2.5em}
+      .link-button{background:none;border:0;padding:0;color:var(--primary-color);font:inherit;font-weight:500;cursor:pointer;text-align:left}
+      .link-button:hover{text-decoration:underline}
+      .status-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.9em}
+      .status-open{background:var(--success-color,#43a047);color:#fff}
+      .status-closed{background:var(--error-color,#db4437);color:#fff}
+      .status-unknown{background:var(--secondary-background-color);color:var(--secondary-text-color)}
+      .list-filter{margin-top:16px}
+      .list-filter input{max-width:360px}
+      .table-scroll{overflow-x:auto;margin-top:12px}
+      .hoflaeden-table{width:100%;border-collapse:collapse;background:var(--ha-card-background,var(--card-background-color));border-radius:12px;overflow:hidden}
+      .hoflaeden-table th,.hoflaeden-table td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--divider-color)}
+      .hoflaeden-table tr:last-child td{border-bottom:0}
+      .table-sort{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--primary-text-color);cursor:pointer;white-space:nowrap}
       .card{background:var(--ha-card-background,var(--card-background-color));border-radius:12px;padding:16px;box-shadow:var(--ha-card-box-shadow,0 1px 3px #0002)}
       form > section.card{margin-bottom:20px}
       .card h2{margin-top:0}
@@ -496,23 +517,107 @@ class HofkartePanel extends HTMLElement {
 
   // --- Liste -----------------------------------------------------------
 
+  /** Einheitliche Statusanzeige "geöffnet/geschlossen/unbekannt" – nutzt
+   * das serverseitig berechnete Feld `geoeffnet` (siehe management.py),
+   * keine eigene Öffnungszeiten-Berechnung in JavaScript (Issue #1). */
+  geoeffnetBadge(geoeffnet) {
+    if (geoeffnet === true) return `<span class="status-badge status-open">🟢 Geöffnet</span>`;
+    if (geoeffnet === false) return `<span class="status-badge status-closed">🔴 Geschlossen</span>`;
+    return `<span class="status-badge status-unknown">Unbekannt</span>`;
+  }
+
   list() {
-    return `<div class="top"><div><h1>HofKarte</h1><div class="muted">Hofläden verwalten</div></div><button data-new>+ Neuer Hofladen</button></div>${this.message ? `<div class="notice">${this.esc(this.message)}</div>` : ""}${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}<div class="grid">${this.items.length ? this.items.map(item => this.listCard(item)).join("") : `<section class="card"><h2>Noch keine Hofläden</h2><p>Erstelle den ersten Hofladen.</p></section>`}</div>`;
+    const umschalter = `<div class="view-toggle">
+      <button type="button" class="${this.uebersichtsAnsicht === "kacheln" ? "" : "secondary"}" data-ansicht="kacheln">🔲 Kacheln</button>
+      <button type="button" class="${this.uebersichtsAnsicht === "liste" ? "" : "secondary"}" data-ansicht="liste">📋 Liste</button>
+    </div>`;
+    const inhalt = !this.items.length
+      ? `<section class="card"><h2>Noch keine Hofläden</h2><p>Erstelle den ersten Hofladen.</p></section>`
+      : (this.uebersichtsAnsicht === "liste" ? this.listTable() : this.listGrid());
+
+    return `<div class="top"><div><h1>HofKarte</h1><div class="muted">Hofläden verwalten</div></div><button data-new>+ Neuer Hofladen</button></div>${this.message ? `<div class="notice">${this.esc(this.message)}</div>` : ""}${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}${this.items.length ? umschalter : ""}${inhalt}`;
+  }
+
+  listGrid() {
+    return `<div class="grid">${this.items.map(item => this.listCard(item)).join("")}</div>`;
   }
 
   listCard(item) {
-    const koordText = (item.latitude != null && item.longitude != null) ? `${item.latitude.toFixed(5)}, ${item.longitude.toFixed(5)}` : "Keine Koordinaten";
-    return `<section class="card">
-      <h2>${this.esc(item.name)}</h2>
-      <div>${this.esc([item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ")) || "<span class=muted>Keine Adresse</span>"}</div>
-      <div class="muted">${koordText}</div>
-      ${item.website ? `<div class="muted">🔗 ${this.esc(item.website)}</div>` : ""}
+    const adresse = [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ");
+    const bildHtml = item.hauptbild_url
+      ? `<img class="tile-image" src="${this.escAttr(item.hauptbild_url)}" alt="${this.escAttr(item.name)}" loading="lazy">`
+      : `<div class="tile-image tile-image-placeholder" aria-hidden="true">🏬</div>`;
+
+    return `<section class="card tile-card">
+      ${bildHtml}
+      <h2><button type="button" class="link-button" data-view="${item.id}">${this.esc(item.name)}</button></h2>
+      ${adresse ? `<div>${this.esc(adresse)}</div>` : ""}
+      ${this.websiteLinkHtml(item.website)}
+      <div>${this.geoeffnetBadge(item.geoeffnet)}</div>
+      <div class="coord-actions">${this.mapButton(item.latitude, item.longitude)}</div>
       <div class="actions">
         <button class="secondary" data-view="${item.id}">Details</button>
         <button class="secondary" data-edit="${item.id}">Bearbeiten</button>
         <button class="danger" data-delete="${item.id}">Löschen</button>
       </div>
     </section>`;
+  }
+
+  /** Sortierte, gefilterte Zeilen für die Listenansicht (rein
+   * clientseitig – kein neuer Backend-Endpunkt nötig, siehe Issue #1). */
+  sortierteGefilterteItems() {
+    const filterText = this.listenFilter.trim().toLowerCase();
+    let ergebnis = !filterText ? this.items : this.items.filter(item => {
+      const adresse = [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ");
+      return item.name.toLowerCase().includes(filterText) || adresse.toLowerCase().includes(filterText);
+    });
+
+    if (this.listenSortSpalte) {
+      const spalte = this.listenSortSpalte;
+      const richtung = this.listenSortRichtung === "asc" ? 1 : -1;
+      const wert = (item) => {
+        if (spalte === "adresse") return [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ").toLowerCase();
+        if (spalte === "geoeffnet") return item.geoeffnet === true ? 2 : item.geoeffnet === false ? 1 : 0;
+        return String(item[spalte] || "").toLowerCase();
+      };
+      ergebnis = [...ergebnis].sort((a, b) => {
+        const wa = wert(a), wb = wert(b);
+        return wa < wb ? -richtung : wa > wb ? richtung : 0;
+      });
+    }
+    return ergebnis;
+  }
+
+  listTable() {
+    const zeilen = this.sortierteGefilterteItems();
+    const pfeil = (spalte) => this.listenSortSpalte === spalte ? (this.listenSortRichtung === "asc" ? " ▲" : " ▼") : "";
+
+    return `<div class="list-filter">
+        <input type="text" data-listen-filter placeholder="Nach Name oder Adresse filtern …" value="${this.escAttr(this.listenFilter)}">
+      </div>
+      <div class="table-scroll">
+        <table class="hoflaeden-table">
+          <thead>
+            <tr>
+              <th><button type="button" class="table-sort" data-sort="name">Name${pfeil("name")}</button></th>
+              <th><button type="button" class="table-sort" data-sort="adresse">Adresse${pfeil("adresse")}</button></th>
+              <th><button type="button" class="table-sort" data-sort="geoeffnet">Status${pfeil("geoeffnet")}</button></th>
+              <th>Karte</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${zeilen.length ? zeilen.map(item => {
+              const adresse = [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ");
+              return `<tr>
+                <td><button type="button" class="link-button" data-view="${item.id}">${this.esc(item.name)}</button></td>
+                <td>${this.esc(adresse) || '<span class="muted">–</span>'}</td>
+                <td>${this.geoeffnetBadge(item.geoeffnet)}</td>
+                <td>${this.mapButton(item.latitude, item.longitude)}</td>
+              </tr>`;
+            }).join("") : `<tr><td colspan="4" class="muted">Keine Treffer für diesen Filter.</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
   }
 
   // --- Detailansicht (read-only) ---------------------------------------
@@ -562,14 +667,24 @@ class HofkartePanel extends HTMLElement {
 
   /** Webseite als anklickbarer Link – kein UI-Block, wenn keine/keine
    * gültige URL hinterlegt ist (siehe Anforderung: kein leerer Bereich). */
-  websiteLinkBlock(website) {
+  /** Kernlogik für die Website-Darstellung (nur der Link/Hinweis selbst,
+   * ohne umgebende Sektion) – wird sowohl von der Detailansicht als auch
+   * von Kacheln/Tabellenzeilen verwendet, um Validierung/Linkaufbau
+   * nicht zu duplizieren. */
+  websiteLinkHtml(website) {
     if (!website || !website.trim()) return "";
     const trimmed = website.trim();
     const href = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
     if (!this.isPlausibleUrl(trimmed)) {
-      return `<section class="card detail-section"><h3>Webseite</h3><div class="muted">Ungültige Webseiten-Adresse hinterlegt: ${this.esc(trimmed)}</div></section>`;
+      return `<span class="muted">Ungültige Webseiten-Adresse: ${this.esc(trimmed)}</span>`;
     }
-    return `<section class="card detail-section"><h3>Webseite</h3><a class="website-link" href="${this.escAttr(href)}" target="_blank" rel="noopener noreferrer">🔗 ${this.esc(trimmed)}</a></section>`;
+    return `<a class="website-link" href="${this.escAttr(href)}" target="_blank" rel="noopener noreferrer">🔗 ${this.esc(trimmed)}</a>`;
+  }
+
+  websiteLinkBlock(website) {
+    const inhalt = this.websiteLinkHtml(website);
+    if (!inhalt) return "";
+    return `<section class="card detail-section"><h3>Webseite</h3>${inhalt}</section>`;
   }
 
   detailOpeningHours(rows) {
@@ -796,6 +911,30 @@ class HofkartePanel extends HTMLElement {
 
   bind() {
     this.shadowRoot.querySelector("[data-new]")?.addEventListener("click", () => this.start());
+    this.shadowRoot.querySelectorAll("[data-ansicht]").forEach(b =>
+      b.addEventListener("click", () => { this.uebersichtsAnsicht = b.dataset.ansicht; this.render(); })
+    );
+    this.shadowRoot.querySelectorAll("[data-sort]").forEach(b =>
+      b.addEventListener("click", () => {
+        const spalte = b.dataset.sort;
+        if (this.listenSortSpalte === spalte) {
+          this.listenSortRichtung = this.listenSortRichtung === "asc" ? "desc" : "asc";
+        } else {
+          this.listenSortSpalte = spalte;
+          this.listenSortRichtung = "asc";
+        }
+        this.render();
+      })
+    );
+    this.shadowRoot.querySelector("[data-listen-filter]")?.addEventListener("input", (e) => {
+      this.listenFilter = e.target.value;
+      this.render();
+      // Fokus geht beim Re-Render verloren (innerHTML wird neu aufgebaut) -
+      // direkt danach wiederherstellen, damit Weitertippen ohne erneuten
+      // Klick möglich ist.
+      const neuesFeld = this.shadowRoot.querySelector("[data-listen-filter]");
+      if (neuesFeld) { neuesFeld.focus(); neuesFeld.selectionStart = neuesFeld.selectionEnd = neuesFeld.value.length; }
+    });
     this.shadowRoot.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => this.start(this.items.find(x => x.id === b.dataset.edit))));
     this.shadowRoot.querySelector("[data-edit-from-detail]")?.addEventListener("click", (e) => this.start(this.items.find(x => x.id === e.target.dataset.editFromDetail)));
     this.shadowRoot.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => this.view(this.items.find(x => x.id === b.dataset.view))));

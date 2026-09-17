@@ -125,7 +125,20 @@ Home-Assistant-Actions.
 
 Nach der Einrichtung steht im Home-Assistant-Seitenmenü die
 Verwaltungsseite **HofKarte** zur Verfügung (nur für Administratoren
-sichtbar). Dort können Administratoren:
+sichtbar).
+
+**Übersicht (Kacheln oder Liste):** Ein Umschalter oberhalb der
+Übersicht wechselt zwischen einer **Kachel-Ansicht** (Hauptbild oder
+Platzhalter, Name, Adresse, anklickbare Webseite, Öffnungsstatus,
+Karten-Button) und einer **sortierbaren Listen-/Tabellenansicht** (Name,
+Adresse, Status – jede Spalte einzeln sortierbar, inkl. Freitextfilter
+und Karten-Button je Zeile). In beiden Ansichten öffnet ein Klick auf
+den Namen direkt die Detailansicht. Der Öffnungsstatus wird
+serverseitig über dieselbe Funktion berechnet, die auch die Entity
+„Geöffnet“ verwendet (`opening_hours.is_open`, siehe
+`management.py`) – keine abweichende Berechnung im Browser.
+
+Dort können Administratoren:
 
 - neue Hofläden erstellen,
 - bestehende Hofläden bearbeiten,

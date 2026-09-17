@@ -319,6 +319,35 @@ Detailansicht benötigt keinen eigenen WebSocket-Befehl – sie zeigt die
 bereits über `hofkarte/management/list` geladenen Daten an, ohne
 Bearbeitungsmöglichkeit.
 
+### Übersicht: Kacheln/Liste, serverseitig berechnete Anzeigefelder
+
+Die Listenansicht selbst bietet zwei Darstellungen (`uebersichtsAnsicht`,
+rein clientseitiger Zustand, kein Backend-Unterschied): eine
+Kachel-Ansicht (`listGrid`/`listCard`) und eine sortierbare
+Tabellenansicht (`listTable`). Sortierung und Freitextfilter
+(`sortierteGefilterteItems`) laufen vollständig clientseitig über die
+bereits geladenen Daten – kein neuer WebSocket-Befehl nötig.
+
+Für zwei Anzeigefelder wäre eine korrekte clientseitige Berechnung nur
+durch Duplikation bereits bestehender, teils sicherheitsrelevanter
+Backend-Logik möglich gewesen; stattdessen liefert
+`management._serialize_hofladen` sie serverseitig vorberechnet mit:
+
+- **`geoeffnet`** (`true`/`false`/`null`): über `opening_hours.is_open`
+  – exakt dieselbe Funktion wie beim Binary Sensor „Geöffnet“
+  (`binary_sensor.py`). `now` wird einmal pro WebSocket-Antwort ermittelt
+  (`dt_util.now()`), nicht pro Hofladen, damit alle Hofläden einer
+  Antwort konsistent gegen denselben Zeitpunkt bewertet werden.
+- **`hauptbild_url`** (`str | None`): über `images.get_main_image_url`
+  – exakt dieselbe Funktion (inkl. Sicherheitsprüfung gegen
+  private/interne IP-Literale, siehe `SECURITY.md`) wie beim
+  `image`-Entity für das tatsächliche Hauptbild (`image.py`).
+
+Beide Felder werden von `ws_list` **und** `ws_save` mitgeliefert, damit
+die Oberfläche nach dem Speichern eines einzelnen Hofladens dessen
+Kachel/Zeile aktualisieren kann, ohne einen vollständigen `list`-Aufruf
+zu benötigen.
+
 ## Diagnostics
 
 `diagnostics.py` liefert eine technische Übersicht (Status des letzten

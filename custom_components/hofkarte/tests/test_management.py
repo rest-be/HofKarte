@@ -73,7 +73,7 @@ class _ReadOnlyFakeProvider(HofladenDataProvider):
 def test_serialize_hofladen_wandelt_verschachtelte_werte_in_json_typen_um() -> None:
     """Zeiten, Tupel und verschachtelte Dataclasses müssen JSON-serialisierbar
     werden (str/list/dict), nicht als Python-Objekte übrig bleiben."""
-    from datetime import time
+    from datetime import datetime, time, timezone
 
     hofladen = Hofladen(
         id="hof-1",
@@ -83,7 +83,9 @@ def test_serialize_hofladen_wandelt_verschachtelte_werte_in_json_typen_um() -> N
         ),
     )
 
-    serialisiert = _serialize_hofladen(hofladen)
+    serialisiert = _serialize_hofladen(
+        hofladen, now=datetime(2026, 1, 1, tzinfo=timezone.utc)
+    )
 
     assert serialisiert["id"] == "hof-1"
     assert isinstance(serialisiert["oeffnungszeiten"], list)
@@ -98,7 +100,7 @@ def test_serialize_hofladen_zeiten_ohne_sekunden() -> None:
     liefert standardmässig 'hh:mm:ss' - die Detailansicht darf aber nur
     'hh:mm' anzeigen, da Öffnungszeiten ausschliesslich minutengenau
     erfasst werden."""
-    from datetime import time
+    from datetime import datetime, time, timezone
 
     hofladen = Hofladen(
         id="hof-2",
@@ -108,12 +110,144 @@ def test_serialize_hofladen_zeiten_ohne_sekunden() -> None:
         ),
     )
 
-    serialisiert = _serialize_hofladen(hofladen)
+    serialisiert = _serialize_hofladen(
+        hofladen, now=datetime(2026, 1, 1, tzinfo=timezone.utc)
+    )
     zeit = serialisiert["oeffnungszeiten"][0]
 
     assert zeit["beginn"] == "07:30"
     assert zeit["ende"] == "18:45"
     assert ":" not in zeit["beginn"][5:]  # kein zweiter Doppelpunkt -> keine Sekunden
+
+
+# ---------------------------------------------------------------------------
+# geoeffnet (serverseitig berechneter Öffnungsstatus für die
+# Kacheln-/Listenansicht, siehe Issue #1 - keine Duplikation der
+# Berechnungslogik in JavaScript)
+# ---------------------------------------------------------------------------
+
+
+def test_serialize_hofladen_enthaelt_geoeffnet_true() -> None:
+    from datetime import datetime, time, timezone
+
+    hofladen = Hofladen(
+        id="hof-3",
+        name="Hofladen Drei",
+        oeffnungszeiten=(
+            Oeffnungszeit(wochentag=1, beginn=time(8, 0), ende=time(12, 0)),
+        ),
+    )
+    # Montag, 10 Uhr -> innerhalb des Intervalls.
+    montag_10_uhr = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc)
+
+    serialisiert = _serialize_hofladen(hofladen, now=montag_10_uhr)
+
+    assert serialisiert["geoeffnet"] is True
+
+
+def test_serialize_hofladen_enthaelt_geoeffnet_false() -> None:
+    from datetime import datetime, time, timezone
+
+    hofladen = Hofladen(
+        id="hof-4",
+        name="Hofladen Vier",
+        oeffnungszeiten=(
+            Oeffnungszeit(wochentag=1, beginn=time(8, 0), ende=time(12, 0)),
+        ),
+    )
+    # Montag, 14 Uhr -> ausserhalb des Intervalls.
+    montag_14_uhr = datetime(2026, 1, 5, 14, 0, tzinfo=timezone.utc)
+
+    serialisiert = _serialize_hofladen(hofladen, now=montag_14_uhr)
+
+    assert serialisiert["geoeffnet"] is False
+
+
+def test_serialize_hofladen_geoeffnet_none_ohne_oeffnungszeiten() -> None:
+    """Ohne hinterlegte Öffnungszeiten muss 'geoeffnet' None ('unbekannt')
+    sein, nicht fälschlich False ('geschlossen')."""
+    from datetime import datetime, timezone
+
+    hofladen = Hofladen(id="hof-5", name="Hofladen Fünf")
+
+    serialisiert = _serialize_hofladen(
+        hofladen, now=datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc)
+    )
+
+    assert serialisiert["geoeffnet"] is None
+
+
+def test_serialize_hofladen_enthaelt_hauptbild_url() -> None:
+    from datetime import datetime, timezone
+
+    from custom_components.hofkarte.models import Bild
+
+    hofladen = Hofladen(
+        id="hof-6",
+        name="Hofladen Sechs",
+        bilder=(Bild(url="https://example.com/logo.png"),),
+    )
+
+    serialisiert = _serialize_hofladen(
+        hofladen, now=datetime(2026, 1, 1, tzinfo=timezone.utc)
+    )
+
+    assert serialisiert["hauptbild_url"] == "https://example.com/logo.png"
+
+
+def test_serialize_hofladen_hauptbild_url_none_ohne_bilder() -> None:
+    from datetime import datetime, timezone
+
+    hofladen = Hofladen(id="hof-7", name="Hofladen Sieben")
+
+    serialisiert = _serialize_hofladen(
+        hofladen, now=datetime(2026, 1, 1, tzinfo=timezone.utc)
+    )
+
+    assert serialisiert["hauptbild_url"] is None
+
+
+async def test_ws_list_liefert_geoeffnet_fuer_jeden_hofladen(
+    hass: HomeAssistant,
+) -> None:
+    """End-zu-Ende: Der WebSocket-Befehl 'list' muss 'geoeffnet' für jeden
+    Hofladen mitliefern, konsistent mit dem tatsächlichen Zustand des
+    Binary Sensors 'Geöffnet'."""
+    coordinator = await _setup_mit_coordinator(hass)
+    await coordinator.async_add_hofladen({"id": "hof-a", "name": "Hofladen A"})
+
+    connection = _FakeConnection()
+    ws_list(hass, connection, {"id": 1, "type": "hofkarte/management/list"})
+
+    _, ergebnis = connection.results[0]
+    hoflaeden = ergebnis["hoflaeden"]
+    assert len(hoflaeden) == 1
+    # Ohne hinterlegte Öffnungszeiten ist der Status unbekannt.
+    assert hoflaeden[0]["geoeffnet"] is None
+
+
+async def test_ws_save_liefert_geoeffnet_im_rueckgabe_hofladen(
+    hass: HomeAssistant,
+) -> None:
+    """Auch die Rückgabe von 'save' muss 'geoeffnet' enthalten, damit die
+    Oberfläche eine einzelne Änderung ohne vollständigen Re-List
+    aktualisieren kann."""
+    await _setup_mit_coordinator(hass)
+
+    connection = _FakeConnection()
+    ws_save(
+        hass,
+        connection,
+        {
+            "id": 1,
+            "type": "hofkarte/management/save",
+            "hofladen": {"id": "hof-b", "name": "Hofladen B"},
+        },
+    )
+    await hass.async_block_till_done()
+
+    _, ergebnis = connection.results[0]
+    assert "geoeffnet" in ergebnis["hofladen"]
 
 
 # ---------------------------------------------------------------------------
