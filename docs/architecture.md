@@ -192,6 +192,113 @@ Umrechnung nötig. Der Button ist deaktiviert, wenn keine gültigen
 Koordinaten vorliegen (`isValidWgs84`); die Kartenansicht ist ein rein
 lesender externer Link ohne neue Abhängigkeit.
 
+### Eingebettete Mehrfach-Marker-Karte (Issue #2, Architekturabweichung)
+
+Der bestehende, rein externe Google-Maps-Link (siehe oben) zeigt
+bewusst **einen** Standort in einem neuen Tab – für eine **eingebettete**
+Karte, die **alle** Hofläden gleichzeitig als Marker zeigt (Issue #2),
+ist das technisch etwas anderes und nicht ausreichend.
+
+**Geprüfte Optionen:**
+
+- Eine native, für Custom Panels vorgesehene Home-Assistant-Karten-
+  komponente mit beliebigen eigenen Markern existiert nicht – die
+  eingebaute Kartenkarte ist an Lovelace-Dashboards gebunden, nicht an
+  eigenständige Sidebar-Panels wie das von HofKarte.
+- Eine reine Eigenimplementierung (z. B. ein einfaches, selbst
+  gezeichnetes Koordinatenraster ohne echtes Kartenmaterial) hätte den
+  eigentlichen Zweck (Wiedererkennung realer Orte/Strassen) verfehlt.
+- Eine schlanke JavaScript-Kartenbibliothek mit OpenStreetMap-Kacheln,
+  per `<script>`/`<link>` von einem CDN eingebunden – **ohne**
+  Build-Pipeline oder npm-Abhängigkeit im Repository.
+
+**Entscheid: [Leaflet](https://leafletjs.com/) `1.9.4` (BSD-2-Clause) +
+OpenStreetMap-Kacheln.** Begründung:
+
+- kein API-Schlüssel und kein Kartendienst-Konto nötig
+  (OpenStreetMap-Kacheln sind ohne Registrierung nutzbar) – im
+  Unterschied zu den meisten kommerziellen Kartendiensten;
+- keine Build-Pipeline/npm-Abhängigkeit im Repository nötig: reines
+  `<script>`/`<link>` von einem CDN (`cdn.jsdelivr.net`), mit **fest
+  gepinnter** Versionsnummer statt „latest“;
+- seit vielen Jahren aktiv gewartet, sehr verbreitet (u. a. in
+  zahlreichen Home-Assistant-HACS-Karten bereits im Einsatz), kompakt
+  (~40 KB gzip für JS und CSS zusammen).
+
+Dies ist eine **bewusste, dokumentierte Ausnahme** vom Projektgrundsatz
+„keine neuen Abhängigkeiten“ – begrenzt auf genau diese eine, schlanke
+Bibliothek für genau diese eine Funktion, nicht Teil einer
+Build-Pipeline und nicht in `manifest.json` deklariert (es ist eine
+reine Frontend-/Browser-Abhängigkeit, keine Python-Abhängigkeit der
+Integration selbst).
+
+**Lazy Loading:** `ladeLeaflet()` in `hofkarte-panel.js` lädt das
+`<script>`-Tag (und `karteAnsicht()` das zugehörige `<link>`-Stylesheet)
+**erst beim ersten Öffnen** der Kartenansicht, nicht beim Start des
+Panels – wer die Kartenansicht nie öffnet, löst auch nie eine
+Verbindung zum CDN oder zum OpenStreetMap-Kachel-Server aus (siehe
+Datenschutz-Hinweise im Handbuch). Das zurückgegebene Promise wird
+zwischengespeichert (`leafletLoadPromise`), damit mehrfaches Öffnen der
+Ansicht nicht mehrfach nachlädt; schlägt das Laden fehl (z. B. CDN
+nicht erreichbar), wird es verworfen, damit ein erneuter Versuch beim
+nächsten Öffnen möglich ist, statt dauerhaft fehlzuschlagen.
+
+**Rendering innerhalb des Shadow-DOM-Custom-Elements:** Leaflets CSS
+muss innerhalb desselben Shadow-DOM-Baums geladen werden wie die Karte
+selbst (Shadow-DOM-Style-Isolation) – das `<link>`-Element steht daher
+direkt im von `karteAnsicht()` erzeugten Markup, nicht im globalen
+Dokument-`<head>`. Da `render()` bei **jeder** Änderung den gesamten
+Shadow-DOM-Inhalt per `innerHTML` ersetzt (bestehendes Architekturmuster
+dieses Panels, siehe unten), würde eine bestehende Leaflet-Karteninstanz
+sonst mit einem bereits aus dem DOM entfernten Container weiterleben
+(offene Event-Listener u. a. auf `window`). `teardownKarte()` entfernt
+die Instanz deshalb **vor** jedem `innerHTML`-Ersatz explizit
+(`map.remove()`); ist die Kartenansicht weiterhin aktiv, baut
+`initKarte()` danach eine neue Instanz in den neu erzeugten Container
+auf. Das bedeutet: Die Karte wird bei jedem Re-Render der Ansicht
+(Wechsel in die Kartenansicht, Ändern des Geöffnet-Filters) neu
+aufgebaut statt aktualisiert – konsistent mit dem bestehenden,
+einfachen Render-Modell des Panels und für die hier relevanten
+Datenmengen (einzelne bis wenige Dutzend Hofläden) ohne spürbaren
+Performance-Nachteil.
+
+Die Kartengrössenberechnung (`L.map()`) erfolgt, nachdem der Container
+bereits über `innerHTML` ins DOM eingefügt wurde (Layout ist zu diesem
+Zeitpunkt bereits berechnet); zusätzlich sichert ein
+`window.addEventListener("resize", …)` sowie ein einmaliges
+`setTimeout(() => map.invalidateSize())` gegen nachträgliche
+Layoutänderungen (z. B. eine noch laufende Sidebar-Animation) ab. Der
+Resize-Handler wird in `teardownKarte()` wieder entfernt, um keine
+Listener über die Lebensdauer der jeweiligen Karteninstanz hinaus
+anzusammeln.
+
+**Marker, Popup und Detailansicht-Navigation:** Für jeden Hofladen mit
+gültigen Koordinaten (`isValidWgs84`, wiederverwendet aus der
+bestehenden Google-Maps-Logik) wird ein `L.marker` gesetzt, dessen
+Popup einen Button „Zur Detailansicht“ enthält. Da Leaflet-Popups
+ausserhalb des von `render()`/`bind()` erzeugten Markups liegen (sie
+werden von Leaflet selbst zur Laufzeit in den Kartencontainer
+eingefügt), wird der Klick-Handler **nicht** über die generische
+`bind()`-Delegation (`data-view`-Attribute wie bei Kacheln/Liste)
+registriert, sondern direkt über das Leaflet-eigene `popupopen`-Event
+an `this.view(item)` gebunden – dieselbe Methode, die auch die
+`data-view`-Buttons in Kacheln und Liste aufrufen, sodass sich die
+Detailansicht selbst nicht unterscheidet.
+
+**Geöffnet-Filter:** Die Checkbox „Nur aktuell geöffnete Hofläden
+anzeigen“ (`karteNurGeoeffnet`) filtert rein clientseitig auf dem
+bereits vorhandenen, serverseitig berechneten Feld `geoeffnet` (siehe
+Abschnitt oben) – keine neue Backend-Logik. Ein Wert von `null`
+(„unbekannt“) gilt bei aktiviertem Filter konsequent **nicht** als
+geöffnet, entsprechend der Anforderung „kein unbestätigter
+Optimismus“.
+
+**Kein initiales Nachladen ohne Koordinaten:** Gibt es keinen einzigen
+Hofladen mit gültigen Koordinaten, zeigt `karteAnsicht()` direkt eine
+Meldung, **ohne** überhaupt zu versuchen, Leaflet nachzuladen oder
+einen Kartencontainer zu erzeugen – vermeidet unnötige Netzwerkzugriffe
+und eine leere/kaputt wirkende Fläche.
+
 ### Entfernung vom aktuellen Gerät (clientseitig)
 
 `haversineDistanceKm` in `hofkarte-panel.js` ist ein bewusstes,

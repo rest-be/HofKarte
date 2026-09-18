@@ -127,16 +127,22 @@ Nach der Einrichtung steht im Home-Assistant-Seitenmenü die
 Verwaltungsseite **HofKarte** zur Verfügung (nur für Administratoren
 sichtbar).
 
-**Übersicht (Kacheln oder Liste):** Ein Umschalter oberhalb der
+**Übersicht (Kacheln, Liste oder Karte):** Ein Umschalter oberhalb der
 Übersicht wechselt zwischen einer **Kachel-Ansicht** (Hauptbild oder
 Platzhalter, Name, Adresse, anklickbare Webseite, Öffnungsstatus,
-Karten-Button) und einer **sortierbaren Listen-/Tabellenansicht** (Name,
+Karten-Button), einer **sortierbaren Listen-/Tabellenansicht** (Name,
 Adresse, Status – jede Spalte einzeln sortierbar, inkl. Freitextfilter
-und Karten-Button je Zeile). In beiden Ansichten öffnet ein Klick auf
-den Namen direkt die Detailansicht. Der Öffnungsstatus wird
-serverseitig über dieselbe Funktion berechnet, die auch die Entity
-„Geöffnet“ verwendet (`opening_hours.is_open`, siehe
-`management.py`) – keine abweichende Berechnung im Browser.
+und Karten-Button je Zeile) und einer **eingebetteten Kartenansicht**
+mit einer Stecknadel je Hofladen mit hinterlegten Koordinaten (Klick
+öffnet ein Popup mit Namen und Button „Zur Detailansicht“; optionale
+Checkbox „Nur aktuell geöffnete Hofläden anzeigen“). In Kacheln und
+Liste öffnet ein Klick auf den Namen direkt die Detailansicht. Der
+Öffnungsstatus wird serverseitig über dieselbe Funktion berechnet, die
+auch die Entity „Geöffnet“ verwendet (`opening_hours.is_open`, siehe
+`management.py`) – keine abweichende Berechnung im Browser. Details
+zur Kartenansicht (Bibliothekswahl, externe Kommunikation) siehe
+Abschnitt „Standort auf Karte anzeigen“ unten und
+„Datenschutz- und Standort-Hinweise“.
 
 Dort können Administratoren:
 
@@ -190,6 +196,21 @@ hinterlegt sind. Beide Ansichten nutzen dieselbe Hilfsfunktion
 (`mapButton`/`googleMapsUrl` in `hofkarte-panel.js`) für identisches
 Verhalten. Öffnet nur eine externe, rein lesende Kartenansicht –
 verändert keine Daten.
+
+**Eingebettete Kartenansicht (alle Hofläden gleichzeitig):** Die
+Übersichtsansicht „🗺️ Karte“ zeigt zusätzlich zum externen
+Google-Maps-Link eine **eingebettete** Karte mit einer Stecknadel für
+**jeden** Hofladen mit gültigen Koordinaten gleichzeitig – dafür
+technisch nötig, da eine einzelne externe Karte immer nur einen
+Standort zeigt. Umgesetzt mit [Leaflet](https://leafletjs.com/) `1.9.4`
+und OpenStreetMap-Kartenkacheln, per `<script>`/`<link>` mit fest
+gepinnter Version von einem CDN nachgeladen – bewusst erst beim ersten
+Öffnen dieser Ansicht, keine Build-Pipeline, kein API-Schlüssel nötig.
+Das ist eine bewusste, im Architekturdokument begründete Ausnahme vom
+Projektgrundsatz „keine neuen Abhängigkeiten“ (siehe
+`docs/architecture.md`). Der Klick auf eine Stecknadel führt über ein
+Popup mit Button „Zur Detailansicht“ zur selben Detailansicht wie in
+Kacheln/Liste.
 
 **Technischer Aufbau:** `frontend.py` registriert das Sidebar-Panel
 sowie die statischen JS-Assets; `management.py` stellt dafür
@@ -645,9 +666,14 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
 ## Datenschutz- und Standort-Hinweise
 
 - **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
-  externen Servern (ausser dem Laden von Hofladen-Bildern über die vom
-  Benutzer hinterlegten Bild-URLs, siehe „Bilder“). Es findet keine
-  Telemetrie und keine Datenübertragung an Dritte statt.
+  externen Servern – mit zwei Ausnahmen: dem Laden von Hofladen-Bildern
+  über die vom Benutzer hinterlegten Bild-URLs (siehe „Bilder“) sowie
+  dem Laden der Kartenbibliothek Leaflet und der Kartenkacheln von
+  OpenStreetMap, sobald die Übersichtsansicht „🗺️ Karte“ tatsächlich
+  geöffnet wird (siehe „Eingebettete Kartenansicht“ oben) – dabei werden
+  nur Kachel-/Ausschnittkoordinaten übertragen, keine Hofladen- oder
+  Standortdaten im Klartext. Ausserhalb davon findet keine Telemetrie
+  und keine Datenübertragung an Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor liest
   ausschliesslich die statische, in Home Assistant konfigurierte
   Position (`hass.config.latitude`/`longitude`) – kein `device_tracker`,

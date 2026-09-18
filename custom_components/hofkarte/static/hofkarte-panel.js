@@ -41,6 +41,57 @@ function haversineDistanceKm(lat1, lon1, lat2, lon2) {
   return erdradiusKm * c;
 }
 
+// --- Kartenansicht (Issue #2): Leaflet + OpenStreetMap ------------------
+//
+// Home Assistant bietet keine offizielle, für Custom Panels vorgesehene
+// Möglichkeit, eine interaktive Karte mit beliebigen eigenen Markern
+// einzubetten (nur die Lovelace-eigene, dashboard-interne Kartenkarte).
+// Für eine eingebettete Karte mit mehreren gleichzeitig sichtbaren
+// Markern wurde daher bewusst Leaflet + OpenStreetMap gewählt – eine
+// dokumentierte, minimal-invasive Ausnahme vom Projektgrundsatz „keine
+// neuen Abhängigkeiten“ (siehe docs/architecture.md):
+// - keine Build-Pipeline/npm-Abhängigkeit im Repository nötig (reines
+//   <script>/<link> von einem CDN, fest gepinnte Version, kein
+//   „latest“);
+// - kein API-Schlüssel und kein Kartendienst-Konto nötig
+//   (OpenStreetMap-Kacheln sind ohne Registrierung nutzbar);
+// - BSD-2-Clause-Lizenz, seit vielen Jahren aktiv gewartet, sehr
+//   verbreitet (u. a. in zahlreichen Home-Assistant-HACS-Karten bereits
+//   im Einsatz), kompakt (~40 KB gzip für JS und CSS zusammen).
+// Wird bewusst erst beim ersten Öffnen der Kartenansicht nachgeladen
+// (nicht beim Start des Panels), damit Nutzer:innen, die die
+// Kartenansicht nie öffnen, auch nie eine Verbindung zum
+// CDN/Kachel-Anbieter auslösen (siehe Datenschutz-Hinweise im Handbuch).
+const LEAFLET_VERSION = "1.9.4";
+const LEAFLET_JS_URL = `https://cdn.jsdelivr.net/npm/leaflet@${LEAFLET_VERSION}/dist/leaflet.js`;
+const LEAFLET_CSS_URL = `https://cdn.jsdelivr.net/npm/leaflet@${LEAFLET_VERSION}/dist/leaflet.css`;
+
+let leafletLoadPromise = null;
+
+/** Leaflet (globale ``L``-Schnittstelle) einmalig per <script>-Tag von
+ * einem CDN nachladen. Mehrfache Aufrufe (z. B. mehrfaches Öffnen der
+ * Kartenansicht) liefern dasselbe Promise – kein doppeltes Nachladen.
+ * Schlägt das Laden fehl (z. B. CDN nicht erreichbar), wird das
+ * Promise verworfen, damit ein erneuter Versuch beim nächsten Öffnen
+ * der Kartenansicht möglich ist, statt dauerhaft fehlzuschlagen. */
+function ladeLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletLoadPromise) return leafletLoadPromise;
+
+  leafletLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = LEAFLET_JS_URL;
+    script.async = true;
+    script.onload = () => (window.L ? resolve(window.L) : reject(new Error("Kartenbibliothek wurde geladen, stellt aber keine gültige Schnittstelle bereit.")));
+    script.onerror = () => reject(new Error("Kartenbibliothek konnte nicht geladen werden (CDN nicht erreichbar?)."));
+    document.head.appendChild(script);
+  }).catch((err) => {
+    leafletLoadPromise = null;
+    throw err;
+  });
+  return leafletLoadPromise;
+}
+
 const WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 
 // Konvention (bereits an anderer Stelle im Projekt verwendet, siehe
@@ -61,10 +112,14 @@ class HofkartePanel extends HTMLElement {
     this.showCoordInfo = false;
     this.deviceDistance = null; // { km } - clientseitig ermittelte Entfernung vom aktuellen Gerät
     this.deviceDistanceStatus = ""; // Lade-/Fehlermeldung während der Ermittlung
-    this.uebersichtsAnsicht = "kacheln"; // "kacheln" | "liste" (Issue #1)
+    this.uebersichtsAnsicht = "kacheln"; // "kacheln" | "liste" | "karte" (Issue #1/#2)
     this.listenSortSpalte = null; // "name" | "adresse" | "geoeffnet"
     this.listenSortRichtung = "asc"; // "asc" | "desc"
     this.listenFilter = ""; // Freitextfilter in der Listenansicht
+    this.karteNurGeoeffnet = false; // Checkbox "nur aktuell geöffnete Hofläden" (Issue #2)
+    this.karteFehler = ""; // Fehlermeldung beim Laden der Kartenbibliothek (Issue #2)
+    this._leafletMap = null; // aktive Leaflet-Karteninstanz, ausserhalb des normalen Render-Zyklus verwaltet
+    this._leafletResizeHandler = null;
     this.attachShadow({ mode: "open" });
   }
 
@@ -75,6 +130,7 @@ class HofkartePanel extends HTMLElement {
   get hass() { return this._hass; }
 
   connectedCallback() { this.render(); if (this.hass) this.load(); }
+  disconnectedCallback() { this.teardownKarte(); }
 
   async call(type, payload = {}) {
     return this.hass.connection.sendMessagePromise({ type, ...payload });
@@ -418,8 +474,92 @@ class HofkartePanel extends HTMLElement {
 
   render() {
     if (!this.shadowRoot) return;
+    // Eine bestehende Leaflet-Karteninstanz muss vor dem Ersetzen von
+    // innerHTML explizit entfernt werden (map.remove()) – sie hält
+    // sonst weiterhin Referenzen/Event-Listener (z. B. auf window)
+    // gegen einen bereits aus dem DOM entfernten Container. Wird die
+    // Kartenansicht danach erneut aufgebaut, übernimmt initKarte() das.
+    this.teardownKarte();
     this.shadowRoot.innerHTML = `<style>${this.styles()}</style><main>${this.currentView()}</main>`;
     this.bind();
+    if (!this.editing && !this.viewing && this.uebersichtsAnsicht === "karte" && this.items.length) {
+      this.initKarte();
+    }
+  }
+
+  /** Aktive Leaflet-Karteninstanz und den zugehörigen Resize-Handler
+   * sauber entfernen (siehe render()/disconnectedCallback()). */
+  teardownKarte() {
+    if (this._leafletResizeHandler) {
+      window.removeEventListener("resize", this._leafletResizeHandler);
+      this._leafletResizeHandler = null;
+    }
+    if (this._leafletMap) {
+      this._leafletMap.remove();
+      this._leafletMap = null;
+    }
+  }
+
+  /** Leaflet-Karte in den zuvor von karteAnsicht() gerenderten Container
+   * einhängen. Wird bei jedem Render der Kartenansicht neu aufgebaut, da
+   * render() den gesamten Shadow-DOM-Inhalt ersetzt (siehe teardownKarte(),
+   * das die vorherige Instanz zuvor bereits entfernt hat). Popups nutzen
+   * bewusst direkte Leaflet-Events statt der generischen bind()-Delegation
+   * (Marker/Popups liegen ausserhalb des von render() erzeugten Markups). */
+  async initKarte() {
+    const container = this.shadowRoot.querySelector("[data-karte-container]");
+    if (!container) return; // z. B. "keine Koordinaten"-Meldung statt Karte
+
+    let L;
+    try {
+      L = await ladeLeaflet();
+    } catch (err) {
+      this.karteFehler = err?.message || "Kartenbibliothek konnte nicht geladen werden.";
+      this.render();
+      return;
+    }
+
+    // Zwischenzeitlich könnte die Ansicht gewechselt oder neu gerendert
+    // worden sein, während die Bibliothek geladen wurde – dann diesen
+    // (veralteten) Container nicht mehr verwenden.
+    if (!this.shadowRoot.contains(container) || this.uebersichtsAnsicht !== "karte" || this.editing || this.viewing) return;
+    this.karteFehler = "";
+
+    const alleMitKoordinaten = this.items.filter((item) => isValidWgs84(item.latitude, item.longitude));
+    const markerItems = this.karteNurGeoeffnet ? alleMitKoordinaten.filter((item) => item.geoeffnet === true) : alleMitKoordinaten;
+
+    const map = L.map(container, { scrollWheelZoom: true });
+    this._leafletMap = map;
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>-Mitwirkende',
+    }).addTo(map);
+
+    for (const item of markerItems) {
+      const marker = L.marker([item.latitude, item.longitude]).addTo(map);
+      marker.bindPopup(`<div class="karte-popup"><strong>${this.esc(item.name)}</strong><br><button type="button" class="link-button" data-karte-view>Zur Detailansicht</button></div>`);
+      marker.on("popupopen", (e) => {
+        e.popup.getElement()?.querySelector("[data-karte-view]")?.addEventListener("click", () => this.view(item));
+      });
+    }
+
+    if (markerItems.length === 1) {
+      map.setView([markerItems[0].latitude, markerItems[0].longitude], 14);
+    } else if (markerItems.length > 1) {
+      map.fitBounds(markerItems.map((item) => [item.latitude, item.longitude]), { padding: [24, 24] });
+    } else {
+      // Der Geöffnet-Filter ergibt keine Treffer, es gibt aber
+      // grundsätzlich Hofläden mit Koordinaten – sinnvollen Ausschnitt
+      // über alle vorhandenen Koordinaten zeigen statt einer
+      // Default-Weltkarte.
+      map.fitBounds(alleMitKoordinaten.map((item) => [item.latitude, item.longitude]), { padding: [24, 24] });
+    }
+
+    this._leafletResizeHandler = () => map.invalidateSize();
+    window.addEventListener("resize", this._leafletResizeHandler);
+    // Absicherung für die erstmalige Grössenberechnung (z. B. bei einer
+    // noch laufenden Sidebar-/Layout-Animation im selben Moment).
+    setTimeout(() => map.invalidateSize(), 0);
   }
 
   currentView() {
@@ -451,6 +591,14 @@ class HofkartePanel extends HTMLElement {
       .hoflaeden-table th,.hoflaeden-table td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--divider-color)}
       .hoflaeden-table tr:last-child td{border-bottom:0}
       .table-sort{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--primary-text-color);cursor:pointer;white-space:nowrap}
+      .karte-filter-row{margin-top:16px}
+      .karte-filter-row label{display:flex;align-items:center;gap:8px;margin:0;font-size:.95em;font-weight:normal}
+      .karte-filter-row input[type=checkbox]{width:auto;padding:0}
+      .karte-container{height:480px;border-radius:12px;margin-top:12px;background:var(--secondary-background-color)}
+      .karte-empty{margin-top:20px}
+      .karte-popup{font-size:.95em}
+      .karte-popup button{margin-top:6px}
+      @media(max-width:700px){.karte-container{height:360px}}
       .card{background:var(--ha-card-background,var(--card-background-color));border-radius:12px;padding:16px;box-shadow:var(--ha-card-box-shadow,0 1px 3px #0002)}
       form > section.card{margin-bottom:20px}
       .card h2{margin-top:0}
@@ -530,10 +678,11 @@ class HofkartePanel extends HTMLElement {
     const umschalter = `<div class="view-toggle">
       <button type="button" class="${this.uebersichtsAnsicht === "kacheln" ? "" : "secondary"}" data-ansicht="kacheln">🔲 Kacheln</button>
       <button type="button" class="${this.uebersichtsAnsicht === "liste" ? "" : "secondary"}" data-ansicht="liste">📋 Liste</button>
+      <button type="button" class="${this.uebersichtsAnsicht === "karte" ? "" : "secondary"}" data-ansicht="karte">🗺️ Karte</button>
     </div>`;
     const inhalt = !this.items.length
       ? `<section class="card"><h2>Noch keine Hofläden</h2><p>Erstelle den ersten Hofladen.</p></section>`
-      : (this.uebersichtsAnsicht === "liste" ? this.listTable() : this.listGrid());
+      : (this.uebersichtsAnsicht === "liste" ? this.listTable() : this.uebersichtsAnsicht === "karte" ? this.karteAnsicht() : this.listGrid());
 
     return `<div class="top"><div><h1>HofKarte</h1><div class="muted">Hofläden verwalten</div></div><button data-new>+ Neuer Hofladen</button></div>${this.message ? `<div class="notice">${this.esc(this.message)}</div>` : ""}${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}${this.items.length ? umschalter : ""}${inhalt}`;
   }
@@ -618,6 +767,28 @@ class HofkartePanel extends HTMLElement {
           </tbody>
         </table>
       </div>`;
+  }
+
+  /** Markup der Kartenansicht (Issue #2). Die eigentliche Leaflet-Karte
+   * wird erst nach dem Rendern in initKarte() in den hier erzeugten,
+   * noch leeren Container eingehängt (siehe render()). Ohne einen
+   * einzigen Hofladen mit gültigen Koordinaten wird gar nicht erst
+   * versucht, eine Karte aufzubauen – stattdessen eine klare Meldung. */
+  karteAnsicht() {
+    const alleMitKoordinaten = this.items.filter((item) => isValidWgs84(item.latitude, item.longitude));
+    if (!alleMitKoordinaten.length) {
+      return `<section class="card karte-empty"><p class="muted">Keine Hofläden mit hinterlegten Koordinaten vorhanden – es kann keine Karte angezeigt werden.</p></section>`;
+    }
+
+    const gefiltert = this.karteNurGeoeffnet ? alleMitKoordinaten.filter((item) => item.geoeffnet === true) : alleMitKoordinaten;
+
+    return `<link rel="stylesheet" href="${LEAFLET_CSS_URL}">
+      <div class="karte-filter-row">
+        <label><input type="checkbox" data-karte-nur-geoeffnet ${this.karteNurGeoeffnet ? "checked" : ""}> Nur aktuell geöffnete Hofläden anzeigen</label>
+      </div>
+      ${this.karteFehler ? `<div class="notice error">${this.esc(this.karteFehler)}</div>` : ""}
+      <div class="karte-container" data-karte-container></div>
+      ${!gefiltert.length ? `<p class="muted" style="margin-top:8px">Kein Hofladen entspricht aktuell diesem Filter.</p>` : ""}`;
   }
 
   // --- Detailansicht (read-only) ---------------------------------------
@@ -926,6 +1097,10 @@ class HofkartePanel extends HTMLElement {
         this.render();
       })
     );
+    this.shadowRoot.querySelector("[data-karte-nur-geoeffnet]")?.addEventListener("change", (e) => {
+      this.karteNurGeoeffnet = e.target.checked;
+      this.render();
+    });
     this.shadowRoot.querySelector("[data-listen-filter]")?.addEventListener("input", (e) => {
       this.listenFilter = e.target.value;
       this.render();

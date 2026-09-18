@@ -13,6 +13,45 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.1-dev.2] - Unveröffentlicht (develop)
+
+### Hinzugefügt
+
+- **Issue #2 – Übersicht als Karte:** Der bestehende Umschalter
+  „🔲 Kacheln“/„📋 Liste“ (Issue #1) bekommt eine dritte Option
+  „🗺️ Karte“ (`hofkarte-panel.js`), ohne die bestehenden zwei Ansichten
+  zu verändern.
+  - Zeigt einen Marker je Hofladen mit gültigen Koordinaten
+    (`isValidWgs84`, wiederverwendet). Hofläden ohne gültige
+    Koordinaten erscheinen nicht als Marker; gibt es keinen einzigen
+    Hofladen mit Koordinaten, erscheint eine klare Meldung statt einer
+    leeren Karte.
+  - Klick auf einen Marker öffnet ein Popup mit dem Namen des
+    Hofladens und einem Button „Zur Detailansicht“, der zur
+    bestehenden Detailansicht wechselt (`this.view()`).
+  - Initialer Kartenausschnitt passt sich automatisch an alle
+    sichtbaren Marker an (`fitBounds`).
+  - Neue Checkbox „Nur aktuell geöffnete Hofläden anzeigen“ – rein
+    clientseitiger Filter auf dem bereits vorhandenen, serverseitig
+    berechneten Feld `geoeffnet` (Issue #1); ein unbekannter Status
+    (`null`) gilt dabei konsequent **nicht** als geöffnet.
+  - Verständliche Fehlermeldung, falls die Kartenbibliothek nicht
+    geladen werden kann (z. B. CDN nicht erreichbar), statt einer
+    leeren/kaputt wirkenden Fläche.
+- **Neue, bewusst dokumentierte Abhängigkeit:** [Leaflet](https://leafletjs.com/)
+  `1.9.4` (BSD-2-Clause) mit OpenStreetMap-Kartenkacheln, ausschliesslich
+  per `<script>`/`<link>` von einem CDN mit fest gepinnter Version
+  nachgeladen (kein „latest“, keine neue Zeile in einer
+  Paketverwaltung, keine Build-Pipeline) – und erst beim ersten Öffnen
+  der Kartenansicht, nicht beim Start des Panels. Begründung und
+  geprüfte Alternativen siehe `docs/architecture.md`.
+
+### Ausdrücklich unverändert
+
+- Detailansicht, Bearbeitungsansicht, Bilder-Upload, die Ansichten
+  „Kacheln“/„Liste“ sowie alle bestehenden WebSocket-Verträge und
+  Actions: keine Änderungen.
+
 ## [2026.9.1-dev.1] - Unveröffentlicht (develop)
 
 ### Hinzugefügt

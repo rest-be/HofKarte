@@ -97,10 +97,10 @@ Nach der Einrichtung erscheint im Home-Assistant-Seitenmenü ein neuer
 Eintrag **HofKarte** (nur für Administrator:innen-Konten sichtbar). Dort
 können Hofläden verwaltet werden:
 
-### Übersicht: Kacheln oder Liste
+### Übersicht: Kacheln, Liste oder Karte
 
-Oben auf der Übersichtsseite steht ein Umschalter „🔲 Kacheln“/„📋 Liste“
-zur Verfügung:
+Oben auf der Übersichtsseite steht ein Umschalter
+„🔲 Kacheln“/„📋 Liste“/„🗺️ Karte“ zur Verfügung:
 
 - **Kacheln** (Standardansicht): eine Kachel pro Hofladen mit Hauptbild
   (oder einem neutralen Platzhalter, falls keines hinterlegt ist),
@@ -113,13 +113,27 @@ zur Verfügung:
   Klick kehrt die Richtung um). Ein Freitextfeld oberhalb der Tabelle
   filtert nach Name oder Adresse; jede Zeile hat ebenfalls einen
   Karten-Button.
+- **Karte:** eine eingebettete Karte mit einer Stecknadel je Hofladen
+  mit hinterlegten Koordinaten. Ein Klick auf eine Stecknadel öffnet
+  ein kleines Fenster mit dem Namen des Hofladens und einem Button
+  „Zur Detailansicht“. Die Karte passt ihren Ausschnitt automatisch so
+  an, dass alle angezeigten Stecknadeln sichtbar sind. Eine Checkbox
+  „Nur aktuell geöffnete Hofläden anzeigen“ blendet Hofläden aus, die
+  gerade nicht geöffnet sind oder deren Status unbekannt ist (fehlende
+  Öffnungszeiten zählen dabei **nicht** als geöffnet). Sind für keinen
+  Hofladen Koordinaten hinterlegt, erscheint statt einer leeren Karte
+  ein entsprechender Hinweis. Die Kartenkacheln werden von
+  OpenStreetMap geladen, sobald diese Ansicht zum ersten Mal geöffnet
+  wird (siehe Kapitel 14, Datenschutz).
 
-In beiden Ansichten öffnet ein Klick auf den **Namen** eines Hofladens
-direkt dessen Detailansicht (Kapitel 4 unten) – zusätzlich zu den
-bestehenden Buttons „Details“/„Bearbeiten“/„Löschen“. Der Hinweis
-„Geöffnet“/„Geschlossen“ wird serverseitig berechnet und stimmt daher
-stets mit dem tatsächlichen Zustand der Entity „Geöffnet“ (Kapitel 5)
-überein.
+In den Ansichten „Kacheln“ und „Liste“ öffnet ein Klick auf den
+**Namen** eines Hofladens direkt dessen Detailansicht (Kapitel 4
+unten) – zusätzlich zu den bestehenden Buttons
+„Details“/„Bearbeiten“/„Löschen“. In der Kartenansicht führt
+stattdessen der Button „Zur Detailansicht“ im Popup einer Stecknadel
+zum selben Ziel. Der Hinweis „Geöffnet“/„Geschlossen“ wird serverseitig
+berechnet und stimmt daher stets mit dem tatsächlichen Zustand der
+Entity „Geöffnet“ (Kapitel 5) überein.
 
 - **Neuer Hofladen:** über die Verwaltungsseite anlegen (Name,
   Beschreibung, Bemerkung, Adresse, PLZ/Ort, Land, Koordinaten,
@@ -585,9 +599,16 @@ unverändert (siehe Kapitel 14).
 ## 14. Datenschutz
 
 - **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
-  externen Servern – mit einer Ausnahme: Wird für einen Hofladen ein
+  externen Servern – mit zwei Ausnahmen: Wird für einen Hofladen ein
   Hauptbild über eine externe URL hinterlegt, ruft Home Assistant diese
-  URL beim Anzeigen des Bildes ab (siehe Kapitel 5, „Hauptbild“).
+  URL beim Anzeigen des Bildes ab (siehe Kapitel 5, „Hauptbild“); und
+  öffnet man in der Übersicht die Kartenansicht „🗺️ Karte“, lädt der
+  Browser die Kartenbibliothek Leaflet sowie die eigentlichen
+  Kartenkacheln von OpenStreetMap (siehe Kapitel 4, „Übersicht“) –
+  beides ausschliesslich beim tatsächlichen Öffnen dieser Ansicht,
+  nicht beim Start des Panels. Dabei werden ausschliesslich die für die
+  Kartendarstellung nötigen Ausschnitts-/Kachelkoordinaten übertragen,
+  keine Hofladen- oder Standortdaten im Klartext an OpenStreetMap.
   Ausserhalb davon findet keine Telemetrie und keine Datenübertragung an
   Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor
