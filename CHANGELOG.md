@@ -13,6 +13,33 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.1-dev.4] - Unveröffentlicht (develop)
+
+### Behoben
+
+- **Kartenansicht (Issue #2) zeigte statt eines Standortmarkers ein
+  defektes Bild-Icon ("?") an** (Issue #4): Leaflets eigene, bild-
+  basierte Standard-Icon-Erkennung (`Icon.Default._detectIconPath`)
+  erzeugt ein Sondierungselement im echten, globalen `document.body`
+  und fragt andernfalls `document.querySelector('link[href$="leaflet.css"]')`
+  ab. Beides findet das `<link rel="stylesheet">` nicht, das
+  `karteAnsicht()` innerhalb des Shadow DOM des `<hofkarte-panel>`-
+  Elements einbindet – Shadow-DOM-Grenzen werden dabei weder für die
+  Style-Zuordnung noch für `querySelector()` durchquert. Dadurch blieb
+  `Icon.Default.imagePath` leer und das erzeugte Marker-`<img>` zeigte
+  ein defektes Bild. Behoben, indem Marker nun ein eigenes, reines
+  Inline-SVG-Icon über `L.divIcon()` erhalten (neue Funktion
+  `erzeugeKarteMarkerIcon()` in `hofkarte-panel.js`) – ohne zusätzliche
+  Bildressource, ohne weiteren Netzwerk-Request und unabhängig von
+  Leaflets Shadow-DOM-inkompatibler Pfaderkennung. Marker-Position,
+  Popup-Inhalt/-Navigation und der Filter „nur aktuell geöffnete
+  Hofläden“ bleiben unverändert.
+- 6 neue Tests (`test_static_panel_js.py`): strukturelle
+  Regressionsprüfung, dass Marker ein eigenes Icon statt Leaflets
+  defekter Standarderkennung verwenden, dass dessen Markup ein reines
+  Inline-SVG ohne externe Bildressource ist und dass die zugehörigen
+  CSS-Regeln vorhanden sind.
+
 ## [2026.9.1-dev.3] - Unveröffentlicht (develop)
 
 ### Behoben

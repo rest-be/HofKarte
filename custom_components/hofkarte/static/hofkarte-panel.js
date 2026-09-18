@@ -92,6 +92,38 @@ function ladeLeaflet() {
   return leafletLoadPromise;
 }
 
+// Eigenes Marker-Icon statt Leaflets Standardbild (Issue #4): Leaflets
+// automatische Pfaderkennung (Icon.Default._detectIconPath) erzeugt ein
+// Sondierungselement im echten (globalen) document.body und fragt sonst
+// document.querySelector('link[href$="leaflet.css"]') ab – beides sieht
+// das <link rel="stylesheet"> nicht, das karteAnsicht() innerhalb des
+// Shadow DOM dieser Komponente einbindet, da Shadow-DOM-Grenzen für
+// Style-Zuordnung wie für querySelector() nicht durchquert werden.
+// Ergebnis: Icon.Default.imagePath bleibt leer, das Marker-<img> zeigt
+// eine defekte Bildkachel ("?"). Statt Leaflets Bild-basiertes
+// Standard-Icon zu reparieren (z. B. über einen absoluten CDN-Bildpfad),
+// wird hier bewusst ein eigenes, reines Inline-SVG-Icon (kein zusätzliches
+// Bild, kein weiterer Netzwerk-Request) über L.divIcon() erzeugt – analog
+// zum bereits im Panel verwendeten Symbolstil (vgl. Sidebar-Icon
+// "mdi:store-edit"). Da das erzeugte Markup als Kind des Karten-Containers
+// im selben Shadow Root landet, greifen die in styles() definierten
+// Regeln (.karte-marker-*) zuverlässig – ganz ohne Shadow-DOM-Falle.
+const KARTE_MARKER_GLYPH_PATH = "M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z";
+
+function erzeugeKarteMarkerIcon(L) {
+  const html = `<svg class="karte-marker-svg" viewBox="0 0 32 42" width="32" height="42" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path class="karte-marker-pin" d="M16 0C7.163 0 0 7.163 0 16c0 11 16 26 16 26s16-15 16-26C32 7.163 24.837 0 16 0z"/>
+    <g transform="translate(8,7) scale(0.8)"><path class="karte-marker-glyph" d="${KARTE_MARKER_GLYPH_PATH}"/></g>
+  </svg>`;
+  return L.divIcon({
+    html,
+    className: "karte-marker-icon",
+    iconSize: [32, 42],
+    iconAnchor: [16, 42],
+    popupAnchor: [0, -38],
+  });
+}
+
 const WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 
 // Konvention (bereits an anderer Stelle im Projekt verwendet, siehe
@@ -535,8 +567,9 @@ class HofkartePanel extends HTMLElement {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>-Mitwirkende',
     }).addTo(map);
 
+    const markerIcon = erzeugeKarteMarkerIcon(L);
     for (const item of markerItems) {
-      const marker = L.marker([item.latitude, item.longitude]).addTo(map);
+      const marker = L.marker([item.latitude, item.longitude], { icon: markerIcon }).addTo(map);
       marker.bindPopup(`<div class="karte-popup"><strong>${this.esc(item.name)}</strong><br><button type="button" class="link-button" data-karte-view>Zur Detailansicht</button></div>`);
       marker.on("popupopen", (e) => {
         e.popup.getElement()?.querySelector("[data-karte-view]")?.addEventListener("click", () => this.view(item));
@@ -596,6 +629,10 @@ class HofkartePanel extends HTMLElement {
       .karte-filter-row input[type=checkbox]{width:auto;padding:0}
       .karte-container{height:480px;border-radius:12px;margin-top:12px;background:var(--secondary-background-color)}
       .karte-empty{margin-top:20px}
+      .karte-marker-icon{background:transparent;border:0}
+      .karte-marker-svg{display:block}
+      .karte-marker-pin{fill:var(--primary-color,#db4437);filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}
+      .karte-marker-glyph{fill:#fff}
       .karte-popup{font-size:.95em}
       .karte-popup button{margin-top:6px}
       @media(max-width:700px){.karte-container{height:360px}}

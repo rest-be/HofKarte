@@ -285,6 +285,42 @@ an `this.view(item)` gebunden – dieselbe Methode, die auch die
 `data-view`-Buttons in Kacheln und Liste aufrufen, sodass sich die
 Detailansicht selbst nicht unterscheidet.
 
+**Marker-Icon (eigenes Inline-SVG statt Leaflets Standardbild, Issue
+#4):** Leaflet bestimmt den Bildpfad seines Standard-Icons zur Laufzeit
+automatisch (`Icon.Default._detectIconPath`): Es erzeugt ein
+Sondierungselement im echten, globalen `document.body` und liest dessen
+berechnete `background-image`-Eigenschaft; findet es dort nichts,
+befragt es ersatzweise `document.querySelector('link[href$="leaflet.css"]')`.
+Beide Wege scheitern innerhalb dieses Panels: Die weiter oben
+beschriebene `leaflet.css`-Einbindung liegt im Shadow DOM von
+`<hofkarte-panel>`, ist also für ein Element im globalen `document.body`
+stilistisch nicht wirksam (Shadow-DOM-Style-Isolation), und der
+`document.querySelector`-Fallback durchquert ebenfalls keine
+Shadow-DOM-Grenze, findet das dort liegende `<link>` also nicht. In der
+Folge blieb `Icon.Default.imagePath` leer und das von Leaflet erzeugte
+Marker-`<img>` zeigte ein defektes Bild (in Home Assistant sichtbar als
+„?“-Platzhalter).
+
+Statt Leaflets bild-basiertes Standard-Icon zu reparieren (z. B. über
+einen expliziten, absoluten CDN-Bildpfad via
+`L.Icon.Default.mergeOptions`), erzeugt `erzeugeKarteMarkerIcon()` ein
+eigenes Icon über `L.divIcon()`: reines, selbst geschriebenes Inline-SVG
+(Pin-Form mit einem Ladensymbol, angelehnt an das bereits im Panel
+verwendete Symbolkonzept, vgl. Sidebar-Icon `mdi:store-edit`) statt
+eines `<img>`. Das dabei erzeugte Markup landet als Kind des
+Karten-Containers und damit **innerhalb desselben Shadow Roots** wie
+die restlichen Panel-Styles – die in `styles()` definierten
+`.karte-marker-*`-Regeln greifen daher zuverlässig, ohne auf eine der
+beiden (hier nicht funktionierenden) automatischen Pfaderkennungen
+angewiesen zu sein. Vorteile gegenüber einer absoluten CDN-Bild-URL:
+kein zusätzlicher Netzwerk-Request, keine Abhängigkeit vom Fortbestand
+eines bestimmten CDN-Pfads für Bilddateien, und ein Icon, das sich
+optisch am übrigen Panel orientiert statt an Leaflets generischem
+Tropfen-Symbol. Marker-Position, Popup-Verhalten und die
+Detailansicht-Navigation (siehe oben) sind von dieser Änderung nicht
+betroffen – es wird ausschliesslich die `icon:`-Option beim Erzeugen
+des `L.marker(...)`-Aufrufs ergänzt.
+
 **Geöffnet-Filter:** Die Checkbox „Nur aktuell geöffnete Hofläden
 anzeigen“ (`karteNurGeoeffnet`) filtert rein clientseitig auf dem
 bereits vorhandenen, serverseitig berechneten Feld `geoeffnet` (siehe
