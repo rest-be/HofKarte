@@ -144,6 +144,17 @@ zur Kartenansicht (Bibliothekswahl, externe Kommunikation) siehe
 Abschnitt „Standort auf Karte anzeigen“ unten und
 „Datenschutz- und Standort-Hinweise“.
 
+**Export/Import:** In Kacheln und Liste lassen sich Hofläden per
+Checkbox mehrfach auswählen und über einen Button als eine JSON-Datei
+exportieren (z. B. für Sicherungen oder zur Weitergabe). Eine solche
+Datei lässt sich über den Import-Button wieder einlesen; erkannte
+Duplikate (Übereinstimmung von Name und, falls vorhanden, Adresse)
+werden in einem Konfliktdialog mit farblich hervorgehobenen
+Unterschieden zur Entscheidung („Aktualisieren“/„Beibehalten“)
+vorgelegt – ohne Entscheidung bleibt der bestehende Datensatz
+unverändert. Details siehe Handbuch, Abschnitt „Hofläden exportieren
+und importieren“.
+
 Dort können Administratoren:
 
 - neue Hofläden erstellen,

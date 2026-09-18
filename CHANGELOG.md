@@ -13,6 +13,40 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.1-dev.5] - Unveröffentlicht (develop)
+
+### Hinzugefügt
+
+- **Export/Import von Hofläden (Issue #5):** In Kachel- und Listenansicht
+  können einzelne Hofläden per Checkbox ausgewählt und über einen neuen
+  „Export“-Button als eine JSON-Datei (Liste von Hofladen-Objekten,
+  identisch zum internen Datenmodell) heruntergeladen werden. Ein
+  „Import“-Button erlaubt die Auswahl einer solchen JSON-Datei; die
+  Struktur wird dabei serverseitig validiert (neuer WebSocket-Befehl
+  `hofkarte/management/import_preview`) und mit einer klaren
+  Fehlermeldung abgelehnt, falls sie ungültig ist - ohne jeden
+  Teil-Import. Erkennt die Vorschau ein mögliches Duplikat (Name **und**,
+  sofern beide Datensätze eine Adresse besitzen, auch die Adresse
+  stimmen überein), erscheint ein Konfliktdialog mit einer
+  farblich hervorgehobenen Gegenüberstellung von bestehendem und
+  importiertem Datensatz; pro Duplikat kann „Aktualisieren“ oder
+  „Beibehalten“ gewählt werden (zusätzlich als Komfortfunktion: „Alle
+  aktualisieren“/„Alle beibehalten“). Unentschiedene Duplikate werden
+  beim Abschluss des Imports sicher beibehalten statt stillschweigend
+  überschrieben. Der tatsächliche Import (neuer WebSocket-Befehl
+  `hofkarte/management/import_commit`) validiert und schreibt in zwei
+  Phasen (erst alle Einträge vollständig prüfen, dann erst schreiben),
+  damit ein ungültiger Einzeleintrag nie zu einem beschädigten oder
+  teilweise übernommenen Bestand führt. Eine in der Importdatei
+  enthaltene, von einer anderen HofKarte-Installation stammende `id`
+  wird für neu angelegte Hofläden verworfen und durch eine frisch
+  vergebene, lokale ID ersetzt.
+- 28 neue Tests: 19 in `test_management.py` (Duplikaterkennung,
+  `import_preview`, `import_commit`, jeweils inkl. Fail-Fast- und
+  Fehlerpfaden), 9 strukturelle Tests in der neuen Datei
+  `test_static_panel_js_export_import.py` (Auswahl-Checkboxen,
+  Export-Format, zweistufiger Import-Ablauf, Diff-Darstellung).
+
 ## [2026.9.1-dev.4] - Unveröffentlicht (develop)
 
 ### Behoben

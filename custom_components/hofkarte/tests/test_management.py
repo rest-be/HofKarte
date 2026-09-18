@@ -14,10 +14,14 @@ from custom_components.hofkarte.const import DOMAIN
 from custom_components.hofkarte.coordinator import HofKarteUpdateCoordinator
 from custom_components.hofkarte.data_provider import HofladenDataProvider
 from custom_components.hofkarte.management import (
+    _finde_duplikat,
     _get_coordinator,
+    _normalisiert,
     _serialize_hofladen,
     async_register_websocket_commands,
     ws_delete,
+    ws_import_commit,
+    ws_import_preview,
     ws_list,
     ws_save,
 )
@@ -566,4 +570,393 @@ async def test_management_greift_nicht_mehr_direkt_auf_provider_zu() -> None:
     quelltext = inspect.getsource(management)
     assert "coordinator._provider" not in quelltext
     assert "._provider" not in quelltext
+
+
+# ---------------------------------------------------------------------------
+# _normalisiert / _finde_duplikat (Issue #5: Duplikaterkennung beim Import)
+# ---------------------------------------------------------------------------
+
+
+def test_normalisiert_ignoriert_gross_kleinschreibung_und_leerzeichen() -> None:
+    assert _normalisiert("  Hofladen Müller ") == _normalisiert("hofladen müller")
+
+
+def test_normalisiert_none_ergibt_leeren_string() -> None:
+    assert _normalisiert(None) == ""
+
+
+def test_finde_duplikat_erkennt_uebereinstimmenden_namen_und_adresse() -> None:
+    bestehend = Hofladen(id="hof-1", name="Hofladen Müller", adresse="Dorfstrasse 1")
+    importiert = Hofladen(id="fremd-1", name=" hofladen müller ", adresse="dorfstrasse 1")
+
+    treffer = _finde_duplikat(importiert, [bestehend])
+
+    assert treffer is not None
+    assert treffer.id == "hof-1"
+
+
+def test_finde_duplikat_unterschiedliche_adresse_kein_duplikat() -> None:
+    bestehend = Hofladen(id="hof-1", name="Hofladen Müller", adresse="Dorfstrasse 1")
+    importiert = Hofladen(id="fremd-1", name="Hofladen Müller", adresse="Bergweg 9")
+
+    assert _finde_duplikat(importiert, [bestehend]) is None
+
+
+def test_finde_duplikat_ohne_adresse_auf_einer_seite_entscheidet_nur_der_name() -> None:
+    """Besitzt einer der beiden Datensätze keine Adresse, darf die
+    fehlende Adresse kein Duplikat verhindern (siehe Issue #5)."""
+    bestehend = Hofladen(id="hof-1", name="Hofladen Müller", adresse=None)
+    importiert = Hofladen(id="fremd-1", name="Hofladen Müller", adresse="Dorfstrasse 1")
+
+    treffer = _finde_duplikat(importiert, [bestehend])
+
+    assert treffer is not None
+    assert treffer.id == "hof-1"
+
+
+def test_finde_duplikat_liefert_none_ohne_uebereinstimmenden_namen() -> None:
+    bestehend = Hofladen(id="hof-1", name="Hofladen Müller")
+    importiert = Hofladen(id="fremd-1", name="Ganz anderer Hofladen")
+
+    assert _finde_duplikat(importiert, [bestehend]) is None
+
+
+# ---------------------------------------------------------------------------
+# ws_import_preview
+# ---------------------------------------------------------------------------
+
+
+def test_ws_import_preview_ohne_eingerichtete_integration_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    connection = _FakeConnection()
+
+    ws_import_preview(
+        hass,
+        connection,
+        {
+            "id": 20,
+            "type": "hofkarte/management/import_preview",
+            "hoflaeden": [{"id": "hof-1", "name": "Hofladen Eins"}],
+        },
+    )
+
+    assert len(connection.results) == 0
+    assert len(connection.errors) == 1
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 20
+    assert code == "not_ready"
+
+
+async def test_ws_import_preview_leere_liste_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    await _setup_mit_coordinator(hass)
+    connection = _FakeConnection()
+
+    ws_import_preview(
+        hass,
+        connection,
+        {"id": 21, "type": "hofkarte/management/import_preview", "hoflaeden": []},
+    )
+
+    assert len(connection.results) == 0
+    assert len(connection.errors) == 1
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 21
+    assert code == "invalid_data"
+
+
+async def test_ws_import_preview_ungueltiger_datensatz_sendet_fehler_ohne_teilresultat(
+    hass: HomeAssistant,
+) -> None:
+    """Fail-Fast: Ist auch nur ein Datensatz ungültig, darf keine
+    (Teil-)Vorschau zurückkommen."""
+    await _setup_mit_coordinator(hass)
+    connection = _FakeConnection()
+
+    ws_import_preview(
+        hass,
+        connection,
+        {
+            "id": 22,
+            "type": "hofkarte/management/import_preview",
+            "hoflaeden": [
+                {"id": "hof-1", "name": "Gültiger Hofladen"},
+                {"id": "hof-2", "name": ""},
+            ],
+        },
+    )
+
+    assert len(connection.results) == 0
+    assert len(connection.errors) == 1
+    msg_id, code, message = connection.errors[0]
+    assert msg_id == 22
+    assert code == "invalid_data"
+    assert "#2" in message
+
+
+async def test_ws_import_preview_kennzeichnet_duplikat(hass: HomeAssistant) -> None:
+    coordinator = await _setup_mit_coordinator(hass)
+    await coordinator.async_add_hofladen(
+        {"id": "hof-1", "name": "Hofladen Müller", "adresse": "Dorfstrasse 1"}
+    )
+
+    connection = _FakeConnection()
+    ws_import_preview(
+        hass,
+        connection,
+        {
+            "id": 23,
+            "type": "hofkarte/management/import_preview",
+            "hoflaeden": [
+                {
+                    "id": "fremde-id",
+                    "name": "hofladen müller",
+                    "adresse": "dorfstrasse 1",
+                }
+            ],
+        },
+    )
+
+    _, ergebnis = connection.results[0]
+    eintrag = ergebnis["eintraege"][0]
+    assert eintrag["duplikat_von"] == "hof-1"
+    assert eintrag["bestehend"]["id"] == "hof-1"
+
+
+async def test_ws_import_preview_kennzeichnet_neuen_hofladen_ohne_duplikat(
+    hass: HomeAssistant,
+) -> None:
+    coordinator = await _setup_mit_coordinator(hass)
+    await coordinator.async_add_hofladen({"id": "hof-1", "name": "Hofladen Eins"})
+
+    connection = _FakeConnection()
+    ws_import_preview(
+        hass,
+        connection,
+        {
+            "id": 24,
+            "type": "hofkarte/management/import_preview",
+            "hoflaeden": [{"id": "fremde-id", "name": "Ganz anderer Hofladen"}],
+        },
+    )
+
+    _, ergebnis = connection.results[0]
+    eintrag = ergebnis["eintraege"][0]
+    assert eintrag["duplikat_von"] is None
+    assert eintrag["bestehend"] is None
+
+
+# ---------------------------------------------------------------------------
+# ws_import_commit
+# ---------------------------------------------------------------------------
+
+
+async def test_ws_import_commit_ohne_eingerichtete_integration_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    connection = _FakeConnection()
+
+    ws_import_commit(
+        hass,
+        connection,
+        {
+            "id": 30,
+            "type": "hofkarte/management/import_commit",
+            "eintraege": [{"hofladen": {"name": "X"}, "aktion": "neu"}],
+        },
+    )
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 30
+    assert code == "not_ready"
+
+
+async def test_ws_import_commit_ohne_eintraege_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    await _setup_mit_coordinator(hass)
+    connection = _FakeConnection()
+
+    ws_import_commit(
+        hass,
+        connection,
+        {"id": 31, "type": "hofkarte/management/import_commit", "eintraege": []},
+    )
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 31
+    assert code == "invalid_data"
+
+
+async def test_ws_import_commit_neu_erzeugt_hofladen_mit_frischer_id(
+    hass: HomeAssistant,
+) -> None:
+    """Eine im Importdatensatz enthaltene fremde 'id' muss verworfen und
+    durch eine frische, lokal vergebene ID ersetzt werden."""
+    coordinator = await _setup_mit_coordinator(hass)
+    connection = _FakeConnection()
+
+    ws_import_commit(
+        hass,
+        connection,
+        {
+            "id": 32,
+            "type": "hofkarte/management/import_commit",
+            "eintraege": [
+                {
+                    "hofladen": {"id": "fremde-id-von-anderer-instanz", "name": "Neuer Hofladen"},
+                    "aktion": "neu",
+                }
+            ],
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.errors) == 0
+    _, ergebnis = connection.results[0]
+    assert ergebnis == {"importiert": 1, "aktualisiert": 0, "uebersprungen": 0}
+    assert "fremde-id-von-anderer-instanz" not in coordinator.data
+    namen = [h.name for h in coordinator.data.values()]
+    assert "Neuer Hofladen" in namen
+
+
+async def test_ws_import_commit_aktualisieren_ueberschreibt_bestehenden_hofladen(
+    hass: HomeAssistant,
+) -> None:
+    coordinator = await _setup_mit_coordinator(hass)
+    await coordinator.async_add_hofladen({"id": "hof-1", "name": "Alter Name"})
+
+    connection = _FakeConnection()
+    ws_import_commit(
+        hass,
+        connection,
+        {
+            "id": 33,
+            "type": "hofkarte/management/import_commit",
+            "eintraege": [
+                {
+                    "hofladen": {"name": "Neuer Name"},
+                    "aktion": "aktualisieren",
+                    "bestehende_id": "hof-1",
+                }
+            ],
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.errors) == 0
+    _, ergebnis = connection.results[0]
+    assert ergebnis == {"importiert": 0, "aktualisiert": 1, "uebersprungen": 0}
+    assert coordinator.data["hof-1"].name == "Neuer Name"
+
+
+async def test_ws_import_commit_ueberspringen_laesst_bestehenden_hofladen_unveraendert(
+    hass: HomeAssistant,
+) -> None:
+    coordinator = await _setup_mit_coordinator(hass)
+    await coordinator.async_add_hofladen({"id": "hof-1", "name": "Unverändert"})
+
+    connection = _FakeConnection()
+    ws_import_commit(
+        hass,
+        connection,
+        {
+            "id": 34,
+            "type": "hofkarte/management/import_commit",
+            "eintraege": [
+                {
+                    "hofladen": {"name": "Sollte nicht übernommen werden"},
+                    "aktion": "ueberspringen",
+                    "bestehende_id": "hof-1",
+                }
+            ],
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.errors) == 0
+    _, ergebnis = connection.results[0]
+    assert ergebnis == {"importiert": 0, "aktualisiert": 0, "uebersprungen": 1}
+    assert coordinator.data["hof-1"].name == "Unverändert"
+
+
+async def test_ws_import_commit_unbekannte_bestehende_id_sendet_fehler_ohne_schreibzugriff(
+    hass: HomeAssistant,
+) -> None:
+    """Kein Datenverlust: Verweist 'bestehende_id' auf keinen (mehr)
+    vorhandenen Hofladen, darf gar nichts geschrieben werden - auch
+    keine anderen, an sich gültigen Einträge desselben Imports."""
+    coordinator = await _setup_mit_coordinator(hass)
+    await coordinator.async_add_hofladen({"id": "hof-1", "name": "Bleibt unverändert"})
+
+    connection = _FakeConnection()
+    ws_import_commit(
+        hass,
+        connection,
+        {
+            "id": 35,
+            "type": "hofkarte/management/import_commit",
+            "eintraege": [
+                {"hofladen": {"name": "Neu"}, "aktion": "neu"},
+                {
+                    "hofladen": {"name": "X"},
+                    "aktion": "aktualisieren",
+                    "bestehende_id": "gibt-es-nicht",
+                },
+            ],
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 35
+    assert code == "invalid_data"
+    # Kein Teil-Import: weder der eigentlich gültige "neu"-Eintrag noch
+    # sonst etwas darf geschrieben worden sein.
+    namen = [h.name for h in coordinator.data.values()]
+    assert "Neu" not in namen
+    assert len(coordinator.data) == 1
+
+
+async def test_ws_import_commit_ungueltige_aktion_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    await _setup_mit_coordinator(hass)
+    connection = _FakeConnection()
+
+    ws_import_commit(
+        hass,
+        connection,
+        {
+            "id": 36,
+            "type": "hofkarte/management/import_commit",
+            "eintraege": [{"hofladen": {"name": "X"}, "aktion": "loeschen"}],
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 36
+    assert code == "invalid_data"
+
+
+# ---------------------------------------------------------------------------
+# async_register_websocket_commands (Import-Befehle, Issue #5)
+# ---------------------------------------------------------------------------
+
+
+async def test_async_register_websocket_commands_registriert_import_befehle(
+    hass: HomeAssistant,
+) -> None:
+    async_register_websocket_commands(hass)
+
+    ws_handlers = hass.data.get("websocket_api", {})
+    assert "hofkarte/management/import_preview" in ws_handlers
+    assert "hofkarte/management/import_commit" in ws_handlers
 

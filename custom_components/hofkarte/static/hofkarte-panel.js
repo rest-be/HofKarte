@@ -152,6 +152,8 @@ class HofkartePanel extends HTMLElement {
     this.karteFehler = ""; // Fehlermeldung beim Laden der Kartenbibliothek (Issue #2)
     this._leafletMap = null; // aktive Leaflet-Karteninstanz, ausserhalb des normalen Render-Zyklus verwaltet
     this._leafletResizeHandler = null;
+    this.auswahl = new Set(); // ausgewählte Hofladen-IDs für den Export (Issue #5)
+    this.importDialog = null; // { eintraege, entscheidungen: Map<bestehende_id, "aktualisieren"|"ueberspringen"> } - nicht null während der Duplikat-Konfliktlösung eines Imports (Issue #5)
     this.attachShadow({ mode: "open" });
   }
 
@@ -596,6 +598,7 @@ class HofkartePanel extends HTMLElement {
   }
 
   currentView() {
+    if (this.importDialog) return this.importKonflikte();
     if (this.editing) return this.editor();
     if (this.viewing) return this.detail();
     return this.list();
@@ -617,6 +620,17 @@ class HofkartePanel extends HTMLElement {
       .status-open{background:var(--success-color,#43a047);color:#fff}
       .status-closed{background:var(--error-color,#db4437);color:#fff}
       .status-unknown{background:var(--secondary-background-color);color:var(--secondary-text-color)}
+      .export-import-row{display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap}
+      .auswahl-checkbox{display:flex;align-items:center;gap:6px;font-size:.9em;margin-bottom:4px}
+      .auswahl-checkbox input{width:auto;padding:0}
+      .import-konflikt{margin-top:16px}
+      .import-diff{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px}
+      .import-diff-spalte h4{margin:0 0 6px}
+      .import-diff-feld{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--divider-color);font-size:.9em}
+      .import-diff-feld .diff-label{color:var(--secondary-text-color);flex:0 0 auto}
+      .diff-alt{background:color-mix(in srgb, var(--error-color,#db4437) 12%, transparent)}
+      .diff-neu{background:color-mix(in srgb, var(--success-color,#43a047) 12%, transparent)}
+      @media(max-width:700px){.import-diff{grid-template-columns:1fr}}
       .list-filter{margin-top:16px}
       .list-filter input{max-width:360px}
       .table-scroll{overflow-x:auto;margin-top:12px}
@@ -720,8 +734,21 @@ class HofkartePanel extends HTMLElement {
     const inhalt = !this.items.length
       ? `<section class="card"><h2>Noch keine Hofläden</h2><p>Erstelle den ersten Hofladen.</p></section>`
       : (this.uebersichtsAnsicht === "liste" ? this.listTable() : this.uebersichtsAnsicht === "karte" ? this.karteAnsicht() : this.listGrid());
+    // Mehrfachauswahl (Checkboxen) sowie Export/Import gibt es bewusst
+    // nur in Kacheln- und Listenansicht (Issue #5) - in der Kartenansicht
+    // fehlt dafür ein sinnvoller Anwendungsfall.
+    const exportImportLeiste = this.items.length && this.uebersichtsAnsicht !== "karte"
+      ? `<div class="export-import-row">
+          <span class="muted">${this.auswahl.size} ausgewählt</span>
+          <button type="button" class="secondary" data-auswahl-alle>Alle auswählen</button>
+          <button type="button" class="secondary" data-auswahl-keine>Auswahl aufheben</button>
+          <button type="button" class="secondary" data-export ${this.auswahl.size ? "" : "disabled"}>⬇️ Export</button>
+          <button type="button" class="secondary" data-import-start>⬆️ Import</button>
+          <input type="file" accept="application/json" data-import-input hidden>
+        </div>`
+      : "";
 
-    return `<div class="top"><div><h1>HofKarte</h1><div class="muted">Hofläden verwalten</div></div><button data-new>+ Neuer Hofladen</button></div>${this.message ? `<div class="notice">${this.esc(this.message)}</div>` : ""}${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}${this.items.length ? umschalter : ""}${inhalt}`;
+    return `<div class="top"><div><h1>HofKarte</h1><div class="muted">Hofläden verwalten</div></div><button data-new>+ Neuer Hofladen</button></div>${this.message ? `<div class="notice">${this.esc(this.message)}</div>` : ""}${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}${this.items.length ? umschalter : ""}${exportImportLeiste}${inhalt}`;
   }
 
   listGrid() {
@@ -735,6 +762,7 @@ class HofkartePanel extends HTMLElement {
       : `<div class="tile-image tile-image-placeholder" aria-hidden="true">🏬</div>`;
 
     return `<section class="card tile-card">
+      <label class="auswahl-checkbox"><input type="checkbox" data-auswahl="${item.id}" ${this.auswahl.has(item.id) ? "checked" : ""}> Auswählen</label>
       ${bildHtml}
       <h2><button type="button" class="link-button" data-view="${item.id}">${this.esc(item.name)}</button></h2>
       ${adresse ? `<div>${this.esc(adresse)}</div>` : ""}
@@ -785,6 +813,7 @@ class HofkartePanel extends HTMLElement {
         <table class="hoflaeden-table">
           <thead>
             <tr>
+              <th>Auswahl</th>
               <th><button type="button" class="table-sort" data-sort="name">Name${pfeil("name")}</button></th>
               <th><button type="button" class="table-sort" data-sort="adresse">Adresse${pfeil("adresse")}</button></th>
               <th><button type="button" class="table-sort" data-sort="geoeffnet">Status${pfeil("geoeffnet")}</button></th>
@@ -795,12 +824,13 @@ class HofkartePanel extends HTMLElement {
             ${zeilen.length ? zeilen.map(item => {
               const adresse = [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ");
               return `<tr>
+                <td><input type="checkbox" data-auswahl="${item.id}" ${this.auswahl.has(item.id) ? "checked" : ""} aria-label="${this.escAttr(item.name)} auswählen"></td>
                 <td><button type="button" class="link-button" data-view="${item.id}">${this.esc(item.name)}</button></td>
                 <td>${this.esc(adresse) || '<span class="muted">–</span>'}</td>
                 <td>${this.geoeffnetBadge(item.geoeffnet)}</td>
                 <td>${this.mapButton(item.latitude, item.longitude)}</td>
               </tr>`;
-            }).join("") : `<tr><td colspan="4" class="muted">Keine Treffer für diesen Filter.</td></tr>`}
+            }).join("") : `<tr><td colspan="5" class="muted">Keine Treffer für diesen Filter.</td></tr>`}
           </tbody>
         </table>
       </div>`;
@@ -826,6 +856,213 @@ class HofkartePanel extends HTMLElement {
       ${this.karteFehler ? `<div class="notice error">${this.esc(this.karteFehler)}</div>` : ""}
       <div class="karte-container" data-karte-container></div>
       ${!gefiltert.length ? `<p class="muted" style="margin-top:8px">Kein Hofladen entspricht aktuell diesem Filter.</p>` : ""}`;
+  }
+
+  // --- Export/Import (Issue #5) ------------------------------------------
+  //
+  // Export läuft vollständig clientseitig über einen Blob-Download - kein
+  // neuer Server-Endpunkt nötig. Import ist zweistufig: zuerst eine rein
+  // lesende Vorschau ("import_preview"), die Struktur validiert und
+  // mögliche Duplikate ermittelt (serverseitig, siehe management.py -
+  // Name/Adresse-Abgleich sowie die Validierungslogik sollen nicht ein
+  // zweites Mal in JavaScript nachgebaut werden), danach - nach
+  // Entscheidung über jedes gefundene Duplikat - der eigentliche Import
+  // ("import_commit"). Das hält jegliche Fachlogik serverseitig; das
+  // Frontend übernimmt hier bewusst nur Dateiauswahl/-lesen und die
+  // Diff-/Dialog-Darstellung.
+
+  /** Vom Server ergänzte, rein berechnete Felder (kein Teil von
+   * models.Hofladen, siehe management.py:_serialize_hofladen) vor dem
+   * Export entfernen - der Export soll exakt das interne Datenmodell
+   * widerspiegeln, keine flüchtigen, zur Exportzeit gültigen Werte. */
+  bereinigtFuerExport(item) {
+    const { geoeffnet, hauptbild_url, ...rest } = item;
+    return rest;
+  }
+
+  exportZeitstempel() {
+    const jetzt = new Date();
+    return jetzt.toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  }
+
+  exportAuswahl() {
+    if (!this.auswahl.size) return;
+    const ausgewaehlt = this.items.filter((item) => this.auswahl.has(item.id));
+    const bereinigt = ausgewaehlt.map((item) => this.bereinigtFuerExport(item));
+
+    const blob = new Blob([JSON.stringify(bereinigt, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `hoflaeden-export-${this.exportZeitstempel()}.json`;
+      link.click();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+
+    this.message = `${ausgewaehlt.length} Hofladen/Hofläden exportiert.`;
+    this.error = "";
+    this.render();
+  }
+
+  /** Datei-Auswahl für den Import verarbeiten: lesen, als JSON parsen und
+   * strukturell auf oberster Ebene prüfen (muss eine nicht-leere Liste
+   * von Objekten sein) - alles Weitere (Feldvalidierung je Hofladen,
+   * Duplikaterkennung) übernimmt der Server (ws_import_preview). */
+  async importDatei(file) {
+    if (!file) return;
+    this.error = "";
+    this.message = "";
+
+    let inhalt;
+    try {
+      inhalt = await file.text();
+    } catch {
+      this.error = "Die Datei konnte nicht gelesen werden.";
+      this.render();
+      return;
+    }
+
+    let daten;
+    try {
+      daten = JSON.parse(inhalt);
+    } catch {
+      this.error = "Die Datei enthält kein gültiges JSON.";
+      this.render();
+      return;
+    }
+
+    if (!Array.isArray(daten) || !daten.length) {
+      this.error = "Die Datei muss eine JSON-Liste mit mindestens einem Hofladen enthalten.";
+      this.render();
+      return;
+    }
+    if (!daten.every((eintrag) => eintrag && typeof eintrag === "object" && !Array.isArray(eintrag))) {
+      this.error = "Die Datei enthält ungültige Einträge (jeder Hofladen muss ein Objekt sein).";
+      this.render();
+      return;
+    }
+
+    try {
+      const antwort = await this.call("hofkarte/management/import_preview", { hoflaeden: daten });
+      this.starteKonfliktloesung(antwort.eintraege || []);
+    } catch (err) {
+      this.error = err?.message || "Die Datei konnte nicht importiert werden.";
+      this.render();
+    }
+  }
+
+  /** Entscheiden, ob überhaupt eine Konfliktlösung nötig ist: ohne
+   * erkannte Duplikate wird direkt importiert, ohne unnötigen Dialog. */
+  starteKonfliktloesung(eintraege) {
+    const duplikate = eintraege.filter((eintrag) => eintrag.duplikat_von);
+    if (!duplikate.length) {
+      this.commitImport(eintraege.map((eintrag) => ({ hofladen: eintrag.hofladen, aktion: "neu" })));
+      return;
+    }
+    this.importDialog = { eintraege, entscheidungen: new Map() };
+    this.render();
+  }
+
+  /** Feldweiser Vergleich zwischen bestehendem und importiertem
+   * Hofladen für die Diff-Darstellung im Konfliktdialog. Sammlungsfelder
+   * (Öffnungszeiten, Angebote, ...) werden bewusst nur über ihre Anzahl
+   * verglichen statt vollständig aufgelistet - genug, um auf einen
+   * Blick zu erkennen, ob sich etwas geändert hat, ohne den Dialog mit
+   * verschachtelten Detailtabellen zu überladen. */
+  diffFelder(bestehend, importiert) {
+    const skalar = [
+      ["name", "Name"], ["adresse", "Adresse"], ["plz", "PLZ"], ["ort", "Ort"], ["land", "Land"],
+      ["website", "Website"], ["beschreibung", "Beschreibung"], ["bemerkung", "Bemerkung"],
+      ["latitude", "Latitude"], ["longitude", "Longitude"],
+    ];
+    const sammlungen = [
+      ["oeffnungszeiten", "Öffnungszeiten"], ["sonderoeffnungszeiten", "Sonderöffnungszeiten"],
+      ["angebote", "Angebote"], ["zahlungsarten", "Zahlungsarten"], ["bilder", "Bilder"],
+    ];
+
+    const zeile = (label, altWert, neuWert) => ({
+      label,
+      alt: altWert === null || altWert === undefined || altWert === "" ? "–" : String(altWert),
+      neu: neuWert === null || neuWert === undefined || neuWert === "" ? "–" : String(neuWert),
+      unterschiedlich: String(altWert ?? "") !== String(neuWert ?? ""),
+    });
+
+    return [
+      ...skalar.map(([feld, label]) => zeile(label, bestehend[feld], importiert[feld])),
+      ...sammlungen.map(([feld, label]) => zeile(
+        label,
+        `${(bestehend[feld] || []).length} Einträge`,
+        `${(importiert[feld] || []).length} Einträge`,
+      )),
+    ];
+  }
+
+  importKonfliktEintrag(eintrag) {
+    const bestehend = eintrag.bestehend;
+    const importiert = eintrag.hofladen;
+    const entscheidung = this.importDialog.entscheidungen.get(eintrag.duplikat_von) || "";
+    const felder = this.diffFelder(bestehend, importiert);
+    const feldZeile = (spalte) => felder.map((f) => `<div class="import-diff-feld${f.unterschiedlich ? ` diff-${spalte}` : ""}"><span class="diff-label">${this.esc(f.label)}</span><span>${this.esc(spalte === "alt" ? f.alt : f.neu)}</span></div>`).join("");
+
+    return `<section class="card import-konflikt">
+      <h3>Mögliches Duplikat: ${this.esc(importiert.name)}</h3>
+      <div class="import-diff">
+        <div class="import-diff-spalte"><h4>Bestehend</h4>${feldZeile("alt")}</div>
+        <div class="import-diff-spalte"><h4>Importiert</h4>${feldZeile("neu")}</div>
+      </div>
+      <div class="actions">
+        <button type="button" class="${entscheidung === "aktualisieren" ? "" : "secondary"}" data-import-entscheidung="${eintrag.duplikat_von}" data-import-aktion="aktualisieren">Aktualisieren</button>
+        <button type="button" class="${entscheidung === "ueberspringen" ? "" : "secondary"}" data-import-entscheidung="${eintrag.duplikat_von}" data-import-aktion="ueberspringen">Beibehalten</button>
+      </div>
+    </section>`;
+  }
+
+  importKonflikte() {
+    const { eintraege, entscheidungen } = this.importDialog;
+    const duplikate = eintraege.filter((eintrag) => eintrag.duplikat_von);
+    const neue = eintraege.filter((eintrag) => !eintrag.duplikat_von);
+    const alleEntschieden = duplikate.every((eintrag) => entscheidungen.has(eintrag.duplikat_von));
+
+    return `<div class="top"><div><h1>Import: Duplikate prüfen</h1><div class="muted">${neue.length} neue${neue.length === 1 ? "r Hofladen wird" : " Hofläden werden"} direkt importiert, ${duplikate.length} ${duplikate.length === 1 ? "bestehender Hofladen wurde" : "bestehende Hofläden wurden"} als mögliches Duplikat erkannt.</div></div></div>
+      ${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}
+      <div class="actions" style="margin:16px 0">
+        <button type="button" class="secondary" data-import-alle="aktualisieren">Alle aktualisieren</button>
+        <button type="button" class="secondary" data-import-alle="ueberspringen">Alle beibehalten</button>
+      </div>
+      ${duplikate.map((eintrag) => this.importKonfliktEintrag(eintrag)).join("")}
+      <div class="actions" style="margin-top:20px">
+        <button type="button" class="secondary" data-import-abbrechen>Abbrechen</button>
+        <button type="button" data-import-abschliessen>Import abschliessen${alleEntschieden ? "" : " (unentschiedene Duplikate werden beibehalten)"}</button>
+      </div>`;
+  }
+
+  schliesseImportAb() {
+    const { eintraege, entscheidungen } = this.importDialog;
+    const eintraegeFuerCommit = eintraege.map((eintrag) => {
+      if (!eintrag.duplikat_von) return { hofladen: eintrag.hofladen, aktion: "neu" };
+      // Unentschiedene Duplikate werden nicht stillschweigend
+      // überschrieben, sondern sicher beibehalten (kein Datenverlust
+      // ohne explizite Bestätigung).
+      const aktion = entscheidungen.get(eintrag.duplikat_von) || "ueberspringen";
+      return { hofladen: eintrag.hofladen, aktion, bestehende_id: eintrag.duplikat_von };
+    });
+    this.commitImport(eintraegeFuerCommit);
+  }
+
+  async commitImport(eintraege) {
+    try {
+      const antwort = await this.call("hofkarte/management/import_commit", { eintraege });
+      this.importDialog = null;
+      this.auswahl.clear();
+      this.error = "";
+      this.message = `Import abgeschlossen: ${antwort.importiert} neu, ${antwort.aktualisiert} aktualisiert, ${antwort.uebersprungen} übersprungen.`;
+      await this.load();
+    } catch (err) {
+      this.error = err?.message || "Der Import konnte nicht abgeschlossen werden.";
+      this.render();
+    }
   }
 
   // --- Detailansicht (read-only) ---------------------------------------
@@ -1138,6 +1375,46 @@ class HofkartePanel extends HTMLElement {
       this.karteNurGeoeffnet = e.target.checked;
       this.render();
     });
+    // --- Export/Import (Issue #5) ---
+    this.shadowRoot.querySelectorAll("[data-auswahl]").forEach((cb) => cb.addEventListener("change", (e) => {
+      const id = cb.dataset.auswahl;
+      if (e.target.checked) this.auswahl.add(id); else this.auswahl.delete(id);
+      this.render();
+    }));
+    this.shadowRoot.querySelector("[data-auswahl-alle]")?.addEventListener("click", () => {
+      this.items.forEach((item) => this.auswahl.add(item.id));
+      this.render();
+    });
+    this.shadowRoot.querySelector("[data-auswahl-keine]")?.addEventListener("click", () => {
+      this.auswahl.clear();
+      this.render();
+    });
+    this.shadowRoot.querySelector("[data-export]")?.addEventListener("click", () => this.exportAuswahl());
+    this.shadowRoot.querySelector("[data-import-start]")?.addEventListener("click", () => {
+      this.shadowRoot.querySelector("[data-import-input]")?.click();
+    });
+    this.shadowRoot.querySelector("[data-import-input]")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      this.importDatei(file);
+      e.target.value = ""; // erlaubt erneuten Import derselben Datei
+    });
+    this.shadowRoot.querySelectorAll("[data-import-entscheidung]").forEach((b) => b.addEventListener("click", () => {
+      this.importDialog.entscheidungen.set(b.dataset.importEntscheidung, b.dataset.importAktion);
+      this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-import-alle]").forEach((b) => b.addEventListener("click", () => {
+      const aktion = b.dataset.importAlle;
+      for (const eintrag of this.importDialog.eintraege) {
+        if (eintrag.duplikat_von) this.importDialog.entscheidungen.set(eintrag.duplikat_von, aktion);
+      }
+      this.render();
+    }));
+    this.shadowRoot.querySelector("[data-import-abbrechen]")?.addEventListener("click", () => {
+      this.importDialog = null;
+      this.render();
+    });
+    this.shadowRoot.querySelector("[data-import-abschliessen]")?.addEventListener("click", () => this.schliesseImportAb());
+
     this.shadowRoot.querySelector("[data-listen-filter]")?.addEventListener("input", (e) => {
       this.listenFilter = e.target.value;
       this.render();

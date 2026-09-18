@@ -148,6 +148,43 @@ Entity „Geöffnet“ (Kapitel 5) überein.
 - **Löschen:** Hofladen kontrolliert entfernen (inklusive des
   zugehörigen Geräts und aller Entities in Home Assistant).
 
+### Hofläden exportieren und importieren
+
+In den Ansichten „Kacheln“ und „Liste“ steht neben jedem Hofladen eine
+Checkbox „Auswählen“ zur Verfügung (in der Listenansicht als eigene
+Spalte). Über der Übersicht erscheinen dazu passend die Buttons
+„Alle auswählen“, „Auswahl aufheben“, „⬇️ Export“ und „⬆️ Import“:
+
+- **Export:** Mindestens einen Hofladen auswählen und auf „⬇️ Export“
+  klicken – der Browser lädt eine einzelne JSON-Datei mit allen
+  ausgewählten Hofläden herunter (Dateiname
+  `hoflaeden-export-<Zeitstempel>.json`). Diese Datei enthält
+  ausschliesslich die gespeicherten Daten (keine berechneten Werte wie
+  den aktuellen Öffnungsstatus) und lässt sich als Sicherung
+  aufbewahren oder an andere HofKarte-Nutzer:innen weitergeben.
+- **Import:** Auf „⬆️ Import“ klicken und eine zuvor exportierte
+  JSON-Datei auswählen. Ist die Datei fehlerhaft (kein gültiges JSON,
+  falsche Struktur, ungültige Werte), erscheint eine klare
+  Fehlermeldung und **nichts** wird verändert.
+  - Erkennt HofKarte für einen zu importierenden Hofladen einen
+    bereits vorhandenen mit demselben Namen (und, sofern beide eine
+    Adresse besitzen, auch derselben Adresse), öffnet sich ein
+    Konfliktdialog: Bestehender und importierter Datensatz werden
+    nebeneinander mit farblich hervorgehobenen Unterschieden
+    (abweichende Felder rot/grün markiert) angezeigt. Für jedes
+    Duplikat wird „Aktualisieren“ (bestehenden Hofladen mit den
+    importierten Daten überschreiben) oder „Beibehalten“ (bestehenden
+    Hofladen unverändert lassen, importierte Version verwerfen)
+    gewählt. Über „Alle aktualisieren“/„Alle beibehalten“ lässt sich
+    dieselbe Entscheidung auf einen Schlag für alle gefundenen
+    Duplikate treffen. Ohne getroffene Entscheidung wird ein Duplikat
+    beim Abschluss automatisch **beibehalten** – ein Import kann so
+    nichts versehentlich überschreiben.
+  - Hofläden ohne erkanntes Duplikat werden ohne Rückfrage als neue
+    Hofläden angelegt.
+  - Nach Abschluss zeigt eine Meldung, wie viele Hofläden neu
+    angelegt, aktualisiert bzw. beibehalten (übersprungen) wurden.
+
 ### Bilder hochladen
 
 Im Bearbeitungsformular steht im Bereich „Bilder“ ein geführter

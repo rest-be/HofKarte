@@ -23,12 +23,26 @@ from .const import DOMAIN
 from .coordinator import HofKarteUpdateCoordinator
 from .data_provider import HofladenNotFoundError
 from .images import get_main_image_url
+from .models import Hofladen
 from .opening_hours import is_open
-from .parsing import HofladenValidationError
+from .parsing import HofladenValidationError, parse_hofladen
 
 WS_LIST = "hofkarte/management/list"
 WS_SAVE = "hofkarte/management/save"
 WS_DELETE = "hofkarte/management/delete"
+WS_IMPORT_PREVIEW = "hofkarte/management/import_preview"
+WS_IMPORT_COMMIT = "hofkarte/management/import_commit"
+
+# Gültige Werte für "aktion" in einem einzelnen Eintrag von
+# WS_IMPORT_COMMIT (siehe ws_import_commit()).
+_IMPORT_AKTION_NEU = "neu"
+_IMPORT_AKTION_AKTUALISIEREN = "aktualisieren"
+_IMPORT_AKTION_UEBERSPRINGEN = "ueberspringen"
+_IMPORT_AKTIONEN = {
+    _IMPORT_AKTION_NEU,
+    _IMPORT_AKTION_AKTUALISIEREN,
+    _IMPORT_AKTION_UEBERSPRINGEN,
+}
 
 
 def _json_value(value: Any) -> Any:
@@ -78,6 +92,39 @@ def _serialize_hofladen(hofladen: Any, *, now: datetime) -> dict[str, Any]:
     daten["geoeffnet"] = is_open(hofladen, now)
     daten["hauptbild_url"] = get_main_image_url(hofladen.bilder)
     return daten
+
+
+def _normalisiert(text: str | None) -> str:
+    """Text für einen tolerant vergleichenden Duplikat-Abgleich
+    normalisieren (Gross-/Kleinschreibung sowie führende/nachfolgende
+    Leerzeichen werden ignoriert, siehe Issue #5)."""
+    return (text or "").strip().casefold()
+
+
+def _finde_duplikat(
+    hofladen: Hofladen, bestehende: list[Hofladen]
+) -> Hofladen | None:
+    """Ein bestehendes Duplikat für einen zu importierenden Hofladen
+    finden (Issue #5).
+
+    Zwei Hofläden gelten als Duplikat, wenn ihr Name übereinstimmt
+    (normalisiert, siehe ``_normalisiert``) und - sofern **beide**
+    Datensätze eine Adresse besitzen - zusätzlich die Adresse
+    übereinstimmt. Fehlt einem der beiden Datensätze die Adresse,
+    entscheidet allein der Name. Es wird bewusst keine Fuzzy-Logik
+    (z. B. Tippfehlertoleranz) verwendet - das Risiko falscher
+    Zusammenführungen (Datenverlust) wiegt schwerer als der
+    Komfortgewinn.
+    """
+    ziel_name = _normalisiert(hofladen.name)
+    for kandidat in bestehende:
+        if _normalisiert(kandidat.name) != ziel_name:
+            continue
+        if hofladen.adresse and kandidat.adresse:
+            if _normalisiert(hofladen.adresse) != _normalisiert(kandidat.adresse):
+                continue
+        return kandidat
+    return None
 
 
 def _get_coordinator(hass: HomeAssistant) -> HofKarteUpdateCoordinator:
@@ -180,8 +227,173 @@ async def ws_delete(
     connection.send_result(msg["id"], {})
 
 
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_IMPORT_PREVIEW, vol.Required("hoflaeden"): [dict]}
+)
+@websocket_api.require_admin
+@callback
+def ws_import_preview(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Eine zu importierende Liste von Hofläden validieren und mögliche
+    Duplikate gegen den aktuellen Bestand ermitteln (Issue #5).
+
+    Rein lesend - es wird noch nichts gespeichert (siehe ws_import_commit
+    für den eigentlichen Import). Fail-Fast: Enthält die Liste auch nur
+    einen strukturell ungültigen Datensatz, wird die gesamte Vorschau mit
+    einem Fehler abgelehnt (kein Teil-Ergebnis), damit die Nutzeroberfläche
+    gar nicht erst mit einer unvollständigen Grundlage weiterarbeitet.
+    """
+    try:
+        coordinator = _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    rohdaten = msg["hoflaeden"]
+    if not rohdaten:
+        connection.send_error(
+            msg["id"], "invalid_data", "Die Import-Datei enthält keine Hofläden."
+        )
+        return
+
+    geparste: list[Hofladen] = []
+    for index, raw in enumerate(rohdaten):
+        try:
+            geparste.append(parse_hofladen(raw))
+        except HofladenValidationError as err:
+            connection.send_error(
+                msg["id"], "invalid_data", f"Datensatz #{index + 1}: {err}"
+            )
+            return
+
+    bestehende = list((coordinator.data or {}).values())
+    eintraege = []
+    for hofladen in geparste:
+        duplikat = _finde_duplikat(hofladen, bestehende)
+        eintraege.append(
+            {
+                "hofladen": _json_value(hofladen),
+                "duplikat_von": duplikat.id if duplikat else None,
+                "bestehend": _json_value(duplikat) if duplikat else None,
+            }
+        )
+
+    connection.send_result(msg["id"], {"eintraege": eintraege})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_IMPORT_COMMIT, vol.Required("eintraege"): [dict]}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_import_commit(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Einen zuvor über ws_import_preview vorbereiteten Import tatsächlich
+    durchführen (Issue #5).
+
+    Jeder Eintrag benennt eine Aktion: ``"neu"`` (als neuer Hofladen mit
+    frisch vergebener ID anlegen - eine im Importdatensatz enthaltene
+    ``id`` einer fremden Installation wird dabei bewusst verworfen),
+    ``"aktualisieren"`` (bestehenden Hofladen mit der Kennung
+    ``bestehende_id`` mit den importierten Daten überschreiben) oder
+    ``"ueberspringen"`` (Datensatz unverändert beibehalten, keine
+    Schreibaktion).
+
+    Fail-Fast über zwei Phasen, um „kein Datenverlust“/„kein
+    Teil-Import“ zu gewährleisten: Zunächst werden **alle** Einträge
+    validiert (gültige Aktion, bei „aktualisieren“ eine tatsächlich
+    noch vorhandene ``bestehende_id``, sowie die Hofladen-Rohdaten
+    selbst über ``parsing.parse_hofladen``); erst wenn diese Prüfung für
+    sämtliche Einträge erfolgreich war, werden die Schreibzugriffe
+    durchgeführt. Ein zwischenzeitlich (z. B. durch eine andere,
+    parallele Sitzung) bereits gelöschter Datensatz führt daher zu einem
+    Fehler für den gesamten Import, statt einen Teil davon unbemerkt zu
+    verwerfen.
+    """
+    try:
+        coordinator = _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    eintraege = msg["eintraege"]
+    if not eintraege:
+        connection.send_error(
+            msg["id"], "invalid_data", "Es wurden keine Einträge zum Import übergeben."
+        )
+        return
+
+    bestehende_ids = set((coordinator.data or {}).keys())
+    vorbereitet: list[tuple[str, dict[str, Any]]] = []
+
+    for index, eintrag in enumerate(eintraege):
+        context = f"Eintrag #{index + 1}"
+        aktion = eintrag.get("aktion")
+        if aktion not in _IMPORT_AKTIONEN:
+            connection.send_error(
+                msg["id"], "invalid_data", f"{context}: unbekannte Aktion '{aktion}'."
+            )
+            return
+
+        if aktion == _IMPORT_AKTION_UEBERSPRINGEN:
+            continue
+
+        raw = dict(eintrag.get("hofladen") or {})
+        if aktion == _IMPORT_AKTION_AKTUALISIEREN:
+            bestehende_id = eintrag.get("bestehende_id")
+            if not bestehende_id or bestehende_id not in bestehende_ids:
+                connection.send_error(
+                    msg["id"],
+                    "invalid_data",
+                    f"{context}: 'bestehende_id' verweist auf keinen (mehr) "
+                    "vorhandenen Hofladen.",
+                )
+                return
+            raw["id"] = bestehende_id
+        else:  # _IMPORT_AKTION_NEU
+            raw["id"] = f"hofladen-{uuid4().hex}"
+
+        try:
+            parse_hofladen(raw)
+        except HofladenValidationError as err:
+            connection.send_error(
+                msg["id"], "invalid_data", f"{context}: {err}"
+            )
+            return
+
+        vorbereitet.append((aktion, raw))
+
+    importiert = 0
+    aktualisiert = 0
+    uebersprungen = len(eintraege) - len(vorbereitet)
+
+    for aktion, raw in vorbereitet:
+        try:
+            await coordinator.async_save_hofladen(raw)
+        except NotImplementedError as err:
+            connection.send_error(msg["id"], "not_supported", str(err))
+            return
+        if aktion == _IMPORT_AKTION_AKTUALISIEREN:
+            aktualisiert += 1
+        else:
+            importiert += 1
+
+    connection.send_result(
+        msg["id"],
+        {
+            "importiert": importiert,
+            "aktualisiert": aktualisiert,
+            "uebersprungen": uebersprungen,
+        },
+    )
+
+
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
     """HofKarte-WebSocket-Befehle registrieren (einmalig, Domain-Ebene)."""
     websocket_api.async_register_command(hass, ws_list)
     websocket_api.async_register_command(hass, ws_save)
     websocket_api.async_register_command(hass, ws_delete)
+    websocket_api.async_register_command(hass, ws_import_preview)
+    websocket_api.async_register_command(hass, ws_import_commit)

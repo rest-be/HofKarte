@@ -519,6 +519,76 @@ die Oberfläche nach dem Speichern eines einzelnen Hofladens dessen
 Kachel/Zeile aktualisieren kann, ohne einen vollständigen `list`-Aufruf
 zu benötigen.
 
+### Export/Import (Issue #5)
+
+Mehrfachauswahl (`this.auswahl`, eine `Set<hofladen_id>`) ergänzt
+Kachel- und Listenansicht um eine Checkbox je Hofladen; die
+Kartenansicht bleibt bewusst aussen vor, da dort kein sinnvoller
+Anwendungsfall für eine Auswahl besteht.
+
+**Export** läuft vollständig clientseitig: Die ausgewählten Hofläden
+werden aus dem bereits geladenen `this.items` gefiltert, um die beiden
+serverseitig berechneten, nicht zum internen Datenmodell gehörenden
+Felder `geoeffnet`/`hauptbild_url` bereinigt (`bereinigtFuerExport`,
+siehe oben) und als **eine** JSON-Datei (Liste von Objekten, kein ZIP)
+über einen `Blob`/`<a download>`-Mechanismus heruntergeladen. Kein
+neuer Server-Endpunkt nötig.
+
+**Import** ist bewusst zweistufig und delegiert jede Fachlogik
+serverseitig an `management.py`, um bestehende Validierungslogik
+(`parsing.parse_hofladen`) nicht ein zweites Mal in JavaScript
+nachzubauen:
+
+1. **Vorschau** (`hofkarte/management/import_preview`, rein lesend):
+   Validiert jeden Datensatz der ausgewählten Datei fail-fast über
+   `parse_hofladen` – ist auch nur einer ungültig, wird die *gesamte*
+   Vorschau mit einer Fehlermeldung abgelehnt (kein Teil-Ergebnis).
+   Für jeden gültigen Datensatz ermittelt `_finde_duplikat` ein
+   mögliches Duplikat im aktuellen Bestand: Übereinstimmung im Namen
+   (`_normalisiert` – Gross-/Kleinschreibung und
+   Leerzeichen werden ignoriert) und, sofern **beide** Datensätze eine
+   Adresse besitzen, zusätzlich in der Adresse. Fehlt einem der beiden
+   Datensätze die Adresse, entscheidet allein der Name. Bewusst keine
+   Fuzzy-Logik (Tippfehlertoleranz) – das Risiko einer fälschlichen
+   Zusammenführung wiegt schwerer als der Komfortgewinn.
+2. **Konfliktlösung** (rein clientseitig, `this.importDialog`): Für
+   jeden erkannten Duplikat-Kandidaten zeigt das Panel bestehenden und
+   importierten Datensatz nebeneinander mit farblich hervorgehobenen
+   Unterschieden (`diffFelder`, rot/grün analog zu den bestehenden
+   Statusfarben `--error-color`/`--success-color`); pro Duplikat wird
+   „Aktualisieren“ oder „Beibehalten“ gewählt (zusätzlich als
+   Komfortfunktion: „Alle aktualisieren“/„Alle beibehalten“ für alle
+   Duplikate gleichzeitig). Gibt es keine Duplikate, wird dieser
+   Schritt automatisch übersprungen. Ein beim Abschluss noch
+   unentschiedenes Duplikat wird sicher **beibehalten**, nie
+   stillschweigend überschrieben (kein Datenverlust ohne explizite
+   Bestätigung).
+3. **Commit** (`hofkarte/management/import_commit`): Erhält je
+   Eintrag eine Aktion (`"neu"`, `"aktualisieren"` oder
+   `"ueberspringen"`) und – bei `"aktualisieren"` – die Ziel-ID des
+   bestehenden Hofladens. Auch hier zweiphasig fail-fast: Zunächst
+   werden *alle* Einträge vollständig validiert (gültige Aktion,
+   bei „aktualisieren“ eine tatsächlich noch vorhandene
+   `bestehende_id`, sowie die Rohdaten selbst über `parse_hofladen`);
+   erst wenn diese Prüfung für sämtliche Einträge erfolgreich war,
+   erfolgen die eigentlichen Schreibzugriffe über
+   `coordinator.async_save_hofladen` (dieselbe Methode wie beim
+   regulären Speichern über die Verwaltungsoberfläche). Eine in der
+   Importdatei enthaltene, von einer fremden Installation stammende
+   `id` wird für neu angelegte Hofläden verworfen und durch eine
+   frisch vergebene, lokale ID (`hofladen-<uuid4>`) ersetzt – nur bei
+   „aktualisieren“ wird gezielt die ID des tatsächlich zu
+   überschreibenden, bestehenden Hofladens verwendet.
+
+Es gibt bewusst keine echte Transaktionalität über mehrere
+Schreibzugriffe hinweg (Home-Assistants `helpers.storage.Store` bietet
+das nicht, und kein anderer Teil dieser Integration benötigt sie
+bisher) – die vorgelagerte, vollständige Validierung aller Einträge
+*vor* dem ersten Schreibzugriff verhindert aber, dass ein einzelner
+ungültiger oder inzwischen ungültig gewordener Eintrag (z. B. ein
+zwischenzeitlich gelöschter Hofladen bei „aktualisieren“) zu einem
+unvollständig durchgeführten Import führt.
+
 ## Diagnostics
 
 `diagnostics.py` liefert eine technische Übersicht (Status des letzten
