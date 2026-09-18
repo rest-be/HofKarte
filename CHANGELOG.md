@@ -13,6 +13,28 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.1-dev.3] - Unveröffentlicht (develop)
+
+### Behoben
+
+- **Panel zeigte nach einem Update weiterhin den alten Stand** (z. B.
+  fehlende Kacheln-/Listen-/Kartenansicht aus Issue #1/#2, obwohl der
+  Code selbst korrekt aktualisiert war): `frontend.py` übergab
+  `hofkarte-panel.js` bislang unter einer über alle Versionen hinweg
+  identischen URL – Browser (teils auch Home Assistants eigenes
+  Frontend) cachen per Custom-Panel geladenes JavaScript anhand dieser
+  URL, nicht anhand des Dateiinhalts, und lieferten dadurch nach einem
+  Update weiterhin eine bereits zwischengespeicherte ältere Fassung
+  aus. Behoben durch einen neuen, sich pro Integrationsversion
+  ändernden Query-Parameter (`?v=<version>`, aus `manifest.json`
+  gelesen) an `js_url` – siehe `docs/architecture.md`. **Einmalig**
+  kann beim Wechsel auf diese Version noch ein harter Neuladen der
+  Seite nötig sein; künftige Updates lösen das Problem danach
+  automatisch.
+- 2 neue Tests (`test_frontend.py`): `_integration_version()` liefert
+  die tatsächliche Manifest-Version; `js_url` enthält den erwarteten
+  Versions-Query-Parameter.
+
 ## [2026.9.1-dev.2] - Unveröffentlicht (develop)
 
 ### Hinzugefügt

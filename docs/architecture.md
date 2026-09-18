@@ -426,6 +426,34 @@ Detailansicht benötigt keinen eigenen WebSocket-Befehl – sie zeigt die
 bereits über `hofkarte/management/list` geladenen Daten an, ohne
 Bearbeitungsmöglichkeit.
 
+### Behobener Bug: `js_url` ohne Cache-Busting (`2026.9.1-dev.3`)
+
+`async_register_frontend` (`frontend.py`) übergibt Home Assistant die
+URL von `hofkarte-panel.js` als `js_url` einmalig beim Setup der
+Integration; der Browser lädt diese Datei anschliessend selbst,
+anhand ihrer URL. Bis `2026.9.1-dev.2` war diese URL für **jede**
+Integrationsversion identisch (`/api/hofkarte/static/hofkarte-panel.js`).
+Browser (teilweise auch Home Assistants eigenes Frontend) cachen
+per Custom-Panel geladenes JavaScript anhand genau dieser URL, nicht
+anhand des tatsächlichen Dateiinhalts – nach einem Update von HofKarte
+wurde deshalb trotz korrekt aktualisierter Datei auf der Festplatte
+teils weiterhin eine ältere, bereits im Browser zwischengespeicherte
+Fassung ausgeliefert (z. B. fehlende Kacheln-/Listen-/Kartenansicht
+aus Issue #1/#2, obwohl der Code auf `develop`/im Release korrekt war
+– beobachtetes Symptom, das zu diesem Fund führte).
+
+**Behoben** durch `_integration_version()`: liest die Version direkt
+aus `manifest.json` (keine zusätzliche Home-Assistant-API-Abhängigkeit
+nötig) und hängt sie als Query-Parameter an `js_url` an
+(`?v=<version>`). Ändert sich die Version, ändert sich die URL – der
+Browser behandelt sie als neue, ihm unbekannte Ressource und lädt sie
+zwingend neu, unabhängig von zuvor gesetzten Cache-Headern. Schlägt das
+Lesen von `manifest.json` aus irgendeinem Grund fehl, liefert
+`_integration_version()` einen festen Platzhalter (`"0"`) – die
+Cache-Invalidierung entfällt dann für diesen Einzelfall, das Panel
+selbst bleibt aber funktionsfähig (bewusst fehlertolerant, kein
+Hard-Fail beim Setup wegen eines reinen Anzeige-Optimierungsmerkmals).
+
 ### Übersicht: Kacheln/Liste, serverseitig berechnete Anzeigefelder
 
 Die Listenansicht selbst bietet zwei Darstellungen (`uebersichtsAnsicht`,

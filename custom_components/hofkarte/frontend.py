@@ -1,7 +1,9 @@
 """Native Home Assistant sidebar panel for HofKarte management."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 from homeassistant.components.frontend import async_register_built_in_panel, async_remove_panel
 from homeassistant.components.http import StaticPathConfig
@@ -9,6 +11,35 @@ from homeassistant.core import HomeAssistant
 
 _PANEL_URL = "hofkarte"
 _STATIC_URL = "/api/hofkarte/static"
+_MANIFEST_PATH = Path(__file__).parent / "manifest.json"
+
+
+def _integration_version() -> str:
+    """Version aus manifest.json lesen – dient ausschliesslich als
+    Cache-Busting-Query-Parameter für ``js_url`` (siehe
+    ``async_register_frontend``), keine funktionale Bedeutung.
+
+    Browser (und teilweise Home Assistants eigenes Frontend) cachen
+    per Custom-Panel geladenes JavaScript anhand seiner URL, nicht
+    anhand des Dateiinhalts. Bleibt die URL über Versions-Updates
+    hinweg identisch, kann eine bereits im Browser zwischengespeicherte
+    ältere Fassung von ``hofkarte-panel.js`` unbegrenzt weiterverwendet
+    werden – neue Funktionen erscheinen dann trotz korrekt
+    aktualisierter Dateien auf der Festplatte nicht (behobener Bug,
+    siehe CHANGELOG). Fällt das Lesen der Datei aus irgendeinem Grund
+    aus (z. B. bei einem stark abweichenden Installationslayout), wird
+    ein fester Platzhalter verwendet – die Funktion selbst bleibt dann
+    nutzbar, nur die Cache-Invalidierung entfällt für diesen Fall.
+    """
+    try:
+        with _MANIFEST_PATH.open(encoding="utf-8") as manifest_file:
+            manifest: dict[str, Any] = json.load(manifest_file)
+        version = manifest.get("version")
+        if isinstance(version, str) and version:
+            return version
+    except (OSError, ValueError):
+        pass
+    return "0"
 
 
 async def async_setup_frontend_assets(hass: HomeAssistant) -> None:
@@ -23,6 +54,12 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
     """Register the HofKarte management panel."""
     if _PANEL_URL in hass.data.get("frontend_panels", {}):
         return
+    # Der Versions-Query-Parameter (?v=...) erzwingt beim Wechsel der
+    # Integrationsversion eine neue, dem Browser bisher unbekannte URL
+    # für hofkarte-panel.js – ohne ihn liefert der Browser nach einem
+    # Update sonst weiterhin die zuvor zwischengespeicherte alte
+    # Fassung aus, siehe _integration_version().
+    js_url = f"{_STATIC_URL}/hofkarte-panel.js?v={_integration_version()}"
     async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -34,7 +71,7 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
                 "name": "hofkarte-panel",
                 "embed_iframe": False,
                 "trust_external": False,
-                "js_url": f"{_STATIC_URL}/hofkarte-panel.js",
+                "js_url": js_url,
             }
         },
         require_admin=True,

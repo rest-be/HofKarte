@@ -608,9 +608,22 @@ Erwartetes Verhalten – HofKarte ist eine Single-Instance-Integration
 Geräte & Dienste** verwenden.
 
 **Das Verwaltungs-Panel erscheint nicht im Seitenmenü:** Nur
-Administratoren sehen das Panel. Home Assistant neu laden
-(Browser-Cache leeren, falls das Panel nach einem Update von HofKarte
-nicht aktualisiert erscheint).
+Administratoren sehen das Panel. Home Assistant neu laden.
+
+**Nach einem Update von HofKarte zeigt das Panel weiterhin den alten
+Stand (z. B. fehlende Kacheln-/Listen-/Kartenansicht):** Behobener Bug
+(siehe CHANGELOG, `2026.9.1-dev.3`) – `js_url` des Panels enthält seit
+dieser Version einen sich pro Integrationsversion ändernden
+Query-Parameter (`?v=<version>`), der den Browser zwingt, nach einem
+Update eine neue, ihm bisher unbekannte URL zu laden, statt eine
+bereits zwischengespeicherte ältere Fassung von `hofkarte-panel.js`
+unbegrenzt weiterzuverwenden. Ab dieser Version behebt sich das Problem
+bei jedem künftigen Update automatisch. Beim **einmaligen** Wechsel auf
+diese oder eine neuere Version kann – je nachdem, wie hartnäckig der
+Browser die alte, unversionierte URL zwischengespeichert hat –
+zusätzlich ein einmaliger harter Neuladen der Seite
+(<kbd>Strg</kbd>/<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>) nötig
+sein.
 
 **Entity „Geöffnet“ zeigt dauerhaft „unbekannt“:** Für den Hofladen sind
 keine Öffnungszeiten hinterlegt. Über die Verwaltungsoberfläche

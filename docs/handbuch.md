@@ -521,8 +521,18 @@ Kapitel 2 (Single-Instance). Die bestehende Instanz unter
 **Einstellungen → Geräte & Dienste** verwenden.
 
 **Das Verwaltungs-Panel „HofKarte“ erscheint nicht im Seitenmenü:** Nur
-sichtbar für Administrator:innen-Konten. Browser-Cache leeren, falls es
-nach einem Update nicht aktualisiert erscheint.
+sichtbar für Administrator:innen-Konten.
+
+**Nach einem Update zeigt das Panel weiterhin den alten Stand** (z. B.
+fehlende Kacheln-/Listen-/Kartenansicht): Behobener Bug (ab
+`2026.9.1-dev.3`) – die Panel-Adresse enthält seit dieser Version einen
+sich pro Version ändernden Query-Parameter, der einen erneuten Abruf
+beim Browser erzwingt, statt eine bereits zwischengespeicherte, ältere
+Fassung unbegrenzt weiterzuverwenden. Ab dieser Version löst sich das
+Problem bei künftigen Updates automatisch; beim Wechsel auf diese
+Version selbst kann noch ein einmaliger harter Neuladen der Seite
+(<kbd>Strg</kbd>/<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>) nötig
+sein.
 
 **Entity „Geöffnet“ zeigt dauerhaft „Unbekannt“:** Für den Hofladen sind
 keine Öffnungszeiten hinterlegt – über die Verwaltungsoberfläche
