@@ -172,6 +172,9 @@ class HofkartePanel extends HTMLElement {
     this._leafletResizeHandler = null;
     this.auswahl = new Set(); // ausgewählte Hofladen-IDs für den Export (Issue #5)
     this.importDialog = null; // { eintraege, entscheidungen: Map<bestehende_id, "aktualisieren"|"ueberspringen"> } - nicht null während der Duplikat-Konfliktlösung eines Imports (Issue #5)
+    this.webseiteInfoVorschlag = null; // vom Server ermittelte Vorschlagsdaten, bis sie im Bestätigungs-Popup übernommen/verworfen werden (Issue #9)
+    this.webseiteInfoStatusText = ""; // Statusmeldung neben "Infos ermitteln" - in this.* gehalten statt nur im DOM, da render() (u. a. beim Öffnen/Schliessen des Popups) das Formular sonst aus this.editing neu aufbaut und eine rein im DOM gesetzte Meldung dabei verloren ginge (Issue #9)
+    this.webseiteInfoStatusKind = ""; // "" | "success" | "error", passend zu webseiteInfoStatusText
     this.attachShadow({ mode: "open" });
   }
 
@@ -405,7 +408,17 @@ class HofkartePanel extends HTMLElement {
     this.render();
   }
 
+  /** Setzt die Statusmeldung neben "Infos ermitteln". Wird bewusst sowohl
+   * im Zustand (this.webseiteInfoStatusText/-Kind) als auch – für
+   * sofortiges Feedback ohne einen vollständigen Re-Render auszulösen –
+   * direkt im bereits vorhandenen DOM-Element gehalten (Issue #9): render()
+   * baut editor() komplett neu auf und übernimmt die Meldung dabei aus dem
+   * Zustand (siehe editor()), eine rein im DOM gesetzte Meldung würde vom
+   * nächsten Render sonst überschrieben, bevor die Benutzerin/der Benutzer
+   * sie überhaupt lesen konnte. */
   setWebseiteInfoStatus(text, kind = "") {
+    this.webseiteInfoStatusText = text;
+    this.webseiteInfoStatusKind = kind;
     const el = this.shadowRoot.querySelector("[data-webseite-info-status]");
     if (!el) return;
     el.textContent = text;
@@ -421,8 +434,14 @@ class HofkartePanel extends HTMLElement {
   };
 
   async ermittleWebseiteInfo() {
-    const f = this.shadowRoot.querySelector("form");
-    const website = (f?.elements["website"]?.value || "").trim();
+    // Issue #9, Korrektur 5.1: Vor JEDEM Re-Render im Zusammenhang mit
+    // "Infos ermitteln" müssen sämtliche live im Formular stehenden, noch
+    // ungespeicherten Werte zuerst gesichert werden – nicht nur die
+    // Website-Adresse. Deshalb hier als allererste Aktion, noch bevor der
+    // Server überhaupt angefragt wird (siehe erfasseFormularZustand()).
+    this.erfasseFormularZustand();
+
+    const website = (this.editing?.website || "").trim();
     if (!website) {
       this.setWebseiteInfoStatus("Bitte zuerst eine Website-Adresse eingeben.", "error");
       return;
@@ -434,13 +453,12 @@ class HofkartePanel extends HTMLElement {
 
     try {
       const result = await this.call("hofkarte/management/webseite_info", { website });
-      const uebernommen = this.uebernehmeWebseiteInfo(result.info || {});
-      this.setWebseiteInfoStatus(
-        uebernommen
-          ? "Informationen ermittelt – bitte vor dem Speichern prüfen und bei Bedarf anpassen."
-          : "Es konnten keine zusätzlichen Angaben ermittelt werden.",
-        uebernommen ? "success" : "",
-      );
+      // Issue #9, Erweiterung 5.2: nicht mehr direkt in die Formularfelder
+      // schreiben – stattdessen als Vorschlag zwischenspeichern und im
+      // Bestätigungs-Popup zur Prüfung anzeigen (siehe webseiteInfoPopup()/
+      // uebernehmeWebseiteInfoVorschlag()/abbrechenWebseiteInfo()).
+      this.webseiteInfoVorschlag = result.info || {};
+      this.setWebseiteInfoStatus("Informationen gefunden – bitte im Popup prüfen.", "success");
       this.render();
     } catch (err) {
       const meldung = HofkartePanel.WEBSEITE_INFO_FEHLERMELDUNGEN[err?.code]
@@ -451,12 +469,37 @@ class HofkartePanel extends HTMLElement {
     }
   }
 
+  /** Verwirft die im Popup gezeigten Vorschläge vollständig (Issue #9,
+   * "Abbrechen"). this.editing wurde bereits vor dem Öffnen des Popups
+   * über erfasseFormularZustand() gesichert (siehe ermittleWebseiteInfo())
+   * – das Formular bleibt dadurch exakt im Zustand vor dem Klick auf
+   * "Infos ermitteln", inklusive aller zwischenzeitlich eingegebenen, noch
+   * ungespeicherten Werte. */
+  abbrechenWebseiteInfo() {
+    this.webseiteInfoVorschlag = null;
+    this.render();
+  }
+
+  /** Übernimmt die im Popup bestätigten Vorschläge (Issue #9,
+   * "Übernehmen") in this.editing und schliesst das Popup. */
+  uebernehmeWebseiteInfoVorschlag() {
+    const uebernommen = this.uebernehmeWebseiteInfo(this.webseiteInfoVorschlag || {});
+    this.webseiteInfoVorschlag = null;
+    this.setWebseiteInfoStatus(
+      uebernommen
+        ? "Informationen übernommen – bitte vor dem Speichern prüfen und bei Bedarf anpassen."
+        : "Es wurden keine Angaben übernommen.",
+      uebernommen ? "success" : "",
+    );
+    this.render();
+  }
+
   /** Überträgt vom Server ermittelte Vorschlagsdaten (webseite_info.py) in
    * das gerade bearbeitete Formular (this.editing). Reine
    * Vorschlagsübernahme in den Bearbeitungszustand – nichts wird dabei
-   * gespeichert (siehe management.ws_webseite_info); die Benutzerin/der
-   * Benutzer prüft und passt die Felder danach im Formular an, bevor sie
-   * regulär über "Speichern" übernommen werden.
+   * gespeichert (siehe management.ws_webseite_info). Wird seit Issue #9
+   * ausschliesslich über das Bestätigungs-Popup ausgelöst (siehe
+   * uebernehmeWebseiteInfoVorschlag()), nicht mehr direkt nach dem Abruf.
    *
    * Bereits ausgefüllte Textfelder werden durch einen gefundenen
    * Vorschlag ersetzt (die Ausgangsdaten sind ja noch ungespeichert und
@@ -506,29 +549,91 @@ class HofkartePanel extends HTMLElement {
     this.render();
   }
 
-  formData() {
-    const f = this.shadowRoot.querySelector("form");
+  /** Liest alle "einfachen" Formularfelder (Text-/Adressfelder,
+   * Öffnungszeiten, Sonderöffnungszeiten, Angebote/Zahlungsarten) aus dem
+   * Formular-DOM in ein einfaches Objekt – bewusst OHNE die
+   * Koordinatenfelder, deren Auswertung (resolveCoordinates()) im
+   * Gegensatz zu allen übrigen Feldern eine Exception werfen kann
+   * (ungültige Zahl bzw. ausserhalb des WGS84-Bereichs). Gemeinsam
+   * genutzt von formData() (lässt eine solche Exception bewusst
+   * weiterlaufen, siehe save()/validate()) und von
+   * erfasseFormularZustand() (Issue #9, siehe dort für den Grund, warum
+   * dieser zweite Aufrufer bewusst fehlertolerant gegenüber ungültigen
+   * Koordinaten sein muss). */
+  leseEinfacheFelder(f) {
     const value = (name) => f.elements[name]?.value ?? "";
-    const data = this.clone(this.editing || this.empty());
+    const data = {};
     data.name = value("name"); data.beschreibung = value("beschreibung") || null;
     data.bemerkung = value("bemerkung") || null;
     data.adresse = value("adresse") || null; data.plz = value("plz") || null;
     data.ort = value("ort") || null; data.land = value("land") || null;
     data.website = value("website") || null;
-    const koordinaten = this.resolveCoordinates(f);
-    data.latitude = koordinaten.latitude; data.longitude = koordinaten.longitude;
     data.oeffnungszeiten = this.readOpeningHours(f);
     data.sonderoeffnungszeiten = [...f.querySelectorAll("[data-special]")].map(row => ({ datum_von: row.querySelector("[name=datum_von]").value, datum_bis: row.querySelector("[name=datum_bis]").value, geschlossen: row.querySelector("[name=geschlossen]").checked, beginn: row.querySelector("[name=beginn]").value || null, ende: row.querySelector("[name=ende]").value || null }));
     for (const field of ["angebote", "zahlungsarten"]) data[field] = this.lines(f.elements[field]?.value);
-    // Bilder: Liste selbst lebt in this.editing.bilder (Upload/Entfernen/
-    // Hauptbild-Wechsel mutieren sie direkt, siehe uploadBild/removeBild/
-    // setHauptbild) – hier nur die live editierbaren Beschreibungsfelder
-    // aus dem Formular übernehmen.
-    data.bilder = (this.editing?.bilder || []).map((bild, i) => {
+    return data;
+  }
+
+  /** Bilder-Beschreibungsfelder aus dem Formular-DOM übernehmen. Die
+   * Bilderliste selbst lebt in this.editing.bilder (Upload/Entfernen/
+   * Hauptbild-Wechsel mutieren sie direkt, siehe uploadBild/removeBild/
+   * setHauptbild) – hier werden nur die live editierbaren
+   * Beschreibungsfelder aus dem Formular übernommen. Von formData() und
+   * erfasseFormularZustand() (Issue #9) gemeinsam genutzt. */
+  leseBilderBeschreibungen(f, bilder) {
+    return (bilder || []).map((bild, i) => {
       const feld = f.querySelector(`[data-bild-index="${i}"] [data-bild-beschreibung]`);
       return { ...bild, beschreibung: feld ? (feld.value || null) : bild.beschreibung };
     });
+  }
+
+  formData() {
+    const f = this.shadowRoot.querySelector("form");
+    const data = this.clone(this.editing || this.empty());
+    Object.assign(data, this.leseEinfacheFelder(f));
+    const koordinaten = this.resolveCoordinates(f);
+    data.latitude = koordinaten.latitude; data.longitude = koordinaten.longitude;
+    data.bilder = this.leseBilderBeschreibungen(f, this.editing?.bilder);
     return data;
+  }
+
+  /** Überträgt sämtliche aktuell im Formular sichtbaren, noch nicht
+   * gespeicherten Eingaben nach this.editing – **muss** vor jedem
+   * this.render()-Aufruf im Zusammenhang mit "Infos ermitteln" (Issue #9)
+   * aufgerufen werden, da render() das komplette Formular-HTML
+   * ausschliesslich aus this.editing neu aufbaut (siehe editor()). Ohne
+   * diesen Schritt ginge jeder bereits eingetippte, aber noch nicht über
+   * formData()/"Speichern" in this.editing übernommene Wert beim
+   * nächsten Render optisch "verloren" (zurückgesetzt auf den alten
+   * this.editing-Stand) – ursprünglich als "der Eintrag wird gelöscht"
+   * gemeldet (Issue #9), tatsächlich aber betraf/betrifft das
+   * grundsätzlich JEDES Formularfeld, nicht nur "Webseite" (siehe
+   * ermittleWebseiteInfo()).
+   *
+   * Nutzt bewusst denselben Erfassungsmechanismus wie formData()/save()
+   * (leseEinfacheFelder()/leseBilderBeschreibungen()) – bis auf eine
+   * Ausnahme: Anders als formData() darf diese Funktion nicht mit einer
+   * Exception abbrechen, nur weil Latitude/Longitude gerade unvollständig
+   * oder ungültig eingegeben sind (resolveCoordinates() würde dafür
+   * werfen) – "Infos ermitteln" darf dadurch nicht blockiert werden. In
+   * diesem Fall bleiben nur die beiden Koordinatenfelder unverändert auf
+   * ihrem bisherigen this.editing-Stand (kein Datenverlust bei den
+   * Koordinaten, aber auch kein Versuch, einen ungültigen Zwischenstand
+   * zu übernehmen); alle übrigen Felder werden unabhängig davon erfasst. */
+  erfasseFormularZustand() {
+    if (!this.editing) return;
+    const f = this.shadowRoot.querySelector("form");
+    if (!f) return;
+
+    Object.assign(this.editing, this.leseEinfacheFelder(f));
+    try {
+      const koordinaten = this.resolveCoordinates(f);
+      this.editing.latitude = koordinaten.latitude;
+      this.editing.longitude = koordinaten.longitude;
+    } catch {
+      // Bewusst ignoriert, siehe Funktionsdoku oben.
+    }
+    this.editing.bilder = this.leseBilderBeschreibungen(f, this.editing.bilder);
   }
 
   /** Öffnungszeiten aus den pro Wochentag gruppierten Eingabebereichen
@@ -557,8 +662,16 @@ class HofkartePanel extends HTMLElement {
     catch (err) { this.error = err?.message || "Löschen fehlgeschlagen."; this.render(); }
   }
 
-  start(item = null) { this.error = ""; this.viewing = null; this.showCoordInfo = false; this.editing = item ? this.clone(item) : this.empty(); this.render(); }
-  cancel() { this.editing = null; this.error = ""; this.render(); }
+  start(item = null) {
+    this.error = ""; this.viewing = null; this.showCoordInfo = false;
+    this.webseiteInfoVorschlag = null; this.webseiteInfoStatusText = ""; this.webseiteInfoStatusKind = "";
+    this.editing = item ? this.clone(item) : this.empty(); this.render();
+  }
+  cancel() {
+    this.editing = null; this.error = "";
+    this.webseiteInfoVorschlag = null; this.webseiteInfoStatusText = ""; this.webseiteInfoStatusKind = "";
+    this.render();
+  }
   view(item) { this.error = ""; this.editing = null; this.viewing = item; this.render(); }
   closeView() { this.viewing = null; this.render(); }
 
@@ -576,6 +689,14 @@ class HofkartePanel extends HTMLElement {
     this.bind();
     if (!this.editing && !this.viewing && this.uebersichtsAnsicht === "karte" && this.items.length) {
       this.initKarte();
+    }
+    // Barrierefreiheit (Issue #9, 5.2): Fokus beim Öffnen des
+    // Bestätigungs-Popups auf den Dialog selbst setzen, damit
+    // Tastatur-/Screenreader-Nutzung (inkl. der Escape-Taste, siehe
+    // bind()) sofort funktioniert, ohne dass zuerst manuell dorthin
+    // navigiert werden muss.
+    if (this.webseiteInfoVorschlag) {
+      this.shadowRoot.querySelector("[data-webseite-info-dialog]")?.focus();
     }
   }
 
@@ -772,6 +893,15 @@ class HofkartePanel extends HTMLElement {
       .upload-status.error{color:var(--error-color,#db4437)}
       .upload-status.success{color:var(--success-color,#43a047)}
       .thumbs img{width:96px;height:96px;object-fit:cover;border-radius:8px}
+      .webseite-info-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+      .webseite-info-status.error{color:var(--error-color,#db4437)}
+      .webseite-info-status.success{color:var(--success-color,#43a047)}
+      .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:1000}
+      .modal{background:var(--ha-card-background,var(--card-background-color));border-radius:12px;padding:20px;max-width:480px;width:100%;max-height:85vh;overflow:auto;box-shadow:0 4px 24px rgba(0,0,0,.4)}
+      .modal h2{margin-top:0}
+      .webseite-info-zeile{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--divider-color);font-size:.95em}
+      .webseite-info-zeile:last-of-type{border-bottom:0}
+      .webseite-info-label{font-weight:500;flex:0 0 auto}
     `;
   }
 
@@ -1290,9 +1420,9 @@ class HofkartePanel extends HTMLElement {
           </div>
           <div class="webseite-info-row">
             <button type="button" class="secondary" data-webseite-info-btn title="Informationen von der Website übernehmen" aria-label="Informationen von der Website übernehmen">🔎 Infos ermitteln</button>
-            <span class="webseite-info-status muted" data-webseite-info-status></span>
+            <span class="webseite-info-status muted${this.webseiteInfoStatusKind ? " " + this.webseiteInfoStatusKind : ""}" data-webseite-info-status>${this.esc(this.webseiteInfoStatusText)}</span>
           </div>
-          <p class="muted">Ermittelt Name, Adresse, Beschreibung, Öffnungszeiten, Angebote und Zahlungsarten anhand strukturierter Daten der Website (sofern vorhanden) und trägt sie zur Überprüfung in die Felder oben ein. Es wird dabei nichts automatisch gespeichert.</p>
+          <p class="muted">Ermittelt Name, Adresse, Beschreibung, Öffnungszeiten, Angebote und Zahlungsarten anhand strukturierter Daten sowie – falls keine strukturierten Daten vorhanden sind – anhand einer vorsichtigen Texterkennung der Website. Die gefundenen Angaben werden vor jeder Übernahme in einem Popup zur Prüfung angezeigt; es wird dabei nichts automatisch gespeichert.</p>
         </section>
 
         <section class=card>
@@ -1332,7 +1462,49 @@ class HofkartePanel extends HTMLElement {
           <button type=button class=secondary data-cancel>Abbrechen</button>
           <button type=submit>Speichern</button>
         </div>
-      </form>`;
+      </form>
+      ${this.webseiteInfoVorschlag ? this.webseiteInfoPopup(this.webseiteInfoVorschlag) : ""}`;
+  }
+
+  /** Bestätigungs-Popup für die von "Infos ermitteln" gefundenen
+   * Vorschlagsdaten (Issue #9, Erweiterung 5.2). Fasst die gefundenen
+   * Informationen übersichtlich zusammen und blendet dabei nicht
+   * gefundene Felder klar als solche ein (statt sie stillschweigend
+   * wegzulassen), bevor die Benutzerin/der Benutzer sie explizit über
+   * "Übernehmen" bestätigt oder über "Abbrechen" verwirft. Als
+   * echtes modales Overlay umgesetzt (nicht wie coordInfoBox() als
+   * eingebetteter Infokasten), da es – anders als die reine
+   * Zusatzerklärung dort – eine tatsächliche Entscheidung mit zwei
+   * Handlungsoptionen darstellt, die den Blick auf das Formular
+   * dahinter bewusst kurzzeitig blockieren soll. */
+  webseiteInfoPopup(info) {
+    const zeile = (label, wert) => `<div class="webseite-info-zeile"><span class="webseite-info-label">${this.esc(label)}</span><span>${wert ? this.esc(wert) : '<span class="muted">– nicht gefunden –</span>'}</span></div>`;
+    const adresse = [info.adresse, info.plz, info.ort, info.land].filter(Boolean).join(", ");
+    // Bei Angeboten/Zahlungsarten reicht eine einfache Aufzählung der
+    // gefundenen Namen; bei Öffnungszeiten wäre eine Aufzählung aller
+    // einzelnen Wochentag-Einträge unübersichtlich, daher dort bewusst
+    // nur die Anzahl gefundener Einträge (siehe Anforderung 5.2).
+    const namenListe = (liste) => (Array.isArray(liste) && liste.length ? liste.map(x => x.name || x).join(", ") : "");
+    const oeffnungszeitenText = Array.isArray(info.oeffnungszeiten) && info.oeffnungszeiten.length
+      ? `${info.oeffnungszeiten.length} Eintrag${info.oeffnungszeiten.length === 1 ? "" : "e"} gefunden`
+      : "";
+
+    return `<div class="modal-overlay" data-webseite-info-overlay>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="webseite-info-titel" tabindex="-1" data-webseite-info-dialog>
+        <h2 id="webseite-info-titel">Gefundene Informationen</h2>
+        <p class="muted">Bitte prüfen. Erst nach "Übernehmen" werden die Vorschläge in die Formularfelder eingetragen – gespeichert wird dabei weiterhin nichts.</p>
+        ${zeile("Name", info.name)}
+        ${zeile("Beschreibung", info.beschreibung)}
+        ${zeile("Adresse", adresse)}
+        ${zeile("Öffnungszeiten", oeffnungszeitenText)}
+        ${zeile("Angebote", namenListe(info.angebote))}
+        ${zeile("Zahlungsarten", namenListe(info.zahlungsarten))}
+        <div class="actions">
+          <button type="button" class="secondary" data-webseite-info-abbrechen>Abbrechen</button>
+          <button type="button" data-webseite-info-uebernehmen>Übernehmen</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   /** Liste der Bilder eines Hofladens im Editor – Vorschau, optionale
@@ -1553,6 +1725,17 @@ class HofkartePanel extends HTMLElement {
     // unverändert an das "change"-Ereignis dieses Felds gebunden.
     this.shadowRoot.querySelector("[data-webseite-info-btn]")?.addEventListener("click", () => {
       this.ermittleWebseiteInfo();
+    });
+    // Bestätigungs-Popup (Issue #9, 5.2): "Übernehmen"/"Abbrechen" sowie
+    // Schliessen per Escape-Taste (Barrierefreiheit, siehe Anforderung
+    // 5.2) - der keydown-Listener sitzt bewusst auf dem Overlay selbst
+    // (nicht global auf window/document), damit er automatisch mit dem
+    // Popup selbst verschwindet und keine manuelle Aufräum-Logik beim
+    // Schliessen nötig ist.
+    this.shadowRoot.querySelector("[data-webseite-info-uebernehmen]")?.addEventListener("click", () => this.uebernehmeWebseiteInfoVorschlag());
+    this.shadowRoot.querySelector("[data-webseite-info-abbrechen]")?.addEventListener("click", () => this.abbrechenWebseiteInfo());
+    this.shadowRoot.querySelector("[data-webseite-info-overlay]")?.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); this.abbrechenWebseiteInfo(); }
     });
     this.shadowRoot.querySelector("[data-start-upload]")?.addEventListener("click", () => {
       this.shadowRoot.querySelector("#bild-upload-input")?.click();

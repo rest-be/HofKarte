@@ -135,6 +135,168 @@ def test_leere_seite_ohne_jegliche_information_ist_leer() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Vertiefte Text-Heuristik (Issue #9): Adresse/Öffnungszeiten als Fallback,
+# wenn JSON-LD dafür nichts liefert.
+# ---------------------------------------------------------------------------
+
+
+def _text_seite(*absaetze: str) -> str:
+    """Baut eine einfache HTML-Seite ohne JSON-LD aus mehreren
+    Absätzen (<p>) - jeder Absatz landet als eigene Zeile im
+    ``sichtbarer_text()`` der Seite (siehe ``_SeitenParser``)."""
+    body = "".join(f"<p>{absatz}</p>" for absatz in absaetze)
+    return f"<html><head><title>Hofladen Muster</title></head><body>{body}</body></html>"
+
+
+def test_adresse_wird_aus_text_erkannt_wenn_kein_json_ld_vorhanden() -> None:
+    info = _extrahiere_aus_html(_text_seite("Musterweg 1, 3000 Bern"))
+    assert info.adresse == "Musterweg 1"
+    assert info.plz == "3000"
+    assert info.ort == "Bern"
+
+
+def test_adresse_ohne_komma_wird_ebenfalls_erkannt() -> None:
+    info = _extrahiere_aus_html(_text_seite("Bahnhofstrasse 12 8400 Winterthur"))
+    assert info.adresse == "Bahnhofstrasse 12"
+    assert info.plz == "8400"
+    assert info.ort == "Winterthur"
+
+
+def test_adresse_mit_mehrwortort_wird_erkannt() -> None:
+    info = _extrahiere_aus_html(_text_seite("Dorfgasse 3, 9490 Vaduz Liechtenstein"))
+    assert info.adresse == "Dorfgasse 3"
+    assert info.plz == "9490"
+    assert info.ort == "Vaduz Liechtenstein"
+
+
+def test_adresse_ueber_getrennte_absaetze_wird_nicht_erkannt() -> None:
+    """Dokumentierte Grenze: eine über zwei Absätze verteilte Adresse
+    (Strasse in einer Zeile, PLZ/Ort in der nächsten) wird bewusst nicht
+    erkannt, statt fälschlich mit unabhängigem Text kombiniert zu werden
+    (siehe ``_SeitenParser.sichtbarer_text()``)."""
+    info = _extrahiere_aus_html(_text_seite("Bahnhofstrasse 12", "8400 Winterthur"))
+    assert info.adresse is None
+    assert info.plz is None
+    assert info.ort is None
+
+
+def test_mehrdeutige_adresse_liefert_keinen_vorschlag() -> None:
+    """Zwei unterschiedliche Adresskandidaten im Text -> uneindeutig,
+    also lieber gar kein Vorschlag (Prinzip "lieber nichts als falsch")."""
+    info = _extrahiere_aus_html(
+        _text_seite("Musterweg 1, 3000 Bern", "Dorfweg 5, 3001 Bern")
+    )
+    assert info.adresse is None
+    assert info.plz is None
+    assert info.ort is None
+
+
+def test_identisch_wiederholte_adresse_gilt_nicht_als_mehrdeutig() -> None:
+    """Dieselbe Adresse an zwei Stellen der Seite (z. B. Kopf- und
+    Fussbereich) ist kein Widerspruch."""
+    info = _extrahiere_aus_html(
+        _text_seite("Musterweg 1, 3000 Bern", "Kontakt: Musterweg 1, 3000 Bern")
+    )
+    assert info.adresse == "Musterweg 1"
+    assert info.plz == "3000"
+    assert info.ort == "Bern"
+
+
+def test_strasse_ohne_erkannte_endung_wird_nicht_als_adresse_erkannt() -> None:
+    """Strassennamen ohne eine der erkannten Endungen (-strasse, -weg,
+    ...) werden bewusst nicht erkannt (dokumentierte Grenze)."""
+    info = _extrahiere_aus_html(_text_seite("Via Nassa 1, 6900 Lugano"))
+    assert info.adresse is None
+
+
+def test_json_ld_adresse_hat_vorrang_vor_text_heuristik() -> None:
+    """Die Text-Heuristik darf eine bereits aus JSON-LD ermittelte
+    Adresse nicht überschreiben oder ergänzen."""
+    payload = """
+    {
+      "@type": "Store", "name": "Hofladen",
+      "address": {"streetAddress": "Musterweg 1", "postalCode": "3000", "addressLocality": "Bern"}
+    }
+    """
+    html = (
+        "<html><head><title>t</title>"
+        f'<script type="application/ld+json">{payload}</script>'
+        "</head><body><p>Andere Strasse 9, 8000 Zürich</p></body></html>"
+    )
+    info = _extrahiere_aus_html(html)
+    assert info.adresse == "Musterweg 1"
+    assert info.plz == "3000"
+    assert info.ort == "Bern"
+
+
+def test_oeffnungszeiten_werden_aus_tagesbereich_mit_bindestrich_erkannt() -> None:
+    info = _extrahiere_aus_html(_text_seite("Mo-Fr 08:00-18:00 Uhr"))
+    assert info.oeffnungszeiten == (
+        {"wochentag": 1, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 2, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 3, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 4, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 5, "beginn": "08:00", "ende": "18:00"},
+    )
+
+
+def test_oeffnungszeiten_werden_aus_ausgeschriebenem_tagesbereich_erkannt() -> None:
+    info = _extrahiere_aus_html(_text_seite("Montag bis Freitag: 8 – 18 Uhr"))
+    assert info.oeffnungszeiten == (
+        {"wochentag": 1, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 2, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 3, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 4, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 5, "beginn": "08:00", "ende": "18:00"},
+    )
+
+
+def test_oeffnungszeiten_werden_aus_einzelnem_tag_erkannt() -> None:
+    info = _extrahiere_aus_html(_text_seite("Sa 08:00–12:00"))
+    assert info.oeffnungszeiten == ({"wochentag": 6, "beginn": "08:00", "ende": "12:00"},)
+
+
+def test_widerspruechliche_oeffnungszeiten_fuer_einen_tag_werden_ausgelassen() -> None:
+    """Zwei unterschiedliche Angaben für Montag -> für Montag kein
+    Vorschlag; die übrigen, eindeutigen Tage bleiben davon unberührt."""
+    info = _extrahiere_aus_html(_text_seite("Mo-Fr 08:00-18:00 Uhr", "Mo 09:00-17:00 Uhr"))
+    assert info.oeffnungszeiten == (
+        {"wochentag": 2, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 3, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 4, "beginn": "08:00", "ende": "18:00"},
+        {"wochentag": 5, "beginn": "08:00", "ende": "18:00"},
+    )
+
+
+def test_identisch_wiederholte_oeffnungszeit_gilt_nicht_als_widerspruch() -> None:
+    info = _extrahiere_aus_html(_text_seite("Mo 08:00-12:00 Uhr", "Montag: 08:00-12:00 Uhr"))
+    assert info.oeffnungszeiten == ({"wochentag": 1, "beginn": "08:00", "ende": "12:00"},)
+
+
+def test_json_ld_oeffnungszeiten_haben_vorrang_vor_text_heuristik() -> None:
+    payload = """
+    {
+      "@type": "Store", "name": "Hofladen",
+      "openingHoursSpecification": [
+        {"dayOfWeek": "Saturday", "opens": "08:00", "closes": "12:00"}
+      ]
+    }
+    """
+    html = (
+        "<html><head><title>t</title>"
+        f'<script type="application/ld+json">{payload}</script>'
+        "</head><body><p>Mo-Fr 08:00-18:00 Uhr</p></body></html>"
+    )
+    info = _extrahiere_aus_html(html)
+    assert info.oeffnungszeiten == ({"wochentag": 6, "beginn": "08:00", "ende": "12:00"},)
+
+
+def test_ohne_erkennbares_muster_bleiben_oeffnungszeiten_leer() -> None:
+    info = _extrahiere_aus_html(_text_seite("Wir freuen uns auf Ihren Besuch."))
+    assert info.oeffnungszeiten == ()
+
+
+# ---------------------------------------------------------------------------
 # async_ermittle_webseite_info: URL-Validierung (Fehlerfall 1)
 # ---------------------------------------------------------------------------
 

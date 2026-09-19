@@ -449,7 +449,7 @@ ist damit die **Herkunft** (von HofKarte selbst erzeugt), nicht der
 Adressbereich – eine bewusste, im Modul dokumentierte Ausnahme statt
 einer fragilen Erkennung anhand des URL-Musters.
 
-## Informationen aus Homepage (Issue #8)
+## Informationen aus Homepage (Issue #8, Korrektur/Erweiterung in Issue #9)
 
 `webseite_info.py` implementiert die **erste eigene, ausgehende
 HTTP-Anfrage im Backend-Code von HofKarte** – bisher delegierte
@@ -479,12 +479,43 @@ Trennung `images.py`/`opening_hours.py`/`search.py`.
    Fehlercodes ab (`invalid_url`/`unreachable`/`not_found`) bzw.
    serialisiert das Ergebnis (`_json_value`, dieselbe Hilfsfunktion wie
    für `Hofladen`-Objekte).
-5. `hofkarte-panel.js` übernimmt das Ergebnis ausschliesslich in
-   `this.editing` (den Bearbeitungszustand des offenen Formulars,
-   `uebernehmeWebseiteInfo()`) – **es wird dabei nichts gespeichert**.
-   Das eigentliche Speichern erfolgt unverändert über den bestehenden
-   `ws_save`-Befehl, nachdem die Benutzerin/der Benutzer die
-   übernommenen Werte geprüft und ggf. angepasst hat.
+5. `hofkarte-panel.js` speichert das Ergebnis seit Issue #9 zunächst nur
+   als Vorschlag (`this.webseiteInfoVorschlag`) und zeigt es in einem
+   Bestätigungs-Popup (`webseiteInfoPopup()`) zur Prüfung an. Erst ein
+   Klick auf „Übernehmen“ (`uebernehmeWebseiteInfoVorschlag()`) überträgt
+   es über die unverändert bestehende `uebernehmeWebseiteInfo()` in
+   `this.editing` (den Bearbeitungszustand des offenen Formulars);
+   „Abbrechen“ (`abbrechenWebseiteInfo()`) verwirft es. **Es wird dabei
+   nie automatisch gespeichert** – das eigentliche Speichern erfolgt
+   unverändert über den bestehenden `ws_save`-Befehl, nachdem die
+   Benutzerin/der Benutzer die übernommenen Werte geprüft und ggf.
+   angepasst hat.
+
+**Datenverlust-Fix (Issue #9):** `ermittleWebseiteInfo()` sicherte vor
+Issue #9 nur implizit den zuletzt gespeicherten Formularzustand; das
+abschliessende `render()` (Rückmeldung anzeigen) baute das gesamte
+Formular-HTML ausschliesslich aus `this.editing` neu auf und liess
+dabei jeden inzwischen live eingetippten, aber noch nicht dorthin
+übernommenen Wert optisch verschwinden. Behoben durch
+`erfasseFormularZustand()`, das denselben Erfassungsmechanismus wie
+`formData()`/„Speichern“ (den gemeinsamen Helfer `leseEinfacheFelder()`)
+nutzt und konsequent vor jedem mit „Infos ermitteln“ verbundenen
+`render()`-Aufruf ausgeführt wird – unabhängig vom Ausgang der
+Ermittlung oder davon, ob das Popup per „Abbrechen“ geschlossen wird.
+
+**Vertiefte Text-Heuristik (Issue #9):** Liefert JSON-LD keine Adresse
+bzw. keine `openingHoursSpecification`, wertet `webseite_info.py`
+zusätzlich den über `_SeitenParser.sichtbarer_text()` extrahierten,
+sichtbaren Seitentext mit dokumentierten Regex-Mustern aus
+(`_extrahiere_adresse_aus_text`/`_extrahiere_oeffnungszeiten_aus_text`)
+– weiterhin ohne externen/Cloud-/KI-Dienst, rein lokal und
+deterministisch. Diese Erweiterung wird durch das neue
+Bestätigungs-Popup gerechtfertigt (menschliche Prüfung vor jeder
+Übernahme, siehe oben) und bleibt dem Prinzip „lieber nichts als
+falsch“ verpflichtet: mehrdeutige oder widersprüchliche Fundstellen
+liefern bewusst keinen Vorschlag. Siehe `webseite_info.py`, Moduldoc
+„Vertiefte Text-Heuristik“, für die im Detail dokumentierten Grenzen
+dieses Ansatzes.
 
 **Extraktionsstrategie (kein externer/Cloud-/KI-Dienst):**
 Ausschliesslich lokale, deterministische Auswertung mit der

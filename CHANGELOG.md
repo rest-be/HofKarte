@@ -13,6 +13,83 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.2-dev.2] - Entwicklungsversion (develop)
+
+Kein produktiver Release. Korrektur- und Härtungsrunde für die in
+`2026.9.2-dev.1` (Issue #8) eingeführte Funktion „Infos ermitteln“
+(Issue #9).
+
+### Behoben
+
+- **Datenverlust im Bearbeitungsformular nach „Infos ermitteln“
+  (Issue #9):** Ein Klick auf „🔎 Infos ermitteln“ liess zuvor
+  jeden bereits im Formular eingetragenen, aber noch nicht
+  gespeicherten Wert verschwinden – ursprünglich als „der Eintrag
+  wird gelöscht“ gemeldet, tatsächlich aber ein allgemeines Problem:
+  `ermittleWebseiteInfo()` löste am Ende einen `render()`-Aufruf aus,
+  der das gesamte Formular-HTML ausschliesslich aus dem internen
+  Bearbeitungszustand neu aufbaut – live eingegebene, aber noch nicht
+  dorthin übernommene Werte (nicht nur das Feld „Webseite“) gingen
+  dadurch verloren, obwohl in Wirklichkeit nichts gespeichert oder
+  gelöscht wurde. Behoben durch eine neue, allgemeine Erfassung des
+  vollständigen Formularzustands (`erfasseFormularZustand()`, nutzt
+  denselben Mechanismus wie das bestehende `formData()`/„Speichern“),
+  die konsequent **vor** jedem mit „Infos ermitteln“ verbundenen
+  Re-Render aufgerufen wird – unabhängig davon, ob die Ermittlung
+  erfolgreich ist, einen Fehler liefert, oder das neue
+  Bestätigungs-Popup (siehe unten) abgebrochen wird.
+
+### Hinzugefügt
+
+- **Bestätigungs-Popup vor der Übernahme (Issue #9):** Ermittelte
+  Informationen werden nicht mehr direkt in die Formularfelder
+  geschrieben. Nach einem erfolgreichen Abruf öffnet sich stattdessen
+  ein Popup, das die gefundenen Angaben (Name, Adresse, Beschreibung,
+  Anzahl gefundener Öffnungszeiten-Einträge, Angebote, Zahlungsarten)
+  übersichtlich zusammenfasst – nicht gefundene Felder werden klar als
+  solche gekennzeichnet statt weggelassen. Erst ein Klick auf
+  „Übernehmen“ überträgt die Vorschläge in die Formularfelder (weiterhin
+  vor dem Speichern zu prüfen); „Abbrechen“ verwirft sie vollständig
+  und lässt das Formular unverändert. Schliessbar auch per
+  Escape-Taste; der Dialog erhält beim Öffnen den Tastaturfokus
+  (`role="dialog"`, `aria-modal`, `aria-labelledby`).
+- **Vertiefte Extraktion für Adresse und Öffnungszeiten (Issue #9):**
+  Liefert die Website kein auswertbares JSON-LD, wertet
+  `webseite_info.py` zusätzlich den sichtbaren Seitentext über
+  dokumentierte, rein lokale Regex-Heuristiken aus (weiterhin **kein**
+  externer/Cloud-/KI-Dienst) – als reine Ergänzung, nicht als Ersatz
+  des bisherigen, zuverlässigeren JSON-LD-Pfads:
+  - **Adresse:** erkennt das im DACH-Raum übliche Muster „‹Strasse›
+    ‹Hausnummer›, ‹PLZ› ‹Ort›“ (vierstellige PLZ), sofern der
+    Strassenname auf eine gängige deutschsprachige
+    Strassenbezeichnungs-Endung endet (z. B. -strasse, -weg, -gasse).
+  - **Öffnungszeiten:** erkennt gängige deutschsprachige Freitext-Muster
+    wie „Mo-Fr 08:00-18:00 Uhr“, „Montag bis Freitag: 8 – 18 Uhr“ oder
+    „Sa 08:00–12:00“, inklusive Abbildung von Wochentag-Bereichen auf
+    die einzelnen Wochentage.
+  - Beide Heuristiken bleiben dem Prinzip „lieber nichts als falsch“
+    verpflichtet: mehrere unterschiedliche bzw. widersprüchliche
+    Fundstellen führen bewusst zu **keinem** Vorschlag (für Öffnungszeiten
+    pro betroffenem Wochentag einzeln), statt einen unsicheren zu
+    raten. Diese vorsichtige Erweiterung wird erst durch das neue
+    Bestätigungs-Popup gerechtfertigt, das jeden Vorschlag vor der
+    Übernahme einer expliziten menschlichen Prüfung unterzieht (siehe
+    `webseite_info.py`, Moduldoc „Vertiefte Text-Heuristik“, für die im
+    Detail dokumentierten Grenzen, u. a.: Adresse und Öffnungszeiten
+    müssen jeweils innerhalb eines einzelnen Absatzes/derselben Zeile
+    stehen, nicht über mehrere Absätze verteilt).
+
+### Tests
+
+- 15 neue Tests für die Text-Heuristiken in `tests/test_webseite_info.py`
+  (positive Fälle, mehrdeutiger/widersprüchlicher Text, JSON-LD-Vorrang).
+- 12 neue strukturelle Frontend-Tests in
+  `tests/test_static_panel_js_webseite_info.py`: Regressionsschutz gegen
+  den Datenverlust-Bug sowie Abdeckung des neuen Popups (Vorhandensein,
+  Verkabelung von „Übernehmen“/„Abbrechen“, Escape-Handling,
+  Barrierefreiheits-Attribute).
+- Gesamte Suite: 440 Tests grün (zuvor 413), `pyflakes`/`mypy` sauber.
+
 ## [2026.9.2-dev.1] - Entwicklungsversion (develop)
 
 Kein produktiver Release. Erste Entwicklungsversion für Milestone

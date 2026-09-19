@@ -89,6 +89,28 @@ Weiterhin **nicht** abgedeckt (bewusst, wie in ``url_sicherheit.py``
 dokumentiert): DNS-Rebinding (ein Domainname, der erst beim tatsächlichen
 Verbindungsaufbau auf eine private IP auflöst). Das entspricht der
 bestehenden, dokumentierten Grenze aus ``images.py``.
+
+## Vertiefte Text-Heuristik (Issue #9)
+
+Issue #8 hat bewusst auf jede Interpretation von Freitext verzichtet
+(siehe oben, "Prinzip 'lieber nichts als falsch'"), da ermittelte Werte
+damals **direkt** in die Formularfelder des Verwaltungspanels geschrieben
+wurden. Seit Issue #9 ist zwischen Ermittlung und Übernahme zwingend ein
+Bestätigungs-Popup geschaltet (siehe ``static/hofkarte-panel.js``,
+``ermittleWebseiteInfo()``/``uebernehmeWebseiteInfo()``) - die Benutzerin/
+der Benutzer sieht und bestätigt jeden Vorschlag explizit, bevor er in ein
+Formularfeld übernommen wird. Diese zusätzliche Kontrollinstanz
+rechtfertigt eine vorsichtige Erweiterung um dokumentierte,
+nachvollziehbare Text-Heuristiken für Adresse und Öffnungszeiten, **wenn**
+sich diese nicht bereits zuverlässig aus JSON-LD ermitteln liessen (siehe
+``_extrahiere_adresse_aus_text``/``_extrahiere_oeffnungszeiten_aus_text``).
+Weiterhin **kein** externer/Cloud-/KI-Dienst - die Heuristiken sind reine,
+lokale, deterministische Regex-Mustererkennung auf dem bereits
+abgerufenen, sichtbaren Seitentext (kein zusätzlicher Netzwerk-Request).
+Und weiterhin gilt "lieber nichts als falsch": beide Heuristiken liefern
+bei mehrdeutigem oder widersprüchlichem Text bewusst **keinen** Vorschlag,
+statt einen unsicheren zu raten - siehe die jeweiligen Funktionsdocstrings
+für die genauen, dokumentierten Grenzen dieses Ansatzes.
 """
 
 from __future__ import annotations
@@ -127,6 +149,92 @@ _WOCHENTAGE_SCHEMA_ORG = {
     "saturday": 6,
     "sunday": 7,
 }
+
+# --- Vertiefte Text-Heuristik (Issue #9) -----------------------------------
+#
+# Deutschsprachige Wochentag-Kurz- und Langformen, wie sie auf
+# Hofladen-Websites typischerweise für Öffnungszeiten verwendet werden.
+# Wochentag-Nummerierung (1=Montag...7=Sonntag) entspricht der bereits im
+# Projekt etablierten Konvention (siehe ``WEEKDAYS`` in
+# ``static/hofkarte-panel.js`` sowie ``models.py``).
+_WOCHENTAG_TEXT = {
+    "mo": 1, "montag": 1,
+    "di": 2, "dienstag": 2,
+    "mi": 3, "mittwoch": 3,
+    "do": 4, "donnerstag": 4,
+    "fr": 5, "freitag": 5,
+    "sa": 6, "samstag": 6,
+    "so": 7, "sonntag": 7,
+}
+_WOCHENTAG_ALTERNATIVEN = "|".join(_WOCHENTAG_TEXT.keys())
+
+# Erkennt Zeilen wie "Mo-Fr 08:00-18:00 Uhr", "Montag bis Freitag: 8 – 18
+# Uhr" oder "Sa 08:00–12:00" (Issue #9). Der Tagesbereich (via "bis"/"-"/
+# Gedankenstrich) sowie das "Uhr"-Suffix sind optional; Uhrzeiten dürfen
+# ohne führende Null und ohne Minutenangabe vorkommen (z. B. "8" statt
+# "08:00"). Bewusst **kein** Versuch, jede erdenkliche Freitext-Variante
+# abzudecken - siehe Docstring von ``_extrahiere_oeffnungszeiten_aus_text``
+# für die dokumentierten Grenzen.
+#
+# Bewusst [ \t] statt \s als Trenner verwendet (nicht \n): siehe
+# ``_SeitenParser.sichtbarer_text()`` - ein Treffer darf nicht über die
+# Grenze zweier unabhängiger Block-Elemente/Absätze hinweg zusammengesetzt
+# werden (sonst könnten z. B. ein Wochentag aus einem Absatz und eine
+# völlig unabhängige Uhrzeit aus dem nächsten fälschlich kombiniert
+# werden). Dokumentierte Folge: eine über mehrere Zeilen verteilte Angabe
+# (z. B. Wochentag und Uhrzeit in getrennten Absätzen) wird nicht erkannt.
+_OEFFNUNGSZEIT_TEXT_MUSTER = re.compile(
+    rf"(?P<von_tag>{_WOCHENTAG_ALTERNATIVEN})\b"
+    rf"(?:[ \t]*(?:bis|-|–|—)[ \t]*(?P<bis_tag>{_WOCHENTAG_ALTERNATIVEN})\b)?"
+    r"[ \t]*:?[ \t]*"
+    r"(?P<beginn_h>\d{1,2})(?:[:.](?P<beginn_m>\d{2}))?"
+    r"[ \t]*(?:-|–|—|bis)[ \t]*"
+    r"(?P<ende_h>\d{1,2})(?:[:.](?P<ende_m>\d{2}))?"
+    r"[ \t]*(?:uhr)?",
+    re.IGNORECASE,
+)
+
+# Erkennt das im DACH-Raum übliche Adressmuster "<Strasse> <Hausnummer>,
+# <PLZ> <Ort>" (Issue #9). Der Strassenname muss bewusst auf eine der
+# gängigen deutschsprachigen Strassenbezeichnungs-Endungen enden, damit
+# nicht beliebiger grossgeschriebener Fliesstext fälschlich als Adresse
+# erkannt wird (siehe Docstring von ``_extrahiere_adresse_aus_text`` für
+# die dokumentierten Grenzen dieses bewusst konservativen Ansatzes).
+_STRASSEN_ENDUNGEN = (
+    "strasse", "straße", "weg", "gasse", "platz", "ring", "allee",
+    "rain", "halde", "feld", "hof", "steig",
+)
+
+# Im Deutschen wird die Strassenbezeichnungs-Endung (z. B. "-weg",
+# "-strasse") in aller Regel **ohne** Leerzeichen an den eigentlichen
+# Strassennamen angehängt (z. B. "Musterweg", nicht "Muster weg"). Die
+# Regex erfasst daher zunächst nur eine plausible Kandidatenphrase (ein bis
+# drei grossgeschriebene, durch Leerzeichen getrennte Wörter direkt vor
+# einer Hausnummer und einer vierstelligen PLZ); ob das letzte Wort davon
+# tatsächlich auf eine der ``_STRASSEN_ENDUNGEN`` endet, wird bewusst erst
+# danach in Python geprüft (siehe ``_hat_strassen_endung``) - das ist
+# deutlich wartbarer als eine Regex, die Wortstamm und Endung ohne
+# Leerzeichen zusammenhängend, aber dennoch mehrdeutig trennen müsste.
+#
+# Auch hier bewusst [ \t] statt \s (siehe Kommentar bei
+# ``_OEFFNUNGSZEIT_TEXT_MUSTER`` sowie ``_SeitenParser.sichtbarer_text()``):
+# eine über mehrere Absätze verteilte Adresse (z. B. Strasse in einer
+# eigenen Zeile, PLZ/Ort in der nächsten - auf Impressum-Seiten durchaus
+# üblich) wird dadurch bewusst **nicht** erkannt, statt fälschlich mit dem
+# nächsten, inhaltlich unabhängigen Absatz kombiniert zu werden.
+_ADRESSE_TEXT_MUSTER = re.compile(
+    r"(?P<strasse>[A-ZÄÖÜ][\wÀ-ÖØ-öø-ÿ.\-]*(?:[ \t]+[A-ZÄÖÜ][\wÀ-ÖØ-öø-ÿ.\-]*){0,2})"
+    r"[ \t]+(?P<hausnummer>\d{1,4}[a-zA-Z]?)"
+    r"[ \t]*,?[ \t]*"
+    r"(?P<plz>\d{4})"
+    r"[ \t]+(?P<ort>[A-ZÄÖÜ][\wÀ-ÖØ-öø-ÿ.\-]+(?:[ \t]+[A-ZÄÖÜ][\wÀ-ÖØ-öø-ÿ.\-]+){0,2})",
+    re.IGNORECASE,
+)
+
+
+def _hat_strassen_endung(wort: str) -> bool:
+    wort_klein = wort.lower()
+    return any(wort_klein.endswith(endung) for endung in _STRASSEN_ENDUNGEN)
 
 
 class WebseiteUngueltigeUrlError(Exception):
@@ -196,14 +304,45 @@ class _SeitenParser(HTMLParser):
     einer HTML-Seite. Bewusst mit der Python-Standardbibliothek
     (``html.parser``) statt einer zusätzlichen Abhängigkeit umgesetzt."""
 
+    # Tags, deren Textinhalt nicht für sichtbare Freitext-Heuristiken
+    # (Issue #9, ``sichtbarer_text``) verwendet werden soll - Skript-/
+    # Stilinhalt ist kein für Menschen sichtbarer Seiteninhalt, und der
+    # Titel wird bereits separat über ``self.titel`` erfasst.
+    _IGNORIERTE_TEXT_TAGS = {"script", "style", "noscript", "title"}
+
+    # Block-Elemente erzeugen im gerenderten Layout einen Zeilenumbruch -
+    # ihre Tag-Grenzen werden in ``sichtbarer_text()`` daher als
+    # Zeilenumbruch statt als einfaches Leerzeichen abgebildet. Das ist die
+    # einzige Grenzinformation, die den Fallback-Heuristiken (Adresse/
+    # Öffnungszeiten, siehe Moduldoc) zur Verfügung steht, um zufällige
+    # Wortfolgen über mehrere, inhaltlich unabhängige Absätze/Zeilen hinweg
+    # NICHT als einen zusammenhängenden Treffer misszuinterpretieren
+    # (siehe dortige Docstrings, "Dokumentierte Grenzen": eine über mehrere
+    # Zeilen verteilte Adresse, z. B. Strasse und PLZ/Ort in getrennten
+    # Absätzen, wird deshalb bewusst nicht erkannt).
+    _BLOCK_TAGS = {
+        "p", "div", "li", "br", "tr", "td", "th", "section", "article",
+        "header", "footer", "address", "dd", "dt", "h1", "h2", "h3", "h4",
+        "h5", "h6", "ul", "ol", "table", "blockquote",
+    }
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.titel = ""
         self.beschreibung_meta: str | None = None
         self.json_ld_bloecke: list[str] = []
+        # Grob normalisierter, für Menschen sichtbarer Seitentext (Issue #9)
+        # - dient ausschliesslich den Fallback-Heuristiken für Adresse/
+        # Öffnungszeiten, siehe Moduldoc "Vertiefte Text-Heuristik". Zwischen
+        # Elementen wird ein Leerzeichen eingefügt (sonst würden z. B.
+        # aufeinanderfolgende <p>-Absätze ohne Trennzeichen aneinander
+        # kleben); Mehrfach-Leerraum wird beim Zusammensetzen in
+        # ``sichtbarer_text()`` normalisiert.
+        self._text_teile: list[str] = []
         self._in_title = False
         self._in_json_ld = False
         self._json_ld_puffer: list[str] = []
+        self._ignoriere_text_tiefe = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {key: (value or "") for key, value in attrs}
@@ -219,6 +358,9 @@ class _SeitenParser(HTMLParser):
         ):
             self._in_json_ld = True
             self._json_ld_puffer = []
+        if tag in self._IGNORIERTE_TEXT_TAGS:
+            self._ignoriere_text_tiefe += 1
+        self._text_teile.append("\n" if tag in self._BLOCK_TAGS else " ")
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
@@ -226,12 +368,30 @@ class _SeitenParser(HTMLParser):
         elif tag == "script" and self._in_json_ld:
             self._in_json_ld = False
             self.json_ld_bloecke.append("".join(self._json_ld_puffer))
+        if tag in self._IGNORIERTE_TEXT_TAGS and self._ignoriere_text_tiefe > 0:
+            self._ignoriere_text_tiefe -= 1
+        self._text_teile.append("\n" if tag in self._BLOCK_TAGS else "")
 
     def handle_data(self, data: str) -> None:
         if self._in_title:
             self.titel += data
         elif self._in_json_ld:
             self._json_ld_puffer.append(data)
+        elif self._ignoriere_text_tiefe == 0:
+            self._text_teile.append(data)
+
+    def sichtbarer_text(self) -> str:
+        """Der gesammelte, für Menschen sichtbare Seitentext (Issue #9).
+
+        Innerhalb einer Zeile wird Leerraum auf ein einzelnes Leerzeichen
+        normalisiert; Zeilenumbrüche zwischen Block-Elementen (siehe
+        ``_BLOCK_TAGS``) bleiben dabei bewusst erhalten - sie sind die
+        einzige verfügbare Grenzinformation, damit die Fallback-
+        Heuristiken (Adresse/Öffnungszeiten) nicht versehentlich Wörter aus
+        zwei unabhängigen Absätzen zu einem falschen Treffer verketten."""
+        roh = "".join(self._text_teile)
+        zeilen = (re.sub(r"[ \t]+", " ", zeile).strip() for zeile in roh.split("\n"))
+        return "\n".join(zeile for zeile in zeilen if zeile)
 
 
 def _flatten_json_ld(wert: Any) -> list[dict[str, Any]]:
@@ -383,6 +543,135 @@ def _extrahiere_angebote(obj: dict[str, Any]) -> tuple[str, ...]:
     return tuple(namen)
 
 
+def _normalisiere_uhrzeit_text(stunde: str, minute: str | None) -> str | None:
+    """Wie ``_parse_uhrzeit`` (JSON-LD-Pfad), aber für die aus Freitext
+    per Regex einzeln eingefangenen Stunden-/Minuten-Anteile - erlaubt
+    dabei zusätzlich eine fehlende Minutenangabe (z. B. "8" statt "08:00",
+    im Freitext üblich, in JSON-LD dagegen nicht). Liefert ``None`` bei
+    unplausiblen Werten (z. B. Stunde > 23), statt einen ungültigen Wert
+    zu übernehmen."""
+    try:
+        stunde_int = int(stunde)
+        minute_int = int(minute) if minute is not None else 0
+    except (TypeError, ValueError):
+        return None
+    if not (0 <= stunde_int <= 23 and 0 <= minute_int <= 59):
+        return None
+    return f"{stunde_int:02d}:{minute_int:02d}"
+
+
+def _wochentag_bereich(von_tag: int, bis_tag: int | None) -> list[int]:
+    """Liste der Wochentage eines Bereichs (z. B. Mo-Fr -> [1,2,3,4,5]).
+    Unterstützt auch über die Wochengrenze laufende Bereiche (z. B.
+    Sa-Mo -> [6,7,1]), da diese bei Hofladen-Öffnungszeiten (z. B.
+    "Wochenend-Stand") durchaus vorkommen. Ohne ``bis_tag`` wird nur der
+    einzelne Tag geliefert."""
+    if bis_tag is None:
+        return [von_tag]
+    if von_tag <= bis_tag:
+        return list(range(von_tag, bis_tag + 1))
+    return list(range(von_tag, 8)) + list(range(1, bis_tag + 1))
+
+
+def _extrahiere_oeffnungszeiten_aus_text(text: str) -> tuple[dict[str, Any], ...]:
+    """Fallback-Öffnungszeiten-Erkennung im sichtbaren Seitentext
+    (Issue #9), falls JSON-LD keine ``openingHoursSpecification`` liefert.
+
+    Erkennt gängige deutschsprachige Freitext-Muster wie "Mo-Fr
+    08:00-18:00 Uhr", "Montag bis Freitag: 8 – 18 Uhr" oder "Sa
+    08:00–12:00" (siehe ``_OEFFNUNGSZEIT_TEXT_MUSTER``). Wochentag-Bereiche
+    werden auf die einzelnen Wochentage abgebildet.
+
+    Bewusst konservativ (Prinzip "lieber nichts als falsch"): Findet sich
+    im Text für ein und denselben Wochentag mehr als eine unterschiedliche
+    Zeitangabe (z. B. zwei widersprüchliche Angaben an verschiedenen
+    Stellen der Seite, oder mehrere separate, nicht zusammengefasste
+    Zeitfenster für denselben Tag wie eine Mittagspause), wird für diesen
+    Wochentag **kein** Vorschlag geliefert - andere, eindeutige Wochentage
+    sind davon nicht betroffen.
+
+    Dokumentierte Grenzen: Es wird bewusst kein Versuch unternommen,
+    mehrere Zeitfenster desselben Tages (z. B. "Mo 08:00-12:00 und
+    14:00-18:00") korrekt als *ein* zusammengehöriger Tag mit zwei
+    Intervallen zu erkennen - das zweite, nicht erneut mit dem Wochentag
+    eingeleitete Zeitfenster wird von der Regex gar nicht erst erfasst.
+    Ebenso werden Feiertags-/Ausnahme-Hinweise ("ausser an Feiertagen")
+    nicht ausgewertet. Beides wäre zusätzliche Interpretation mit
+    Fehlerpotenzial - im Zweifel wird hier lieber ein unvollständiges statt
+    ein falsches Ergebnis geliefert.
+    """
+    kandidaten: dict[int, set[tuple[str, str]]] = {}
+    for treffer in _OEFFNUNGSZEIT_TEXT_MUSTER.finditer(text):
+        von_tag = _WOCHENTAG_TEXT.get(treffer.group("von_tag").lower())
+        bis_tag_roh = treffer.group("bis_tag")
+        bis_tag = _WOCHENTAG_TEXT.get(bis_tag_roh.lower()) if bis_tag_roh else None
+        if von_tag is None:
+            continue
+
+        beginn = _normalisiere_uhrzeit_text(treffer.group("beginn_h"), treffer.group("beginn_m"))
+        ende = _normalisiere_uhrzeit_text(treffer.group("ende_h"), treffer.group("ende_m"))
+        if beginn is None or ende is None or beginn == ende:
+            continue
+
+        for tag in _wochentag_bereich(von_tag, bis_tag):
+            kandidaten.setdefault(tag, set()).add((beginn, ende))
+
+    ergebnis: list[dict[str, Any]] = []
+    for tag in sorted(kandidaten):
+        zeiten = kandidaten[tag]
+        if len(zeiten) != 1:
+            continue  # widersprüchliche Fundstellen -> kein Vorschlag für diesen Tag
+        beginn, ende = next(iter(zeiten))
+        ergebnis.append({"wochentag": tag, "beginn": beginn, "ende": ende})
+    return tuple(ergebnis)
+
+
+def _extrahiere_adresse_aus_text(
+    text: str,
+) -> tuple[str | None, str | None, str | None]:
+    """Fallback-Adresserkennung im sichtbaren Seitentext (Issue #9), falls
+    JSON-LD keine ``PostalAddress`` liefert.
+
+    Erkennt das im DACH-Raum übliche Muster "<Strasse> <Hausnummer>, <PLZ>
+    <Ort>" (vierstellige Postleitzahl, siehe ``_ADRESSE_TEXT_MUSTER`` sowie
+    die bereits im Projekt etablierte ``plz``/``ort``-Feldtrennung in
+    ``models.py``). Liefert ``(strasse_mit_hausnummer, plz, ort)``, oder
+    drei ``None``-Werte, wenn kein eindeutiger Treffer gefunden wurde.
+
+    Bewusst konservativ (Prinzip "lieber nichts als falsch"): Der
+    Strassenname muss auf eine gängige deutschsprachige
+    Strassenbezeichnungs-Endung enden (siehe ``_STRASSEN_ENDUNGEN``), damit
+    nicht beliebiger grossgeschriebener Fliesstext fälschlich als Adresse
+    erkannt wird. Werden im Text **mehrere unterschiedliche** Kandidaten
+    gefunden (z. B. Liefer- und Rechnungsadresse), ist das Ergebnis
+    uneindeutig - dann wird kein Vorschlag geliefert (identische
+    Wiederholungen derselben Adresse, z. B. im Kopf- und Fussbereich der
+    Seite, zählen dabei nicht als Widerspruch).
+
+    Dokumentierte Grenzen: Strassennamen ohne eine der erkannten Endungen
+    (z. B. reine Ortsnamen als Strassenname, oder nicht-deutschsprachige
+    Bezeichnungen) sowie Postleitzahlen ausserhalb des vierstelligen
+    DACH-Formats werden nicht erkannt - hier bleibt das Feld bewusst leer,
+    statt einen unsicheren Vorschlag zu liefern.
+    """
+    eindeutige = set()
+    for m in _ADRESSE_TEXT_MUSTER.finditer(text):
+        strasse_worte = m.group("strasse").split()
+        if not strasse_worte or not _hat_strassen_endung(strasse_worte[-1]):
+            continue  # kein erkanntes Strassenmuster -> kein Kandidat
+        eindeutige.add((
+            " ".join(strasse_worte),
+            m.group("hausnummer"),
+            m.group("plz"),
+            " ".join(m.group("ort").split()),
+        ))
+    if len(eindeutige) != 1:
+        return None, None, None
+
+    strasse, hausnummer, plz, ort = next(iter(eindeutige))
+    return f"{strasse} {hausnummer}", plz, ort
+
+
 def _extrahiere_aus_html(html_text: str) -> WebseiteInfo:
     parser = _SeitenParser()
     try:
@@ -422,6 +711,19 @@ def _extrahiere_aus_html(html_text: str) -> WebseiteInfo:
         # unverändert übernommen; die Benutzerin/der Benutzer prüft und
         # kürzt ihn bei Bedarf selbst vor dem Speichern.
         name = _str_or_none(parser.titel)
+
+    # Vertiefte Text-Heuristik (Issue #9) - greift ausschliesslich als
+    # Fallback, wenn JSON-LD für Adresse bzw. Öffnungszeiten nichts
+    # geliefert hat (siehe Moduldoc, Abschnitt "Vertiefte Text-Heuristik").
+    # Adresse wird bewusst nur als Ganzes ergänzt (nicht feldweise) - eine
+    # aus JSON-LD bereits teilweise vorhandene, zuverlässigere Adresse soll
+    # nicht mit unsicheren Text-Treffern vermischt werden.
+    if adresse is None and plz is None and ort is None:
+        sichtbarer_text = parser.sichtbarer_text()
+        adresse, plz, ort = _extrahiere_adresse_aus_text(sichtbarer_text)
+
+    if not oeffnungszeiten:
+        oeffnungszeiten = _extrahiere_oeffnungszeiten_aus_text(parser.sichtbarer_text())
 
     return WebseiteInfo(
         name=name,

@@ -231,17 +231,27 @@ Verfügung:
    wertet – rein lokal, ohne einen externen Cloud- oder KI-Dienst –
    strukturierte, von der Seite selbst veröffentlichte Informationen
    aus (sofern vorhanden): Name, Adresse, Beschreibung, Öffnungszeiten,
-   Angebote und Zahlungsarten.
-3. Gefundene Angaben werden **direkt in die entsprechenden Felder des
-   Formulars übernommen** – dabei wird **nichts automatisch
-   gespeichert**. Bitte die übernommenen Werte vor dem Speichern
-   prüfen und bei Bedarf anpassen, bevor regulär auf „Speichern“
-   geklickt wird.
+   Angebote und Zahlungsarten. Fehlen strukturierte Daten für Adresse
+   oder Öffnungszeiten, versucht HofKarte zusätzlich, diese anhand
+   gängiger deutschsprachiger Formulierungen im sichtbaren Seitentext zu
+   erkennen (z. B. „Musterweg 1, 3000 Bern“ oder „Mo–Fr 08:00–18:00
+   Uhr“) – weiterhin ohne externen Dienst und weiterhin: im Zweifel kein
+   Vorschlag statt eines unsicheren.
+3. Die gefundenen Angaben werden in einem **Popup zur Prüfung**
+   angezeigt – nicht gefundene Felder sind dort klar als solche
+   gekennzeichnet. Erst ein Klick auf **„Übernehmen“** trägt die
+   angezeigten Vorschläge in die entsprechenden Formularfelder ein;
+   **„Abbrechen“** verwirft sie vollständig, das Formular bleibt dabei
+   unverändert (auch das Popup lässt sich per Escape-Taste schliessen,
+   was wie „Abbrechen“ wirkt). In beiden Fällen wird **nichts
+   automatisch gespeichert** – auch nach „Übernehmen“ bitte die
+   übernommenen Werte vor dem Speichern prüfen und bei Bedarf anpassen,
+   bevor regulär auf „Speichern“ geklickt wird.
 4. Je nach Website werden dabei nicht alle Felder befüllt: Fehlt eine
    Information auf der Seite, oder lässt sie sich nicht zuverlässig
-   auslesen (z. B. Öffnungszeiten in reinem Fliesstext ohne
-   strukturierte Auszeichnung), bleibt das jeweilige Feld bewusst leer,
-   statt einen möglicherweise falschen Wert vorzuschlagen.
+   auslesen (z. B. mehrdeutige oder widersprüchliche Angaben zu Adresse
+   oder Öffnungszeiten), bleibt das jeweilige Feld bewusst leer, statt
+   einen möglicherweise falschen Wert vorzuschlagen.
 
 Mögliche Rückmeldungen:
 
