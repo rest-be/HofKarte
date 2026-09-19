@@ -181,42 +181,203 @@ erfasst und angezeigt – identisch zum internen Datenmodell
 Koordinatentransformation** statt: Eingabe-, Speicher- und
 Anzeigeformat sind durchgehend dasselbe.
 
-Sowohl „Bearbeiten“ als auch „Details“ bieten einen Button, der den
-Hofladen-Standort auf Google Maps öffnet (`hofkarte-panel.js`,
-Funktionen `googleMapsUrl`/`mapButton` – **eine** gemeinsame
-Implementierung für beide Ansichten, kein Code-Duplikat). Die
-gespeicherten WGS84-Koordinaten werden direkt in Google Maps' offiziell
-dokumentiertes URL-Schema übernommen
+Das Bearbeitungsformular bietet weiterhin einen Button, der den anhand
+der gerade eingegebenen Koordinaten ermittelten Standort auf Google
+Maps öffnet (`hofkarte-panel.js`, Funktionen `googleMapsUrl`/
+`mapButton`). Die WGS84-Koordinaten werden direkt in Google Maps'
+offiziell dokumentiertes URL-Schema für einen Standort-Pin übernommen
 (`https://www.google.com/maps/search/?api=1&query={lat},{lon}`) – keine
 Umrechnung nötig. Der Button ist deaktiviert, wenn keine gültigen
 Koordinaten vorliegen (`isValidWgs84`); die Kartenansicht ist ein rein
-lesender externer Link ohne neue Abhängigkeit.
+lesender externer Link ohne neue Abhängigkeit. Dieser Button dient
+ausschliesslich der Kontrolle der gerade eingegebenen Koordinaten,
+nicht der Navigation zum Hofladen (dafür siehe „Routing-Auswahl“
+unten) – im Bearbeitungsformular liegt ggf. noch keine gespeicherte,
+konsistente Adresse vor, ein Adress-Routing wäre dort nicht sinnvoll.
 
-### Entfernung vom aktuellen Gerät (clientseitig)
+### Routing-Auswahl: Google Maps und Apple Maps (Issue #3)
 
-`haversineDistanceKm` in `hofkarte-panel.js` ist ein bewusstes,
-dokumentiertes JS-Duplikat von `distance.haversine_distance_km`
-(numerisch gegen die Python-Referenz verifiziert) – **nicht**
-serverseitig implementiert, da der Gerätestandort aus
-Datenschutzgründen nie an das Backend übertragen wird. Ergänzt in der
-Detailansicht die bestehende, serverseitige Entfernungs-Entity, ersetzt
-sie nicht: Eine Home-Assistant-Entity hat genau einen Zustand für alle
-Betrachter:innen und kann sich nicht sinnvoll pro Gerät unterscheiden.
-Nutzt `navigator.geolocation.getCurrentPosition` mit expliziter
-Fehlerbehandlung für verweigerte/nicht unterstützte/zeitüberschreitende
-Standortabfragen.
+Kacheln-, Listen- und Detailansicht ersetzen den bisherigen einzelnen
+Kartenlink durch eine kompakte Routing-Auswahl (`routingAuswahl(item)`
+in `hofkarte-panel.js`), die eine echte Wegbeschreibung zum Hofladen
+öffnet statt nur eines Standort-Pins – der bisherige Anwendungsfall
+(Standort auf einer Karte betrachten) bleibt im Bearbeitungsformular
+über `mapButton` erhalten (siehe oben), hier geht es um Navigation.
 
-**Behobener Bug – unsicherer Kontext fälschlich als „verweigert“
-gemeldet:** Browser gewähren Geolocation-Zugriff ausschliesslich in
-einem sicheren Kontext (HTTPS oder `localhost`, siehe
-[`window.isSecureContext`](https://developer.mozilla.org/docs/Web/API/Window/isSecureContext)).
-Auf einer per einfachem `http://` erreichten Home-Assistant-Instanz
-(im Heimnetz häufig, z. B. `http://192.168.1.50:8123`) lehnt der
-Browser den Zugriff automatisch mit `PERMISSION_DENIED` ab, **ohne
-jemals einen Freigabe-Dialog anzuzeigen** – das erschien fälschlich als
-tatsächliche Ablehnung durch die Nutzerin/den Nutzer. Behoben durch
-eine explizite `window.isSecureContext`-Prüfung **vor** dem eigentlichen
-Geolocation-Aufruf, mit eigener, klar unterscheidbarer Fehlermeldung.
+**Zielbestimmung (`ermittleRoutingZiel`):** Ist eine nicht-leere
+zusammengesetzte Adresse (`adresse`, `plz`, `ort`, `land`) hinterlegt,
+hat sie Vorrang als Routenziel – eine Adresse ist für eine echte
+Wegbeschreibung i. d. R. präziser als ein einzelner Koordinatenpunkt
+und wird von beiden Kartendiensten direkt als Freitext akzeptiert
+(kein eigener Geocoding-Schritt in HofKarte nötig). Nur wenn keine
+Adresse, aber gültige WGS84-Koordinaten (`isValidWgs84`) vorhanden
+sind, werden diese als `lat,lon` verwendet. Fehlen beide, gibt es kein
+Routing-Ziel – die Auswahl wird dann deaktiviert dargestellt (kein
+funktionsloser Link).
+
+**URL-Schemata:**
+
+- Google Maps (offiziell dokumentiert, Directions-Action):
+  `https://www.google.com/maps/dir/?api=1&destination={ziel}&travelmode=driving`
+- Apple Maps (offiziell dokumentiertes Maps-Link-Schema):
+  `https://maps.apple.com/?daddr={ziel}&dirflg=d`
+
+`{ziel}` ist dabei entweder die URL-kodierte Adresse oder
+`{lat},{lon}` – `encodeURIComponent` stellt sicher, dass Kommas/
+Leerzeichen in Adressen keine ungültige URL erzeugen.
+
+**UI-Entscheidung:** Zwei sehr kompakte, icon-only Buttons (🗺️/🧭)
+statt eines einzelnen Buttons mit ausklappbarem Auswahlmenü. Das
+vermeidet zusätzlichen Interaktions-/Zustands-Code (kein Öffnen/
+Schliessen-Zustand, kein Klick-ausserhalb-Handling) und ist trotzdem
+schmaler als der bisherige einzelne Textbutton (`.map-btn`, feste
+Höhe mit Text) – wichtig insbesondere in der Tabellenspalte der
+Listenansicht (eigenes `.route-btn`/`.route-actions`-CSS, quadratische
+34×34px-Buttons statt eines breiten Textbuttons).
+
+### Eingebettete Mehrfach-Marker-Karte (Issue #2, Architekturabweichung)
+
+Der bestehende, rein externe Kartenlink (siehe oben) zeigt bewusst
+**einen** Standort bzw. eine Route in einem neuen Tab – für eine
+**eingebettete** Karte, die **alle** Hofläden gleichzeitig als Marker
+zeigt (Issue #2), ist das technisch etwas anderes und nicht
+ausreichend.
+
+**Geprüfte Optionen:**
+
+- Eine native, für Custom Panels vorgesehene Home-Assistant-Karten-
+  komponente mit beliebigen eigenen Markern existiert nicht – die
+  eingebaute Kartenkarte ist an Lovelace-Dashboards gebunden, nicht an
+  eigenständige Sidebar-Panels wie das von HofKarte.
+- Eine reine Eigenimplementierung (z. B. ein einfaches, selbst
+  gezeichnetes Koordinatenraster ohne echtes Kartenmaterial) hätte den
+  eigentlichen Zweck (Wiedererkennung realer Orte/Strassen) verfehlt.
+- Eine schlanke JavaScript-Kartenbibliothek mit OpenStreetMap-Kacheln,
+  per `<script>`/`<link>` von einem CDN eingebunden – **ohne**
+  Build-Pipeline oder npm-Abhängigkeit im Repository.
+
+**Entscheid: [Leaflet](https://leafletjs.com/) `1.9.4` (BSD-2-Clause) +
+OpenStreetMap-Kacheln.** Begründung:
+
+- kein API-Schlüssel und kein Kartendienst-Konto nötig
+  (OpenStreetMap-Kacheln sind ohne Registrierung nutzbar) – im
+  Unterschied zu den meisten kommerziellen Kartendiensten;
+- keine Build-Pipeline/npm-Abhängigkeit im Repository nötig: reines
+  `<script>`/`<link>` von einem CDN (`cdn.jsdelivr.net`), mit **fest
+  gepinnter** Versionsnummer statt „latest“;
+- seit vielen Jahren aktiv gewartet, sehr verbreitet (u. a. in
+  zahlreichen Home-Assistant-HACS-Karten bereits im Einsatz), kompakt
+  (~40 KB gzip für JS und CSS zusammen).
+
+Dies ist eine **bewusste, dokumentierte Ausnahme** vom Projektgrundsatz
+„keine neuen Abhängigkeiten“ – begrenzt auf genau diese eine, schlanke
+Bibliothek für genau diese eine Funktion, nicht Teil einer
+Build-Pipeline und nicht in `manifest.json` deklariert (es ist eine
+reine Frontend-/Browser-Abhängigkeit, keine Python-Abhängigkeit der
+Integration selbst).
+
+**Lazy Loading:** `ladeLeaflet()` in `hofkarte-panel.js` lädt das
+`<script>`-Tag (und `karteAnsicht()` das zugehörige `<link>`-Stylesheet)
+**erst beim ersten Öffnen** der Kartenansicht, nicht beim Start des
+Panels – wer die Kartenansicht nie öffnet, löst auch nie eine
+Verbindung zum CDN oder zum OpenStreetMap-Kachel-Server aus (siehe
+Datenschutz-Hinweise im Handbuch). Das zurückgegebene Promise wird
+zwischengespeichert (`leafletLoadPromise`), damit mehrfaches Öffnen der
+Ansicht nicht mehrfach nachlädt; schlägt das Laden fehl (z. B. CDN
+nicht erreichbar), wird es verworfen, damit ein erneuter Versuch beim
+nächsten Öffnen möglich ist, statt dauerhaft fehlzuschlagen.
+
+**Rendering innerhalb des Shadow-DOM-Custom-Elements:** Leaflets CSS
+muss innerhalb desselben Shadow-DOM-Baums geladen werden wie die Karte
+selbst (Shadow-DOM-Style-Isolation) – das `<link>`-Element steht daher
+direkt im von `karteAnsicht()` erzeugten Markup, nicht im globalen
+Dokument-`<head>`. Da `render()` bei **jeder** Änderung den gesamten
+Shadow-DOM-Inhalt per `innerHTML` ersetzt (bestehendes Architekturmuster
+dieses Panels, siehe unten), würde eine bestehende Leaflet-Karteninstanz
+sonst mit einem bereits aus dem DOM entfernten Container weiterleben
+(offene Event-Listener u. a. auf `window`). `teardownKarte()` entfernt
+die Instanz deshalb **vor** jedem `innerHTML`-Ersatz explizit
+(`map.remove()`); ist die Kartenansicht weiterhin aktiv, baut
+`initKarte()` danach eine neue Instanz in den neu erzeugten Container
+auf. Das bedeutet: Die Karte wird bei jedem Re-Render der Ansicht
+(Wechsel in die Kartenansicht, Ändern des Geöffnet-Filters) neu
+aufgebaut statt aktualisiert – konsistent mit dem bestehenden,
+einfachen Render-Modell des Panels und für die hier relevanten
+Datenmengen (einzelne bis wenige Dutzend Hofläden) ohne spürbaren
+Performance-Nachteil.
+
+Die Kartengrössenberechnung (`L.map()`) erfolgt, nachdem der Container
+bereits über `innerHTML` ins DOM eingefügt wurde (Layout ist zu diesem
+Zeitpunkt bereits berechnet); zusätzlich sichert ein
+`window.addEventListener("resize", …)` sowie ein einmaliges
+`setTimeout(() => map.invalidateSize())` gegen nachträgliche
+Layoutänderungen (z. B. eine noch laufende Sidebar-Animation) ab. Der
+Resize-Handler wird in `teardownKarte()` wieder entfernt, um keine
+Listener über die Lebensdauer der jeweiligen Karteninstanz hinaus
+anzusammeln.
+
+**Marker, Popup und Detailansicht-Navigation:** Für jeden Hofladen mit
+gültigen Koordinaten (`isValidWgs84`, wiederverwendet aus der
+bestehenden Google-Maps-Logik) wird ein `L.marker` gesetzt, dessen
+Popup einen Button „Zur Detailansicht“ enthält. Da Leaflet-Popups
+ausserhalb des von `render()`/`bind()` erzeugten Markups liegen (sie
+werden von Leaflet selbst zur Laufzeit in den Kartencontainer
+eingefügt), wird der Klick-Handler **nicht** über die generische
+`bind()`-Delegation (`data-view`-Attribute wie bei Kacheln/Liste)
+registriert, sondern direkt über das Leaflet-eigene `popupopen`-Event
+an `this.view(item)` gebunden – dieselbe Methode, die auch die
+`data-view`-Buttons in Kacheln und Liste aufrufen, sodass sich die
+Detailansicht selbst nicht unterscheidet.
+
+**Marker-Icon (eigenes Inline-SVG statt Leaflets Standardbild, Issue
+#4):** Leaflet bestimmt den Bildpfad seines Standard-Icons zur Laufzeit
+automatisch (`Icon.Default._detectIconPath`): Es erzeugt ein
+Sondierungselement im echten, globalen `document.body` und liest dessen
+berechnete `background-image`-Eigenschaft; findet es dort nichts,
+befragt es ersatzweise `document.querySelector('link[href$="leaflet.css"]')`.
+Beide Wege scheitern innerhalb dieses Panels: Die weiter oben
+beschriebene `leaflet.css`-Einbindung liegt im Shadow DOM von
+`<hofkarte-panel>`, ist also für ein Element im globalen `document.body`
+stilistisch nicht wirksam (Shadow-DOM-Style-Isolation), und der
+`document.querySelector`-Fallback durchquert ebenfalls keine
+Shadow-DOM-Grenze, findet das dort liegende `<link>` also nicht. In der
+Folge blieb `Icon.Default.imagePath` leer und das von Leaflet erzeugte
+Marker-`<img>` zeigte ein defektes Bild (in Home Assistant sichtbar als
+„?“-Platzhalter).
+
+Statt Leaflets bild-basiertes Standard-Icon zu reparieren (z. B. über
+einen expliziten, absoluten CDN-Bildpfad via
+`L.Icon.Default.mergeOptions`), erzeugt `erzeugeKarteMarkerIcon()` ein
+eigenes Icon über `L.divIcon()`: reines, selbst geschriebenes Inline-SVG
+(Pin-Form mit einem Ladensymbol, angelehnt an das bereits im Panel
+verwendete Symbolkonzept, vgl. Sidebar-Icon `mdi:store-edit`) statt
+eines `<img>`. Das dabei erzeugte Markup landet als Kind des
+Karten-Containers und damit **innerhalb desselben Shadow Roots** wie
+die restlichen Panel-Styles – die in `styles()` definierten
+`.karte-marker-*`-Regeln greifen daher zuverlässig, ohne auf eine der
+beiden (hier nicht funktionierenden) automatischen Pfaderkennungen
+angewiesen zu sein. Vorteile gegenüber einer absoluten CDN-Bild-URL:
+kein zusätzlicher Netzwerk-Request, keine Abhängigkeit vom Fortbestand
+eines bestimmten CDN-Pfads für Bilddateien, und ein Icon, das sich
+optisch am übrigen Panel orientiert statt an Leaflets generischem
+Tropfen-Symbol. Marker-Position, Popup-Verhalten und die
+Detailansicht-Navigation (siehe oben) sind von dieser Änderung nicht
+betroffen – es wird ausschliesslich die `icon:`-Option beim Erzeugen
+des `L.marker(...)`-Aufrufs ergänzt.
+
+**Geöffnet-Filter:** Die Checkbox „Nur aktuell geöffnete Hofläden
+anzeigen“ (`karteNurGeoeffnet`) filtert rein clientseitig auf dem
+bereits vorhandenen, serverseitig berechneten Feld `geoeffnet` (siehe
+Abschnitt oben) – keine neue Backend-Logik. Ein Wert von `null`
+(„unbekannt“) gilt bei aktiviertem Filter konsequent **nicht** als
+geöffnet, entsprechend der Anforderung „kein unbestätigter
+Optimismus“.
+
+**Kein initiales Nachladen ohne Koordinaten:** Gibt es keinen einzigen
+Hofladen mit gültigen Koordinaten, zeigt `karteAnsicht()` direkt eine
+Meldung, **ohne** überhaupt zu versuchen, Leaflet nachzuladen oder
+einen Kartencontainer zu erzeugen – vermeidet unnötige Netzwerkzugriffe
+und eine leere/kaputt wirkende Fläche.
 
 ## Sortiment-Logik
 
@@ -318,6 +479,170 @@ Bearbeiten und eine reine **Detailansicht** (read-only). Die
 Detailansicht benötigt keinen eigenen WebSocket-Befehl – sie zeigt die
 bereits über `hofkarte/management/list` geladenen Daten an, ohne
 Bearbeitungsmöglichkeit.
+
+### Behobener Bug: `js_url` ohne Cache-Busting (`2026.9.1-dev.3`)
+
+`async_register_frontend` (`frontend.py`) übergibt Home Assistant die
+URL von `hofkarte-panel.js` als `js_url` einmalig beim Setup der
+Integration; der Browser lädt diese Datei anschliessend selbst,
+anhand ihrer URL. Bis `2026.9.1-dev.2` war diese URL für **jede**
+Integrationsversion identisch (`/api/hofkarte/static/hofkarte-panel.js`).
+Browser (teilweise auch Home Assistants eigenes Frontend) cachen
+per Custom-Panel geladenes JavaScript anhand genau dieser URL, nicht
+anhand des tatsächlichen Dateiinhalts – nach einem Update von HofKarte
+wurde deshalb trotz korrekt aktualisierter Datei auf der Festplatte
+teils weiterhin eine ältere, bereits im Browser zwischengespeicherte
+Fassung ausgeliefert (z. B. fehlende Kacheln-/Listen-/Kartenansicht
+aus Issue #1/#2, obwohl der Code auf `develop`/im Release korrekt war
+– beobachtetes Symptom, das zu diesem Fund führte).
+
+**Behoben** durch `_integration_version()`: liest die Version direkt
+aus `manifest.json` (keine zusätzliche Home-Assistant-API-Abhängigkeit
+nötig) und hängt sie als Query-Parameter an `js_url` an
+(`?v=<version>`). Ändert sich die Version, ändert sich die URL – der
+Browser behandelt sie als neue, ihm unbekannte Ressource und lädt sie
+zwingend neu, unabhängig von zuvor gesetzten Cache-Headern. Schlägt das
+Lesen von `manifest.json` aus irgendeinem Grund fehl, liefert
+`_integration_version()` einen festen Platzhalter (`"0"`) – die
+Cache-Invalidierung entfällt dann für diesen Einzelfall, das Panel
+selbst bleibt aber funktionsfähig (bewusst fehlertolerant, kein
+Hard-Fail beim Setup wegen eines reinen Anzeige-Optimierungsmerkmals).
+
+### Event-Listener-Bindung: `bind()` nur nach vollständigem Re-Render (`2026.9.1-dev.6`)
+
+`bind()` registriert sämtliche Event-Listener des Panels ausschliesslich
+additiv über `addEventListener` – ohne zuvor bestehende Listener zu
+entfernen (kein `removeEventListener`, kein Klonen der Knoten, kein
+„bereits gebunden“-Flag). Das ist unproblematisch, solange `bind()`
+**ausschliesslich** einmalig direkt nach einem vollständigen
+`innerHTML`-Ersatz in `render()` aufgerufen wird: Die zuvor
+existierenden Elemente samt ihrer Listener sind zu diesem Zeitpunkt
+bereits aus dem DOM entfernt.
+
+Die Handler für „+ weiteres Intervall“ und „+ Sonderzeit hinzufügen“
+weichen aus gutem Grund von `render()` ab: Sie fügen eine neue Zeile
+gezielt per `insertBefore`/`append` in den bestehenden DOM ein, statt
+den gesamten Shadow-DOM-Inhalt neu aufzubauen – ein vollständiger
+Re-Render würde sonst z. B. den Eingabefokus in anderen Formularfeldern
+verwerfen. Bis `2026.9.1-dev.5` riefen beide Handler danach jedoch
+erneut `this.bind()` auf demselben, unverändert bestehenden DOM auf.
+Da `bind()` keine bestehenden Listener entfernt, erhielten dabei
+**alle** bereits vorhandenen Elemente – u. a. der jeweilige Button
+selbst sowie der Formular-`submit`-Handler – bei jedem Klick einen
+weiteren, zusätzlichen Listener obendrauf. Ergebnis: Die Anzahl neu
+eingefügter Zeilen verdoppelte sich näherungsweise mit jedem Klick,
+und der mehrfach gebundene `submit`-Handler löste beim Abschicken des
+Formulars `this.save()` mehrfach aus – bei einem neuen, noch
+ungespeicherten Hofladen (ohne `id`) vergab `ws_save` dadurch je
+Aufruf eine eigene, neue ID, wodurch mehrere identische Hofladen-
+Einträge entstanden (Issue #6).
+
+**Behoben**, indem beide Handler `bind()` nicht mehr erneut aufrufen,
+sondern gezielt nur den „entfernen“-Button der jeweils neu eingefügten
+Zeile direkt per `addEventListener` verkabeln. Dieses Muster – bei
+einem gezielten, nicht vollständigen DOM-Insert ausserhalb von
+`render()` werden ausschliesslich die neu erzeugten Elemente selbst
+gebunden, niemals erneut `bind()` über den gesamten Shadow DOM – gilt
+verbindlich für jede künftige, ähnlich gebaute Stelle im Panel.
+
+### Übersicht: Kacheln/Liste, serverseitig berechnete Anzeigefelder
+
+Die Listenansicht selbst bietet zwei Darstellungen (`uebersichtsAnsicht`,
+rein clientseitiger Zustand, kein Backend-Unterschied): eine
+Kachel-Ansicht (`listGrid`/`listCard`) und eine sortierbare
+Tabellenansicht (`listTable`). Sortierung und Freitextfilter
+(`sortierteGefilterteItems`) laufen vollständig clientseitig über die
+bereits geladenen Daten – kein neuer WebSocket-Befehl nötig.
+
+Für zwei Anzeigefelder wäre eine korrekte clientseitige Berechnung nur
+durch Duplikation bereits bestehender, teils sicherheitsrelevanter
+Backend-Logik möglich gewesen; stattdessen liefert
+`management._serialize_hofladen` sie serverseitig vorberechnet mit:
+
+- **`geoeffnet`** (`true`/`false`/`null`): über `opening_hours.is_open`
+  – exakt dieselbe Funktion wie beim Binary Sensor „Geöffnet“
+  (`binary_sensor.py`). `now` wird einmal pro WebSocket-Antwort ermittelt
+  (`dt_util.now()`), nicht pro Hofladen, damit alle Hofläden einer
+  Antwort konsistent gegen denselben Zeitpunkt bewertet werden.
+- **`hauptbild_url`** (`str | None`): über `images.get_main_image_url`
+  – exakt dieselbe Funktion (inkl. Sicherheitsprüfung gegen
+  private/interne IP-Literale, siehe `SECURITY.md`) wie beim
+  `image`-Entity für das tatsächliche Hauptbild (`image.py`).
+
+Beide Felder werden von `ws_list` **und** `ws_save` mitgeliefert, damit
+die Oberfläche nach dem Speichern eines einzelnen Hofladens dessen
+Kachel/Zeile aktualisieren kann, ohne einen vollständigen `list`-Aufruf
+zu benötigen.
+
+### Export/Import (Issue #5)
+
+Mehrfachauswahl (`this.auswahl`, eine `Set<hofladen_id>`) ergänzt
+Kachel- und Listenansicht um eine Checkbox je Hofladen; die
+Kartenansicht bleibt bewusst aussen vor, da dort kein sinnvoller
+Anwendungsfall für eine Auswahl besteht.
+
+**Export** läuft vollständig clientseitig: Die ausgewählten Hofläden
+werden aus dem bereits geladenen `this.items` gefiltert, um die beiden
+serverseitig berechneten, nicht zum internen Datenmodell gehörenden
+Felder `geoeffnet`/`hauptbild_url` bereinigt (`bereinigtFuerExport`,
+siehe oben) und als **eine** JSON-Datei (Liste von Objekten, kein ZIP)
+über einen `Blob`/`<a download>`-Mechanismus heruntergeladen. Kein
+neuer Server-Endpunkt nötig.
+
+**Import** ist bewusst zweistufig und delegiert jede Fachlogik
+serverseitig an `management.py`, um bestehende Validierungslogik
+(`parsing.parse_hofladen`) nicht ein zweites Mal in JavaScript
+nachzubauen:
+
+1. **Vorschau** (`hofkarte/management/import_preview`, rein lesend):
+   Validiert jeden Datensatz der ausgewählten Datei fail-fast über
+   `parse_hofladen` – ist auch nur einer ungültig, wird die *gesamte*
+   Vorschau mit einer Fehlermeldung abgelehnt (kein Teil-Ergebnis).
+   Für jeden gültigen Datensatz ermittelt `_finde_duplikat` ein
+   mögliches Duplikat im aktuellen Bestand: Übereinstimmung im Namen
+   (`_normalisiert` – Gross-/Kleinschreibung und
+   Leerzeichen werden ignoriert) und, sofern **beide** Datensätze eine
+   Adresse besitzen, zusätzlich in der Adresse. Fehlt einem der beiden
+   Datensätze die Adresse, entscheidet allein der Name. Bewusst keine
+   Fuzzy-Logik (Tippfehlertoleranz) – das Risiko einer fälschlichen
+   Zusammenführung wiegt schwerer als der Komfortgewinn.
+2. **Konfliktlösung** (rein clientseitig, `this.importDialog`): Für
+   jeden erkannten Duplikat-Kandidaten zeigt das Panel bestehenden und
+   importierten Datensatz nebeneinander mit farblich hervorgehobenen
+   Unterschieden (`diffFelder`, rot/grün analog zu den bestehenden
+   Statusfarben `--error-color`/`--success-color`); pro Duplikat wird
+   „Aktualisieren“ oder „Beibehalten“ gewählt (zusätzlich als
+   Komfortfunktion: „Alle aktualisieren“/„Alle beibehalten“ für alle
+   Duplikate gleichzeitig). Gibt es keine Duplikate, wird dieser
+   Schritt automatisch übersprungen. Ein beim Abschluss noch
+   unentschiedenes Duplikat wird sicher **beibehalten**, nie
+   stillschweigend überschrieben (kein Datenverlust ohne explizite
+   Bestätigung).
+3. **Commit** (`hofkarte/management/import_commit`): Erhält je
+   Eintrag eine Aktion (`"neu"`, `"aktualisieren"` oder
+   `"ueberspringen"`) und – bei `"aktualisieren"` – die Ziel-ID des
+   bestehenden Hofladens. Auch hier zweiphasig fail-fast: Zunächst
+   werden *alle* Einträge vollständig validiert (gültige Aktion,
+   bei „aktualisieren“ eine tatsächlich noch vorhandene
+   `bestehende_id`, sowie die Rohdaten selbst über `parse_hofladen`);
+   erst wenn diese Prüfung für sämtliche Einträge erfolgreich war,
+   erfolgen die eigentlichen Schreibzugriffe über
+   `coordinator.async_save_hofladen` (dieselbe Methode wie beim
+   regulären Speichern über die Verwaltungsoberfläche). Eine in der
+   Importdatei enthaltene, von einer fremden Installation stammende
+   `id` wird für neu angelegte Hofläden verworfen und durch eine
+   frisch vergebene, lokale ID (`hofladen-<uuid4>`) ersetzt – nur bei
+   „aktualisieren“ wird gezielt die ID des tatsächlich zu
+   überschreibenden, bestehenden Hofladens verwendet.
+
+Es gibt bewusst keine echte Transaktionalität über mehrere
+Schreibzugriffe hinweg (Home-Assistants `helpers.storage.Store` bietet
+das nicht, und kein anderer Teil dieser Integration benötigt sie
+bisher) – die vorgelagerte, vollständige Validierung aller Einträge
+*vor* dem ersten Schreibzugriff verhindert aber, dass ein einzelner
+ungültiger oder inzwischen ungültig gewordener Eintrag (z. B. ein
+zwischenzeitlich gelöschter Hofladen bei „aktualisieren“) zu einem
+unvollständig durchgeführten Import führt.
 
 ## Diagnostics
 

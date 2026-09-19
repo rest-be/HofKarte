@@ -17,28 +17,131 @@ function isValidWgs84(lat, lon) {
 }
 
 /** Google-Maps-Link für eine WGS84-Koordinate (offizielles URL-Schema,
- * siehe https://developers.google.com/maps/documentation/urls/get-started). */
+ * siehe https://developers.google.com/maps/documentation/urls/get-started).
+ * Zeigt den Standort nur als Suchergebnis/Pin an (keine Route) – wird
+ * ausschliesslich noch im Bearbeitungsformular verwendet, um die gerade
+ * eingegebenen Koordinaten zu kontrollieren (siehe mapButton()). */
 function googleMapsUrl(lat, lon) {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
 }
 
-/** Grosskreisdistanz zwischen zwei WGS84-Koordinaten in Kilometern
- * (Haversine-Formel) – client-seitiges Äquivalent zu
- * distance.haversine_distance_km() in distance.py, für die Entfernung
- * vom aktuell verwendeten Gerät aus (siehe deviceDistanceBlock()).
- * Bewusst dupliziert statt im Backend berechnet: Der Gerätestandort
- * wird nicht an das Backend übertragen (Datenschutz), die Berechnung
- * muss daher im Browser erfolgen. */
-function haversineDistanceKm(lat1, lon1, lat2, lon2) {
-  const erdradiusKm = 6371.0088;
-  const toRad = (grad) => (grad * Math.PI) / 180;
-  const phi1 = toRad(lat1);
-  const phi2 = toRad(lat2);
-  const deltaPhi = toRad(lat2 - lat1);
-  const deltaLambda = toRad(lon2 - lon1);
-  const a = Math.sin(deltaPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return erdradiusKm * c;
+/** Zusammengesetzte Adresse eines Hofladens (Strasse, PLZ, Ort, Land),
+ * wie sie bereits in Kacheln-/Listenansicht zur Anzeige verwendet wird. */
+function zusammengesetzteAdresse(item) {
+  return [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ");
+}
+
+/** Routing-Ziel für Google/Apple Maps (Issue #3): Ist eine (nicht-leere)
+ * Adresse hinterlegt, hat sie Vorrang vor Koordinaten (Adressen sind für
+ * Routenberechnungen i. d. R. präziser als ein einzelner Punkt, siehe
+ * Issue-Vorgabe). Erst wenn keine Adresse, aber gültige WGS84-Koordinaten
+ * vorhanden sind, werden diese als Ziel verwendet. Ohne beides gibt es
+ * kein Routing-Ziel (kein funktionsloser Link). */
+function ermittleRoutingZiel(item) {
+  const adresse = zusammengesetzteAdresse(item);
+  if (adresse) return adresse;
+  if (isValidWgs84(item.latitude, item.longitude)) return `${item.latitude},${item.longitude}`;
+  return null;
+}
+
+/** Google-Maps-Routen-Link (offizielles URL-Schema für Wegbeschreibungen,
+ * siehe https://developers.google.com/maps/documentation/urls/get-started#directions-action).
+ * ``destination`` akzeptiert sowohl eine Adresse als Freitext als auch
+ * ``lat,lon`` – keine eigene Geocoding-Umwandlung nötig. */
+function googleMapsRoutenUrl(ziel) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ziel)}&travelmode=driving`;
+}
+
+/** Apple-Maps-Routen-Link (offizielles URL-Schema, siehe
+ * https://developer.apple.com/library/archive/featuredarticles/iPhoneURLScheme_Reference/MapLinks/MapLinks.html).
+ * ``daddr`` akzeptiert ebenfalls Adresse als Freitext oder ``lat,lon``;
+ * ``dirflg=d`` wählt eine Autoroute (analog zu Google Maps'
+ * ``travelmode=driving``). */
+function appleMapsRoutenUrl(ziel) {
+  return `https://maps.apple.com/?daddr=${encodeURIComponent(ziel)}&dirflg=d`;
+}
+
+// --- Kartenansicht (Issue #2): Leaflet + OpenStreetMap ------------------
+//
+// Home Assistant bietet keine offizielle, für Custom Panels vorgesehene
+// Möglichkeit, eine interaktive Karte mit beliebigen eigenen Markern
+// einzubetten (nur die Lovelace-eigene, dashboard-interne Kartenkarte).
+// Für eine eingebettete Karte mit mehreren gleichzeitig sichtbaren
+// Markern wurde daher bewusst Leaflet + OpenStreetMap gewählt – eine
+// dokumentierte, minimal-invasive Ausnahme vom Projektgrundsatz „keine
+// neuen Abhängigkeiten“ (siehe docs/architecture.md):
+// - keine Build-Pipeline/npm-Abhängigkeit im Repository nötig (reines
+//   <script>/<link> von einem CDN, fest gepinnte Version, kein
+//   „latest“);
+// - kein API-Schlüssel und kein Kartendienst-Konto nötig
+//   (OpenStreetMap-Kacheln sind ohne Registrierung nutzbar);
+// - BSD-2-Clause-Lizenz, seit vielen Jahren aktiv gewartet, sehr
+//   verbreitet (u. a. in zahlreichen Home-Assistant-HACS-Karten bereits
+//   im Einsatz), kompakt (~40 KB gzip für JS und CSS zusammen).
+// Wird bewusst erst beim ersten Öffnen der Kartenansicht nachgeladen
+// (nicht beim Start des Panels), damit Nutzer:innen, die die
+// Kartenansicht nie öffnen, auch nie eine Verbindung zum
+// CDN/Kachel-Anbieter auslösen (siehe Datenschutz-Hinweise im Handbuch).
+const LEAFLET_VERSION = "1.9.4";
+const LEAFLET_JS_URL = `https://cdn.jsdelivr.net/npm/leaflet@${LEAFLET_VERSION}/dist/leaflet.js`;
+const LEAFLET_CSS_URL = `https://cdn.jsdelivr.net/npm/leaflet@${LEAFLET_VERSION}/dist/leaflet.css`;
+
+let leafletLoadPromise = null;
+
+/** Leaflet (globale ``L``-Schnittstelle) einmalig per <script>-Tag von
+ * einem CDN nachladen. Mehrfache Aufrufe (z. B. mehrfaches Öffnen der
+ * Kartenansicht) liefern dasselbe Promise – kein doppeltes Nachladen.
+ * Schlägt das Laden fehl (z. B. CDN nicht erreichbar), wird das
+ * Promise verworfen, damit ein erneuter Versuch beim nächsten Öffnen
+ * der Kartenansicht möglich ist, statt dauerhaft fehlzuschlagen. */
+function ladeLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletLoadPromise) return leafletLoadPromise;
+
+  leafletLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = LEAFLET_JS_URL;
+    script.async = true;
+    script.onload = () => (window.L ? resolve(window.L) : reject(new Error("Kartenbibliothek wurde geladen, stellt aber keine gültige Schnittstelle bereit.")));
+    script.onerror = () => reject(new Error("Kartenbibliothek konnte nicht geladen werden (CDN nicht erreichbar?)."));
+    document.head.appendChild(script);
+  }).catch((err) => {
+    leafletLoadPromise = null;
+    throw err;
+  });
+  return leafletLoadPromise;
+}
+
+// Eigenes Marker-Icon statt Leaflets Standardbild (Issue #4): Leaflets
+// automatische Pfaderkennung (Icon.Default._detectIconPath) erzeugt ein
+// Sondierungselement im echten (globalen) document.body und fragt sonst
+// document.querySelector('link[href$="leaflet.css"]') ab – beides sieht
+// das <link rel="stylesheet"> nicht, das karteAnsicht() innerhalb des
+// Shadow DOM dieser Komponente einbindet, da Shadow-DOM-Grenzen für
+// Style-Zuordnung wie für querySelector() nicht durchquert werden.
+// Ergebnis: Icon.Default.imagePath bleibt leer, das Marker-<img> zeigt
+// eine defekte Bildkachel ("?"). Statt Leaflets Bild-basiertes
+// Standard-Icon zu reparieren (z. B. über einen absoluten CDN-Bildpfad),
+// wird hier bewusst ein eigenes, reines Inline-SVG-Icon (kein zusätzliches
+// Bild, kein weiterer Netzwerk-Request) über L.divIcon() erzeugt – analog
+// zum bereits im Panel verwendeten Symbolstil (vgl. Sidebar-Icon
+// "mdi:store-edit"). Da das erzeugte Markup als Kind des Karten-Containers
+// im selben Shadow Root landet, greifen die in styles() definierten
+// Regeln (.karte-marker-*) zuverlässig – ganz ohne Shadow-DOM-Falle.
+const KARTE_MARKER_GLYPH_PATH = "M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z";
+
+function erzeugeKarteMarkerIcon(L) {
+  const html = `<svg class="karte-marker-svg" viewBox="0 0 32 42" width="32" height="42" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path class="karte-marker-pin" d="M16 0C7.163 0 0 7.163 0 16c0 11 16 26 16 26s16-15 16-26C32 7.163 24.837 0 16 0z"/>
+    <g transform="translate(8,7) scale(0.8)"><path class="karte-marker-glyph" d="${KARTE_MARKER_GLYPH_PATH}"/></g>
+  </svg>`;
+  return L.divIcon({
+    html,
+    className: "karte-marker-icon",
+    iconSize: [32, 42],
+    iconAnchor: [16, 42],
+    popupAnchor: [0, -38],
+  });
 }
 
 const WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
@@ -59,8 +162,16 @@ class HofkartePanel extends HTMLElement {
     this.message = "";
     this.error = "";
     this.showCoordInfo = false;
-    this.deviceDistance = null; // { km } - clientseitig ermittelte Entfernung vom aktuellen Gerät
-    this.deviceDistanceStatus = ""; // Lade-/Fehlermeldung während der Ermittlung
+    this.uebersichtsAnsicht = "kacheln"; // "kacheln" | "liste" | "karte" (Issue #1/#2)
+    this.listenSortSpalte = null; // "name" | "adresse" | "geoeffnet"
+    this.listenSortRichtung = "asc"; // "asc" | "desc"
+    this.listenFilter = ""; // Freitextfilter in der Listenansicht
+    this.karteNurGeoeffnet = false; // Checkbox "nur aktuell geöffnete Hofläden" (Issue #2)
+    this.karteFehler = ""; // Fehlermeldung beim Laden der Kartenbibliothek (Issue #2)
+    this._leafletMap = null; // aktive Leaflet-Karteninstanz, ausserhalb des normalen Render-Zyklus verwaltet
+    this._leafletResizeHandler = null;
+    this.auswahl = new Set(); // ausgewählte Hofladen-IDs für den Export (Issue #5)
+    this.importDialog = null; // { eintraege, entscheidungen: Map<bestehende_id, "aktualisieren"|"ueberspringen"> } - nicht null während der Duplikat-Konfliktlösung eines Imports (Issue #5)
     this.attachShadow({ mode: "open" });
   }
 
@@ -71,6 +182,7 @@ class HofkartePanel extends HTMLElement {
   get hass() { return this._hass; }
 
   connectedCallback() { this.render(); if (this.hass) this.load(); }
+  disconnectedCallback() { this.teardownKarte(); }
 
   async call(type, payload = {}) {
     return this.hass.connection.sendMessagePromise({ type, ...payload });
@@ -149,10 +261,13 @@ class HofkartePanel extends HTMLElement {
     return { latitude: lat, longitude: lon };
   }
 
-  /** Gemeinsame Kartenlogik für "Bearbeiten" und "Details" (identisches
-   * Verhalten in beiden Ansichten). Öffnet Google Maps anhand der
-   * gespeicherten WGS84-Koordinaten in einem neuen Tab, verändert keine
-   * Daten (rein lesender externer Link), keine neue Abhängigkeit. */
+  /** Kartenlogik für das Bearbeitungsformular (editor()). Öffnet Google
+   * Maps anhand der gerade eingegebenen WGS84-Koordinaten in einem neuen
+   * Tab, um die Eingabe zu kontrollieren – verändert keine Daten (rein
+   * lesender externer Link), keine neue Abhängigkeit. Die Detail-,
+   * Kacheln- und Listenansicht verwenden stattdessen die Routing-Auswahl
+   * (routingAuswahl(), Issue #3), da es dort um Navigation zum Hofladen
+   * geht statt um Eingabekontrolle. */
   mapButton(lat, lon) {
     if (!isValidWgs84(lat, lon)) {
       return `<button type="button" class="map-btn" disabled title="Keine gültigen Koordinaten hinterlegt">🗺️ Auf Google Maps anzeigen</button>`;
@@ -161,81 +276,30 @@ class HofkartePanel extends HTMLElement {
     return `<a class="map-btn" href="${this.escAttr(url)}" target="_blank" rel="noopener noreferrer" title="Standort auf Google Maps anzeigen (neuer Tab)">🗺️ Auf Google Maps anzeigen</a>`;
   }
 
-  /** Entfernung vom aktuell verwendeten Gerät (nicht vom
-   * Home-Assistant-Server) zum Hofladen ermitteln – rein clientseitig
-   * über die Browser-Geolocation-API. Der Gerätestandort wird
-   * ausschliesslich lokal für diese Berechnung verwendet, nicht
-   * gespeichert und nicht an das Backend übertragen (siehe
-   * haversineDistanceKm-Kommentar). Ergänzt die bestehende,
-   * serverseitige Entfernungs-Entity, ersetzt sie nicht.
-   */
-  ermittleGeraeteEntfernung() {
-    const hofladen = this.viewing;
-    if (!hofladen || !isValidWgs84(hofladen.latitude, hofladen.longitude)) return;
-
-    if (!("geolocation" in navigator)) {
-      this.deviceDistanceStatus = "Dieser Browser unterstützt keine Standortermittlung.";
-      this.render();
-      return;
+  /** Kompakte Routing-Auswahl (Issue #3) für Kacheln-, Listen- und
+   * Detailansicht: öffnet eine echte Wegbeschreibung (nicht nur einen
+   * Standort-Pin) vom aktuellen Standort zum Hofladen, wahlweise in
+   * Google Maps oder Apple Maps. Adresse hat Vorrang vor Koordinaten
+   * (siehe ermittleRoutingZiel()). Bewusst als zwei sehr kompakte,
+   * icon-only Buttons statt eines einzelnen Buttons mit ausklappbarem
+   * Menü umgesetzt: das braucht keinen zusätzlichen Interaktions-/
+   * Zustands-Code (kein Öffnen/Schliessen, kein Klick-ausserhalb-
+   * Handling) und beansprucht dennoch weniger horizontalen Platz als
+   * der bisherige einzelne Textbutton. */
+  routingAuswahl(item) {
+    const ziel = ermittleRoutingZiel(item);
+    if (!ziel) {
+      return `<span class="route-actions" title="Keine Adresse oder gültigen Koordinaten hinterlegt">
+        <button type="button" class="route-btn" disabled aria-label="Route in Google Maps öffnen">🗺️</button>
+        <button type="button" class="route-btn" disabled aria-label="Route in Apple Maps öffnen">🧭</button>
+      </span>`;
     }
-
-    // Browser gewähren Geolocation-Zugriff ausschliesslich in einem
-    // "sicheren Kontext" (HTTPS oder localhost). Wird Home Assistant
-    // wie im lokalen Netzwerk üblich über einfaches http:// aufgerufen
-    // (z. B. http://192.168.1.50:8123), lehnt der Browser den Zugriff
-    // automatisch als PERMISSION_DENIED ab, OHNE jemals einen
-    // Freigabe-Dialog anzuzeigen. Das führte bisher fälschlich zur
-    // Meldung "Standortzugriff wurde verweigert", obwohl der Nutzer nie
-    // gefragt wurde und in seinem Browser ganz allgemein
-    // Standortzugriffe erlaubt haben kann. Diese Prüfung unterscheidet
-    // den Fall klar von einer tatsächlichen Ablehnung durch die
-    // Nutzerin/den Nutzer.
-    if (!window.isSecureContext) {
-      this.deviceDistanceStatus = "Standortermittlung erfordert eine sichere Verbindung (HTTPS) oder den Aufruf über localhost.";
-      this.render();
-      return;
-    }
-
-    this.deviceDistanceStatus = "Standort wird ermittelt …";
-    this.deviceDistance = null;
-    this.render();
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const km = haversineDistanceKm(
-          position.coords.latitude, position.coords.longitude,
-          hofladen.latitude, hofladen.longitude
-        );
-        this.deviceDistance = { km };
-        this.deviceDistanceStatus = "";
-        this.render();
-      },
-      (fehler) => {
-        const meldungen = {
-          1: "Standortzugriff wurde verweigert.", // PERMISSION_DENIED
-          2: "Standort konnte nicht ermittelt werden.", // POSITION_UNAVAILABLE
-          3: "Standortermittlung hat zu lange gedauert.", // TIMEOUT
-        };
-        this.deviceDistanceStatus = meldungen[fehler.code] || "Standort konnte nicht ermittelt werden.";
-        this.render();
-      },
-      { timeout: 10000, maximumAge: 60000 }
-    );
-  }
-
-  /** Anzeigeblock für die Geräte-Entfernung in der Detailansicht. */
-  deviceDistanceBlock(hofladen) {
-    if (!isValidWgs84(hofladen.latitude, hofladen.longitude)) return "";
-
-    let inhalt;
-    if (this.deviceDistance) {
-      inhalt = `<span class="muted">Entfernung von diesem Gerät: <strong>${this.deviceDistance.km.toFixed(1)} km</strong></span>`;
-    } else if (this.deviceDistanceStatus) {
-      inhalt = `<span class="muted">${this.esc(this.deviceDistanceStatus)}</span>`;
-    } else {
-      inhalt = `<button type="button" class="secondary" data-geraete-entfernung title="Nutzt den Standort dieses Geräts/Browsers, nicht den des Home-Assistant-Servers">📍 Entfernung von diesem Gerät berechnen</button>`;
-    }
-    return `<div class="coord-row" style="margin-top:8px">${inhalt}</div>`;
+    const googleUrl = googleMapsRoutenUrl(ziel);
+    const appleUrl = appleMapsRoutenUrl(ziel);
+    return `<span class="route-actions">
+      <a class="route-btn" href="${this.escAttr(googleUrl)}" target="_blank" rel="noopener noreferrer" title="Route in Google Maps öffnen" aria-label="Route in Google Maps öffnen">🗺️</a>
+      <a class="route-btn" href="${this.escAttr(appleUrl)}" target="_blank" rel="noopener noreferrer" title="Route in Apple Maps öffnen" aria-label="Route in Apple Maps öffnen">🧭</a>
+    </span>`;
   }
 
   // --- Bilder: geführter Upload -----------------------------------------
@@ -407,18 +471,104 @@ class HofkartePanel extends HTMLElement {
 
   start(item = null) { this.error = ""; this.viewing = null; this.showCoordInfo = false; this.editing = item ? this.clone(item) : this.empty(); this.render(); }
   cancel() { this.editing = null; this.error = ""; this.render(); }
-  view(item) { this.error = ""; this.editing = null; this.viewing = item; this.deviceDistance = null; this.deviceDistanceStatus = ""; this.render(); }
+  view(item) { this.error = ""; this.editing = null; this.viewing = item; this.render(); }
   closeView() { this.viewing = null; this.render(); }
 
   // --- Rendering -----------------------------------------------------
 
   render() {
     if (!this.shadowRoot) return;
+    // Eine bestehende Leaflet-Karteninstanz muss vor dem Ersetzen von
+    // innerHTML explizit entfernt werden (map.remove()) – sie hält
+    // sonst weiterhin Referenzen/Event-Listener (z. B. auf window)
+    // gegen einen bereits aus dem DOM entfernten Container. Wird die
+    // Kartenansicht danach erneut aufgebaut, übernimmt initKarte() das.
+    this.teardownKarte();
     this.shadowRoot.innerHTML = `<style>${this.styles()}</style><main>${this.currentView()}</main>`;
     this.bind();
+    if (!this.editing && !this.viewing && this.uebersichtsAnsicht === "karte" && this.items.length) {
+      this.initKarte();
+    }
+  }
+
+  /** Aktive Leaflet-Karteninstanz und den zugehörigen Resize-Handler
+   * sauber entfernen (siehe render()/disconnectedCallback()). */
+  teardownKarte() {
+    if (this._leafletResizeHandler) {
+      window.removeEventListener("resize", this._leafletResizeHandler);
+      this._leafletResizeHandler = null;
+    }
+    if (this._leafletMap) {
+      this._leafletMap.remove();
+      this._leafletMap = null;
+    }
+  }
+
+  /** Leaflet-Karte in den zuvor von karteAnsicht() gerenderten Container
+   * einhängen. Wird bei jedem Render der Kartenansicht neu aufgebaut, da
+   * render() den gesamten Shadow-DOM-Inhalt ersetzt (siehe teardownKarte(),
+   * das die vorherige Instanz zuvor bereits entfernt hat). Popups nutzen
+   * bewusst direkte Leaflet-Events statt der generischen bind()-Delegation
+   * (Marker/Popups liegen ausserhalb des von render() erzeugten Markups). */
+  async initKarte() {
+    const container = this.shadowRoot.querySelector("[data-karte-container]");
+    if (!container) return; // z. B. "keine Koordinaten"-Meldung statt Karte
+
+    let L;
+    try {
+      L = await ladeLeaflet();
+    } catch (err) {
+      this.karteFehler = err?.message || "Kartenbibliothek konnte nicht geladen werden.";
+      this.render();
+      return;
+    }
+
+    // Zwischenzeitlich könnte die Ansicht gewechselt oder neu gerendert
+    // worden sein, während die Bibliothek geladen wurde – dann diesen
+    // (veralteten) Container nicht mehr verwenden.
+    if (!this.shadowRoot.contains(container) || this.uebersichtsAnsicht !== "karte" || this.editing || this.viewing) return;
+    this.karteFehler = "";
+
+    const alleMitKoordinaten = this.items.filter((item) => isValidWgs84(item.latitude, item.longitude));
+    const markerItems = this.karteNurGeoeffnet ? alleMitKoordinaten.filter((item) => item.geoeffnet === true) : alleMitKoordinaten;
+
+    const map = L.map(container, { scrollWheelZoom: true });
+    this._leafletMap = map;
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>-Mitwirkende',
+    }).addTo(map);
+
+    const markerIcon = erzeugeKarteMarkerIcon(L);
+    for (const item of markerItems) {
+      const marker = L.marker([item.latitude, item.longitude], { icon: markerIcon }).addTo(map);
+      marker.bindPopup(`<div class="karte-popup"><strong>${this.esc(item.name)}</strong><br><button type="button" class="link-button" data-karte-view>Zur Detailansicht</button></div>`);
+      marker.on("popupopen", (e) => {
+        e.popup.getElement()?.querySelector("[data-karte-view]")?.addEventListener("click", () => this.view(item));
+      });
+    }
+
+    if (markerItems.length === 1) {
+      map.setView([markerItems[0].latitude, markerItems[0].longitude], 14);
+    } else if (markerItems.length > 1) {
+      map.fitBounds(markerItems.map((item) => [item.latitude, item.longitude]), { padding: [24, 24] });
+    } else {
+      // Der Geöffnet-Filter ergibt keine Treffer, es gibt aber
+      // grundsätzlich Hofläden mit Koordinaten – sinnvollen Ausschnitt
+      // über alle vorhandenen Koordinaten zeigen statt einer
+      // Default-Weltkarte.
+      map.fitBounds(alleMitKoordinaten.map((item) => [item.latitude, item.longitude]), { padding: [24, 24] });
+    }
+
+    this._leafletResizeHandler = () => map.invalidateSize();
+    window.addEventListener("resize", this._leafletResizeHandler);
+    // Absicherung für die erstmalige Grössenberechnung (z. B. bei einer
+    // noch laufenden Sidebar-/Layout-Animation im selben Moment).
+    setTimeout(() => map.invalidateSize(), 0);
   }
 
   currentView() {
+    if (this.importDialog) return this.importKonflikte();
     if (this.editing) return this.editor();
     if (this.viewing) return this.detail();
     return this.list();
@@ -430,6 +580,46 @@ class HofkartePanel extends HTMLElement {
       main{max-width:1200px;margin:0 auto;padding:24px}
       .top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
       .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:20px}
+      .view-toggle{display:flex;gap:8px;margin-top:16px}
+      .tile-card{display:flex;flex-direction:column;gap:6px}
+      .tile-image{width:100%;height:140px;object-fit:cover;border-radius:8px;margin-bottom:4px}
+      .tile-image-placeholder{display:flex;align-items:center;justify-content:center;background:var(--secondary-background-color);font-size:2.5em}
+      .link-button{background:none;border:0;padding:0;color:var(--primary-color);font:inherit;font-weight:500;cursor:pointer;text-align:left}
+      .link-button:hover{text-decoration:underline}
+      .status-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.9em}
+      .status-open{background:var(--success-color,#43a047);color:#fff}
+      .status-closed{background:var(--error-color,#db4437);color:#fff}
+      .status-unknown{background:var(--secondary-background-color);color:var(--secondary-text-color)}
+      .export-import-row{display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap}
+      .auswahl-checkbox{display:flex;align-items:center;gap:6px;font-size:.9em;margin-bottom:4px}
+      .auswahl-checkbox input{width:auto;padding:0}
+      .import-konflikt{margin-top:16px}
+      .import-diff{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px}
+      .import-diff-spalte h4{margin:0 0 6px}
+      .import-diff-feld{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--divider-color);font-size:.9em}
+      .import-diff-feld .diff-label{color:var(--secondary-text-color);flex:0 0 auto}
+      .diff-alt{background:color-mix(in srgb, var(--error-color,#db4437) 12%, transparent)}
+      .diff-neu{background:color-mix(in srgb, var(--success-color,#43a047) 12%, transparent)}
+      @media(max-width:700px){.import-diff{grid-template-columns:1fr}}
+      .list-filter{margin-top:16px}
+      .list-filter input{max-width:360px}
+      .table-scroll{overflow-x:auto;margin-top:12px}
+      .hoflaeden-table{width:100%;border-collapse:collapse;background:var(--ha-card-background,var(--card-background-color));border-radius:12px;overflow:hidden}
+      .hoflaeden-table th,.hoflaeden-table td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--divider-color)}
+      .hoflaeden-table tr:last-child td{border-bottom:0}
+      .table-sort{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--primary-text-color);cursor:pointer;white-space:nowrap}
+      .karte-filter-row{margin-top:16px}
+      .karte-filter-row label{display:flex;align-items:center;gap:8px;margin:0;font-size:.95em;font-weight:normal}
+      .karte-filter-row input[type=checkbox]{width:auto;padding:0}
+      .karte-container{height:480px;border-radius:12px;margin-top:12px;background:var(--secondary-background-color)}
+      .karte-empty{margin-top:20px}
+      .karte-marker-icon{background:transparent;border:0}
+      .karte-marker-svg{display:block}
+      .karte-marker-pin{fill:var(--primary-color,#db4437);filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}
+      .karte-marker-glyph{fill:#fff}
+      .karte-popup{font-size:.95em}
+      .karte-popup button{margin-top:6px}
+      @media(max-width:700px){.karte-container{height:360px}}
       .card{background:var(--ha-card-background,var(--card-background-color));border-radius:12px;padding:16px;box-shadow:var(--ha-card-box-shadow,0 1px 3px #0002)}
       form > section.card{margin-bottom:20px}
       .card h2{margin-top:0}
@@ -453,6 +643,9 @@ class HofkartePanel extends HTMLElement {
       .map-btn{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);text-decoration:none;font-size:.95em;box-sizing:border-box}
       .map-btn[disabled],.map-btn.disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
       .coord-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+      .route-actions{display:inline-flex;gap:4px;flex-wrap:wrap}
+      .route-btn{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);text-decoration:none;font-size:1.05em;box-sizing:border-box;border:0;cursor:pointer}
+      .route-btn[disabled]{opacity:.5;cursor:not-allowed;pointer-events:none}
       .info-box{margin-top:8px;padding:12px 14px;border-radius:8px;background:var(--secondary-background-color);font-size:.9em;line-height:1.5}
       .info-box code{background:var(--primary-background-color);padding:1px 5px;border-radius:4px}
       .day-block{border:1px solid var(--divider-color);border-radius:10px;padding:10px 12px;margin:8px 0}
@@ -496,23 +689,353 @@ class HofkartePanel extends HTMLElement {
 
   // --- Liste -----------------------------------------------------------
 
+  /** Einheitliche Statusanzeige "geöffnet/geschlossen/unbekannt" – nutzt
+   * das serverseitig berechnete Feld `geoeffnet` (siehe management.py),
+   * keine eigene Öffnungszeiten-Berechnung in JavaScript (Issue #1). */
+  geoeffnetBadge(geoeffnet) {
+    if (geoeffnet === true) return `<span class="status-badge status-open">🟢 Geöffnet</span>`;
+    if (geoeffnet === false) return `<span class="status-badge status-closed">🔴 Geschlossen</span>`;
+    return `<span class="status-badge status-unknown">Unbekannt</span>`;
+  }
+
   list() {
-    return `<div class="top"><div><h1>HofKarte</h1><div class="muted">Hofläden verwalten</div></div><button data-new>+ Neuer Hofladen</button></div>${this.message ? `<div class="notice">${this.esc(this.message)}</div>` : ""}${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}<div class="grid">${this.items.length ? this.items.map(item => this.listCard(item)).join("") : `<section class="card"><h2>Noch keine Hofläden</h2><p>Erstelle den ersten Hofladen.</p></section>`}</div>`;
+    const umschalter = `<div class="view-toggle">
+      <button type="button" class="${this.uebersichtsAnsicht === "kacheln" ? "" : "secondary"}" data-ansicht="kacheln">🔲 Kacheln</button>
+      <button type="button" class="${this.uebersichtsAnsicht === "liste" ? "" : "secondary"}" data-ansicht="liste">📋 Liste</button>
+      <button type="button" class="${this.uebersichtsAnsicht === "karte" ? "" : "secondary"}" data-ansicht="karte">🗺️ Karte</button>
+    </div>`;
+    const inhalt = !this.items.length
+      ? `<section class="card"><h2>Noch keine Hofläden</h2><p>Erstelle den ersten Hofladen.</p></section>`
+      : (this.uebersichtsAnsicht === "liste" ? this.listTable() : this.uebersichtsAnsicht === "karte" ? this.karteAnsicht() : this.listGrid());
+    // Mehrfachauswahl (Checkboxen) sowie Export/Import gibt es bewusst
+    // nur in Kacheln- und Listenansicht (Issue #5) - in der Kartenansicht
+    // fehlt dafür ein sinnvoller Anwendungsfall.
+    const exportImportLeiste = this.items.length && this.uebersichtsAnsicht !== "karte"
+      ? `<div class="export-import-row">
+          <span class="muted">${this.auswahl.size} ausgewählt</span>
+          <button type="button" class="secondary" data-auswahl-alle>Alle auswählen</button>
+          <button type="button" class="secondary" data-auswahl-keine>Auswahl aufheben</button>
+          <button type="button" class="secondary" data-export ${this.auswahl.size ? "" : "disabled"}>⬇️ Export</button>
+          <button type="button" class="secondary" data-import-start>⬆️ Import</button>
+          <input type="file" accept="application/json" data-import-input hidden>
+        </div>`
+      : "";
+
+    return `<div class="top"><div><h1>HofKarte</h1><div class="muted">Hofläden verwalten</div></div><button data-new>+ Neuer Hofladen</button></div>${this.message ? `<div class="notice">${this.esc(this.message)}</div>` : ""}${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}${this.items.length ? umschalter : ""}${exportImportLeiste}${inhalt}`;
+  }
+
+  listGrid() {
+    return `<div class="grid">${this.items.map(item => this.listCard(item)).join("")}</div>`;
   }
 
   listCard(item) {
-    const koordText = (item.latitude != null && item.longitude != null) ? `${item.latitude.toFixed(5)}, ${item.longitude.toFixed(5)}` : "Keine Koordinaten";
-    return `<section class="card">
-      <h2>${this.esc(item.name)}</h2>
-      <div>${this.esc([item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ")) || "<span class=muted>Keine Adresse</span>"}</div>
-      <div class="muted">${koordText}</div>
-      ${item.website ? `<div class="muted">🔗 ${this.esc(item.website)}</div>` : ""}
+    const adresse = [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ");
+    const bildHtml = item.hauptbild_url
+      ? `<img class="tile-image" src="${this.escAttr(item.hauptbild_url)}" alt="${this.escAttr(item.name)}" loading="lazy">`
+      : `<div class="tile-image tile-image-placeholder" aria-hidden="true">🏬</div>`;
+
+    return `<section class="card tile-card">
+      <label class="auswahl-checkbox"><input type="checkbox" data-auswahl="${item.id}" ${this.auswahl.has(item.id) ? "checked" : ""}> Auswählen</label>
+      ${bildHtml}
+      <h2><button type="button" class="link-button" data-view="${item.id}">${this.esc(item.name)}</button></h2>
+      ${adresse ? `<div>${this.esc(adresse)}</div>` : ""}
+      ${this.websiteLinkHtml(item.website)}
+      <div>${this.geoeffnetBadge(item.geoeffnet)}</div>
+      <div class="coord-actions">${this.routingAuswahl(item)}</div>
       <div class="actions">
         <button class="secondary" data-view="${item.id}">Details</button>
         <button class="secondary" data-edit="${item.id}">Bearbeiten</button>
         <button class="danger" data-delete="${item.id}">Löschen</button>
       </div>
     </section>`;
+  }
+
+  /** Sortierte, gefilterte Zeilen für die Listenansicht (rein
+   * clientseitig – kein neuer Backend-Endpunkt nötig, siehe Issue #1). */
+  sortierteGefilterteItems() {
+    const filterText = this.listenFilter.trim().toLowerCase();
+    let ergebnis = !filterText ? this.items : this.items.filter(item => {
+      const adresse = [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ");
+      return item.name.toLowerCase().includes(filterText) || adresse.toLowerCase().includes(filterText);
+    });
+
+    if (this.listenSortSpalte) {
+      const spalte = this.listenSortSpalte;
+      const richtung = this.listenSortRichtung === "asc" ? 1 : -1;
+      const wert = (item) => {
+        if (spalte === "adresse") return [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ").toLowerCase();
+        if (spalte === "geoeffnet") return item.geoeffnet === true ? 2 : item.geoeffnet === false ? 1 : 0;
+        return String(item[spalte] || "").toLowerCase();
+      };
+      ergebnis = [...ergebnis].sort((a, b) => {
+        const wa = wert(a), wb = wert(b);
+        return wa < wb ? -richtung : wa > wb ? richtung : 0;
+      });
+    }
+    return ergebnis;
+  }
+
+  listTable() {
+    const zeilen = this.sortierteGefilterteItems();
+    const pfeil = (spalte) => this.listenSortSpalte === spalte ? (this.listenSortRichtung === "asc" ? " ▲" : " ▼") : "";
+
+    return `<div class="list-filter">
+        <input type="text" data-listen-filter placeholder="Nach Name oder Adresse filtern …" value="${this.escAttr(this.listenFilter)}">
+      </div>
+      <div class="table-scroll">
+        <table class="hoflaeden-table">
+          <thead>
+            <tr>
+              <th>Auswahl</th>
+              <th><button type="button" class="table-sort" data-sort="name">Name${pfeil("name")}</button></th>
+              <th><button type="button" class="table-sort" data-sort="adresse">Adresse${pfeil("adresse")}</button></th>
+              <th><button type="button" class="table-sort" data-sort="geoeffnet">Status${pfeil("geoeffnet")}</button></th>
+              <th>Route</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${zeilen.length ? zeilen.map(item => {
+              const adresse = [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ");
+              return `<tr>
+                <td><input type="checkbox" data-auswahl="${item.id}" ${this.auswahl.has(item.id) ? "checked" : ""} aria-label="${this.escAttr(item.name)} auswählen"></td>
+                <td><button type="button" class="link-button" data-view="${item.id}">${this.esc(item.name)}</button></td>
+                <td>${this.esc(adresse) || '<span class="muted">–</span>'}</td>
+                <td>${this.geoeffnetBadge(item.geoeffnet)}</td>
+                <td>${this.routingAuswahl(item)}</td>
+              </tr>`;
+            }).join("") : `<tr><td colspan="5" class="muted">Keine Treffer für diesen Filter.</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  /** Markup der Kartenansicht (Issue #2). Die eigentliche Leaflet-Karte
+   * wird erst nach dem Rendern in initKarte() in den hier erzeugten,
+   * noch leeren Container eingehängt (siehe render()). Ohne einen
+   * einzigen Hofladen mit gültigen Koordinaten wird gar nicht erst
+   * versucht, eine Karte aufzubauen – stattdessen eine klare Meldung. */
+  karteAnsicht() {
+    const alleMitKoordinaten = this.items.filter((item) => isValidWgs84(item.latitude, item.longitude));
+    if (!alleMitKoordinaten.length) {
+      return `<section class="card karte-empty"><p class="muted">Keine Hofläden mit hinterlegten Koordinaten vorhanden – es kann keine Karte angezeigt werden.</p></section>`;
+    }
+
+    const gefiltert = this.karteNurGeoeffnet ? alleMitKoordinaten.filter((item) => item.geoeffnet === true) : alleMitKoordinaten;
+
+    return `<link rel="stylesheet" href="${LEAFLET_CSS_URL}">
+      <div class="karte-filter-row">
+        <label><input type="checkbox" data-karte-nur-geoeffnet ${this.karteNurGeoeffnet ? "checked" : ""}> Nur aktuell geöffnete Hofläden anzeigen</label>
+      </div>
+      ${this.karteFehler ? `<div class="notice error">${this.esc(this.karteFehler)}</div>` : ""}
+      <div class="karte-container" data-karte-container></div>
+      ${!gefiltert.length ? `<p class="muted" style="margin-top:8px">Kein Hofladen entspricht aktuell diesem Filter.</p>` : ""}`;
+  }
+
+  // --- Export/Import (Issue #5) ------------------------------------------
+  //
+  // Export läuft vollständig clientseitig über einen Blob-Download - kein
+  // neuer Server-Endpunkt nötig. Import ist zweistufig: zuerst eine rein
+  // lesende Vorschau ("import_preview"), die Struktur validiert und
+  // mögliche Duplikate ermittelt (serverseitig, siehe management.py -
+  // Name/Adresse-Abgleich sowie die Validierungslogik sollen nicht ein
+  // zweites Mal in JavaScript nachgebaut werden), danach - nach
+  // Entscheidung über jedes gefundene Duplikat - der eigentliche Import
+  // ("import_commit"). Das hält jegliche Fachlogik serverseitig; das
+  // Frontend übernimmt hier bewusst nur Dateiauswahl/-lesen und die
+  // Diff-/Dialog-Darstellung.
+
+  /** Vom Server ergänzte, rein berechnete Felder (kein Teil von
+   * models.Hofladen, siehe management.py:_serialize_hofladen) vor dem
+   * Export entfernen - der Export soll exakt das interne Datenmodell
+   * widerspiegeln, keine flüchtigen, zur Exportzeit gültigen Werte. */
+  bereinigtFuerExport(item) {
+    const { geoeffnet, hauptbild_url, ...rest } = item;
+    return rest;
+  }
+
+  exportZeitstempel() {
+    const jetzt = new Date();
+    return jetzt.toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  }
+
+  exportAuswahl() {
+    if (!this.auswahl.size) return;
+    const ausgewaehlt = this.items.filter((item) => this.auswahl.has(item.id));
+    const bereinigt = ausgewaehlt.map((item) => this.bereinigtFuerExport(item));
+
+    const blob = new Blob([JSON.stringify(bereinigt, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    try {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `hoflaeden-export-${this.exportZeitstempel()}.json`;
+      link.click();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+
+    this.message = `${ausgewaehlt.length} Hofladen/Hofläden exportiert.`;
+    this.error = "";
+    this.render();
+  }
+
+  /** Datei-Auswahl für den Import verarbeiten: lesen, als JSON parsen und
+   * strukturell auf oberster Ebene prüfen (muss eine nicht-leere Liste
+   * von Objekten sein) - alles Weitere (Feldvalidierung je Hofladen,
+   * Duplikaterkennung) übernimmt der Server (ws_import_preview). */
+  async importDatei(file) {
+    if (!file) return;
+    this.error = "";
+    this.message = "";
+
+    let inhalt;
+    try {
+      inhalt = await file.text();
+    } catch {
+      this.error = "Die Datei konnte nicht gelesen werden.";
+      this.render();
+      return;
+    }
+
+    let daten;
+    try {
+      daten = JSON.parse(inhalt);
+    } catch {
+      this.error = "Die Datei enthält kein gültiges JSON.";
+      this.render();
+      return;
+    }
+
+    if (!Array.isArray(daten) || !daten.length) {
+      this.error = "Die Datei muss eine JSON-Liste mit mindestens einem Hofladen enthalten.";
+      this.render();
+      return;
+    }
+    if (!daten.every((eintrag) => eintrag && typeof eintrag === "object" && !Array.isArray(eintrag))) {
+      this.error = "Die Datei enthält ungültige Einträge (jeder Hofladen muss ein Objekt sein).";
+      this.render();
+      return;
+    }
+
+    try {
+      const antwort = await this.call("hofkarte/management/import_preview", { hoflaeden: daten });
+      this.starteKonfliktloesung(antwort.eintraege || []);
+    } catch (err) {
+      this.error = err?.message || "Die Datei konnte nicht importiert werden.";
+      this.render();
+    }
+  }
+
+  /** Entscheiden, ob überhaupt eine Konfliktlösung nötig ist: ohne
+   * erkannte Duplikate wird direkt importiert, ohne unnötigen Dialog. */
+  starteKonfliktloesung(eintraege) {
+    const duplikate = eintraege.filter((eintrag) => eintrag.duplikat_von);
+    if (!duplikate.length) {
+      this.commitImport(eintraege.map((eintrag) => ({ hofladen: eintrag.hofladen, aktion: "neu" })));
+      return;
+    }
+    this.importDialog = { eintraege, entscheidungen: new Map() };
+    this.render();
+  }
+
+  /** Feldweiser Vergleich zwischen bestehendem und importiertem
+   * Hofladen für die Diff-Darstellung im Konfliktdialog. Sammlungsfelder
+   * (Öffnungszeiten, Angebote, ...) werden bewusst nur über ihre Anzahl
+   * verglichen statt vollständig aufgelistet - genug, um auf einen
+   * Blick zu erkennen, ob sich etwas geändert hat, ohne den Dialog mit
+   * verschachtelten Detailtabellen zu überladen. */
+  diffFelder(bestehend, importiert) {
+    const skalar = [
+      ["name", "Name"], ["adresse", "Adresse"], ["plz", "PLZ"], ["ort", "Ort"], ["land", "Land"],
+      ["website", "Website"], ["beschreibung", "Beschreibung"], ["bemerkung", "Bemerkung"],
+      ["latitude", "Latitude"], ["longitude", "Longitude"],
+    ];
+    const sammlungen = [
+      ["oeffnungszeiten", "Öffnungszeiten"], ["sonderoeffnungszeiten", "Sonderöffnungszeiten"],
+      ["angebote", "Angebote"], ["zahlungsarten", "Zahlungsarten"], ["bilder", "Bilder"],
+    ];
+
+    const zeile = (label, altWert, neuWert) => ({
+      label,
+      alt: altWert === null || altWert === undefined || altWert === "" ? "–" : String(altWert),
+      neu: neuWert === null || neuWert === undefined || neuWert === "" ? "–" : String(neuWert),
+      unterschiedlich: String(altWert ?? "") !== String(neuWert ?? ""),
+    });
+
+    return [
+      ...skalar.map(([feld, label]) => zeile(label, bestehend[feld], importiert[feld])),
+      ...sammlungen.map(([feld, label]) => zeile(
+        label,
+        `${(bestehend[feld] || []).length} Einträge`,
+        `${(importiert[feld] || []).length} Einträge`,
+      )),
+    ];
+  }
+
+  importKonfliktEintrag(eintrag) {
+    const bestehend = eintrag.bestehend;
+    const importiert = eintrag.hofladen;
+    const entscheidung = this.importDialog.entscheidungen.get(eintrag.duplikat_von) || "";
+    const felder = this.diffFelder(bestehend, importiert);
+    const feldZeile = (spalte) => felder.map((f) => `<div class="import-diff-feld${f.unterschiedlich ? ` diff-${spalte}` : ""}"><span class="diff-label">${this.esc(f.label)}</span><span>${this.esc(spalte === "alt" ? f.alt : f.neu)}</span></div>`).join("");
+
+    return `<section class="card import-konflikt">
+      <h3>Mögliches Duplikat: ${this.esc(importiert.name)}</h3>
+      <div class="import-diff">
+        <div class="import-diff-spalte"><h4>Bestehend</h4>${feldZeile("alt")}</div>
+        <div class="import-diff-spalte"><h4>Importiert</h4>${feldZeile("neu")}</div>
+      </div>
+      <div class="actions">
+        <button type="button" class="${entscheidung === "aktualisieren" ? "" : "secondary"}" data-import-entscheidung="${eintrag.duplikat_von}" data-import-aktion="aktualisieren">Aktualisieren</button>
+        <button type="button" class="${entscheidung === "ueberspringen" ? "" : "secondary"}" data-import-entscheidung="${eintrag.duplikat_von}" data-import-aktion="ueberspringen">Beibehalten</button>
+      </div>
+    </section>`;
+  }
+
+  importKonflikte() {
+    const { eintraege, entscheidungen } = this.importDialog;
+    const duplikate = eintraege.filter((eintrag) => eintrag.duplikat_von);
+    const neue = eintraege.filter((eintrag) => !eintrag.duplikat_von);
+    const alleEntschieden = duplikate.every((eintrag) => entscheidungen.has(eintrag.duplikat_von));
+
+    return `<div class="top"><div><h1>Import: Duplikate prüfen</h1><div class="muted">${neue.length} neue${neue.length === 1 ? "r Hofladen wird" : " Hofläden werden"} direkt importiert, ${duplikate.length} ${duplikate.length === 1 ? "bestehender Hofladen wurde" : "bestehende Hofläden wurden"} als mögliches Duplikat erkannt.</div></div></div>
+      ${this.error ? `<div class="notice error">${this.esc(this.error)}</div>` : ""}
+      <div class="actions" style="margin:16px 0">
+        <button type="button" class="secondary" data-import-alle="aktualisieren">Alle aktualisieren</button>
+        <button type="button" class="secondary" data-import-alle="ueberspringen">Alle beibehalten</button>
+      </div>
+      ${duplikate.map((eintrag) => this.importKonfliktEintrag(eintrag)).join("")}
+      <div class="actions" style="margin-top:20px">
+        <button type="button" class="secondary" data-import-abbrechen>Abbrechen</button>
+        <button type="button" data-import-abschliessen>Import abschliessen${alleEntschieden ? "" : " (unentschiedene Duplikate werden beibehalten)"}</button>
+      </div>`;
+  }
+
+  schliesseImportAb() {
+    const { eintraege, entscheidungen } = this.importDialog;
+    const eintraegeFuerCommit = eintraege.map((eintrag) => {
+      if (!eintrag.duplikat_von) return { hofladen: eintrag.hofladen, aktion: "neu" };
+      // Unentschiedene Duplikate werden nicht stillschweigend
+      // überschrieben, sondern sicher beibehalten (kein Datenverlust
+      // ohne explizite Bestätigung).
+      const aktion = entscheidungen.get(eintrag.duplikat_von) || "ueberspringen";
+      return { hofladen: eintrag.hofladen, aktion, bestehende_id: eintrag.duplikat_von };
+    });
+    this.commitImport(eintraegeFuerCommit);
+  }
+
+  async commitImport(eintraege) {
+    try {
+      const antwort = await this.call("hofkarte/management/import_commit", { eintraege });
+      this.importDialog = null;
+      this.auswahl.clear();
+      this.error = "";
+      this.message = `Import abgeschlossen: ${antwort.importiert} neu, ${antwort.aktualisiert} aktualisiert, ${antwort.uebersprungen} übersprungen.`;
+      await this.load();
+    } catch (err) {
+      this.error = err?.message || "Der Import konnte nicht abgeschlossen werden.";
+      this.render();
+    }
   }
 
   // --- Detailansicht (read-only) ---------------------------------------
@@ -541,8 +1064,7 @@ class HofkartePanel extends HTMLElement {
         <div class="coord-row">
           <div class="muted">${hatKoordinaten ? `Latitude ${d.latitude.toFixed(6)}, Longitude ${d.longitude.toFixed(6)}` : "Keine Koordinaten hinterlegt"}</div>
         </div>
-        <div class="coord-actions">${this.mapButton(d.latitude, d.longitude)}</div>
-        ${this.deviceDistanceBlock(d)}
+        <div class="coord-actions">${this.routingAuswahl(d)}</div>
       </section>
 
       ${this.websiteLinkBlock(d.website)}
@@ -562,14 +1084,24 @@ class HofkartePanel extends HTMLElement {
 
   /** Webseite als anklickbarer Link – kein UI-Block, wenn keine/keine
    * gültige URL hinterlegt ist (siehe Anforderung: kein leerer Bereich). */
-  websiteLinkBlock(website) {
+  /** Kernlogik für die Website-Darstellung (nur der Link/Hinweis selbst,
+   * ohne umgebende Sektion) – wird sowohl von der Detailansicht als auch
+   * von Kacheln/Tabellenzeilen verwendet, um Validierung/Linkaufbau
+   * nicht zu duplizieren. */
+  websiteLinkHtml(website) {
     if (!website || !website.trim()) return "";
     const trimmed = website.trim();
     const href = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
     if (!this.isPlausibleUrl(trimmed)) {
-      return `<section class="card detail-section"><h3>Webseite</h3><div class="muted">Ungültige Webseiten-Adresse hinterlegt: ${this.esc(trimmed)}</div></section>`;
+      return `<span class="muted">Ungültige Webseiten-Adresse: ${this.esc(trimmed)}</span>`;
     }
-    return `<section class="card detail-section"><h3>Webseite</h3><a class="website-link" href="${this.escAttr(href)}" target="_blank" rel="noopener noreferrer">🔗 ${this.esc(trimmed)}</a></section>`;
+    return `<a class="website-link" href="${this.escAttr(href)}" target="_blank" rel="noopener noreferrer">🔗 ${this.esc(trimmed)}</a>`;
+  }
+
+  websiteLinkBlock(website) {
+    const inhalt = this.websiteLinkHtml(website);
+    if (!inhalt) return "";
+    return `<section class="card detail-section"><h3>Webseite</h3>${inhalt}</section>`;
   }
 
   detailOpeningHours(rows) {
@@ -796,11 +1328,78 @@ class HofkartePanel extends HTMLElement {
 
   bind() {
     this.shadowRoot.querySelector("[data-new]")?.addEventListener("click", () => this.start());
+    this.shadowRoot.querySelectorAll("[data-ansicht]").forEach(b =>
+      b.addEventListener("click", () => { this.uebersichtsAnsicht = b.dataset.ansicht; this.render(); })
+    );
+    this.shadowRoot.querySelectorAll("[data-sort]").forEach(b =>
+      b.addEventListener("click", () => {
+        const spalte = b.dataset.sort;
+        if (this.listenSortSpalte === spalte) {
+          this.listenSortRichtung = this.listenSortRichtung === "asc" ? "desc" : "asc";
+        } else {
+          this.listenSortSpalte = spalte;
+          this.listenSortRichtung = "asc";
+        }
+        this.render();
+      })
+    );
+    this.shadowRoot.querySelector("[data-karte-nur-geoeffnet]")?.addEventListener("change", (e) => {
+      this.karteNurGeoeffnet = e.target.checked;
+      this.render();
+    });
+    // --- Export/Import (Issue #5) ---
+    this.shadowRoot.querySelectorAll("[data-auswahl]").forEach((cb) => cb.addEventListener("change", (e) => {
+      const id = cb.dataset.auswahl;
+      if (e.target.checked) this.auswahl.add(id); else this.auswahl.delete(id);
+      this.render();
+    }));
+    this.shadowRoot.querySelector("[data-auswahl-alle]")?.addEventListener("click", () => {
+      this.items.forEach((item) => this.auswahl.add(item.id));
+      this.render();
+    });
+    this.shadowRoot.querySelector("[data-auswahl-keine]")?.addEventListener("click", () => {
+      this.auswahl.clear();
+      this.render();
+    });
+    this.shadowRoot.querySelector("[data-export]")?.addEventListener("click", () => this.exportAuswahl());
+    this.shadowRoot.querySelector("[data-import-start]")?.addEventListener("click", () => {
+      this.shadowRoot.querySelector("[data-import-input]")?.click();
+    });
+    this.shadowRoot.querySelector("[data-import-input]")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      this.importDatei(file);
+      e.target.value = ""; // erlaubt erneuten Import derselben Datei
+    });
+    this.shadowRoot.querySelectorAll("[data-import-entscheidung]").forEach((b) => b.addEventListener("click", () => {
+      this.importDialog.entscheidungen.set(b.dataset.importEntscheidung, b.dataset.importAktion);
+      this.render();
+    }));
+    this.shadowRoot.querySelectorAll("[data-import-alle]").forEach((b) => b.addEventListener("click", () => {
+      const aktion = b.dataset.importAlle;
+      for (const eintrag of this.importDialog.eintraege) {
+        if (eintrag.duplikat_von) this.importDialog.entscheidungen.set(eintrag.duplikat_von, aktion);
+      }
+      this.render();
+    }));
+    this.shadowRoot.querySelector("[data-import-abbrechen]")?.addEventListener("click", () => {
+      this.importDialog = null;
+      this.render();
+    });
+    this.shadowRoot.querySelector("[data-import-abschliessen]")?.addEventListener("click", () => this.schliesseImportAb());
+
+    this.shadowRoot.querySelector("[data-listen-filter]")?.addEventListener("input", (e) => {
+      this.listenFilter = e.target.value;
+      this.render();
+      // Fokus geht beim Re-Render verloren (innerHTML wird neu aufgebaut) -
+      // direkt danach wiederherstellen, damit Weitertippen ohne erneuten
+      // Klick möglich ist.
+      const neuesFeld = this.shadowRoot.querySelector("[data-listen-filter]");
+      if (neuesFeld) { neuesFeld.focus(); neuesFeld.selectionStart = neuesFeld.selectionEnd = neuesFeld.value.length; }
+    });
     this.shadowRoot.querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => this.start(this.items.find(x => x.id === b.dataset.edit))));
     this.shadowRoot.querySelector("[data-edit-from-detail]")?.addEventListener("click", (e) => this.start(this.items.find(x => x.id === e.target.dataset.editFromDetail)));
     this.shadowRoot.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => this.view(this.items.find(x => x.id === b.dataset.view))));
     this.shadowRoot.querySelector("[data-back]")?.addEventListener("click", () => this.closeView());
-    this.shadowRoot.querySelector("[data-geraete-entfernung]")?.addEventListener("click", () => this.ermittleGeraeteEntfernung());
     this.shadowRoot.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", () => this.remove(b.dataset.delete)));
     this.shadowRoot.querySelector("[data-cancel]")?.addEventListener("click", () => this.cancel());
     this.shadowRoot.querySelector("form")?.addEventListener("submit", e => { e.preventDefault(); this.save(); });
@@ -817,8 +1416,25 @@ class HofkartePanel extends HTMLElement {
       const container = this.shadowRoot.querySelector(`[data-day-intervals="${day}"]`);
       const el = document.createElement("div");
       el.innerHTML = this.intervalRow(day, { beginn: "", ende: "" });
-      container.insertBefore(el.firstElementChild, b);
-      this.bind();
+      const neueZeile = el.firstElementChild;
+      container.insertBefore(neueZeile, b);
+      // Bewusst KEIN erneuter bind()-Aufruf: render() wird hier
+      // nicht durchlaufen (Formularzustand/Fokus soll erhalten bleiben,
+      // siehe Klassenkommentar oben), der restliche DOM existiert also
+      // unverändert weiter. Ein erneuter bind()-Aufruf würde auf allen
+      // bereits vorhandenen Elementen - u. a. diesem "+ weiteres
+      // Intervall"-Button selbst sowie dem Formular-submit-Handler -
+      // einen zusätzlichen, doppelten Listener registrieren (bind()
+      // entfernt keine bestehenden Listener). Behobener Bug: Jeder
+      // weitere Klick verdoppelte dadurch die Anzahl neu eingefügter
+      // Zeilen, und beim Abschicken des Formulars löste der mehrfach
+      // gebundene submit-Handler this.save() ebenso mehrfach aus - was
+      // bei einem neuen, noch ungespeicherten Hofladen (ohne id) zu
+      // mehreren, inhaltlich identischen Hofladen-Einträgen führte, da
+      // ws_save() für jeden Aufruf ohne id eine eigene, neue id vergibt.
+      // Stattdessen wird hier gezielt nur der "entfernen"-Button der
+      // neu eingefügten Zeile selbst verkabelt.
+      neueZeile.querySelector("[data-remove-interval]")?.addEventListener("click", () => neueZeile.remove());
     }));
     this.shadowRoot.querySelectorAll("[data-remove-interval]").forEach(b => b.addEventListener("click", () => b.parentElement.remove()));
 
@@ -826,8 +1442,15 @@ class HofkartePanel extends HTMLElement {
     this.shadowRoot.querySelector("[data-add-special]")?.addEventListener("click", () => {
       const el = document.createElement("div");
       el.innerHTML = `<div class="special" data-special><label>Von<input type=date name=datum_von></label><label>Bis<input type=date name=datum_bis></label><label>Beginn<input type=time name=beginn></label><label>Ende<input type=time name=ende></label><label>Geschlossen<input type=checkbox name=geschlossen></label><button type=button class=secondary data-remove-special>−</button></div>`;
-      this.shadowRoot.querySelector("#specials").append(el.firstElementChild);
-      this.bind();
+      const neueZeile = el.firstElementChild;
+      this.shadowRoot.querySelector("#specials").append(neueZeile);
+      // Derselbe Grund wie beim "+ weiteres Intervall"-Handler oben:
+      // gezielt nur den neu eingefügten "entfernen"-Button verkabeln,
+      // statt erneut bind() über den gesamten, unverändert
+      // bestehenden DOM laufen zu lassen (kein doppeltes Binden des
+      // "+ Sonderzeit hinzufügen"-Buttons bzw. des Formular-submit-
+      // Handlers).
+      neueZeile.querySelector("[data-remove-special]")?.addEventListener("click", () => neueZeile.remove());
     });
 
     // --- Bilder ---

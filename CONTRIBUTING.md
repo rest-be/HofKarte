@@ -56,7 +56,7 @@ Findings in beiden Werkzeugen).
 pytest custom_components/hofkarte/tests
 ```
 
-Erwartung: alle Tests grün (aktueller Stand: 292 Tests). Für neue
+Erwartung: alle Tests grün (aktueller Stand: 366 Tests). Für neue
 Funktionalität gilt:
 
 - Jede neue Fach-/Berechnungslogik (z. B. in `opening_hours.py`,
@@ -70,10 +70,21 @@ Funktionalität gilt:
 
 ## Branch- und Commit-Konventionen
 
-- **Branches:** `main` ist der einzige langlebige Branch (kein
-  `develop`-Branch, siehe „Git-Workflow“ in `docs/architecture.md`).
-  Feature-/Fix-Branches nach dem Muster `feature/kurzbeschreibung` bzw.
-  `fix/kurzbeschreibung` von `main` abzweigen.
+- **Branches:** Die aktive Entwicklung findet auf `develop` statt
+  (langlebiger Integrationsbranch); `main` bildet ausschliesslich den
+  jeweils zuletzt veröffentlichten, produktiven Releasestand ab und
+  wird nur im Rahmen eines Releases aktualisiert (siehe „Release-
+  Ablauf“ unten). Feature-/Fix-Branches nach dem Muster
+  `feature/kurzbeschreibung` bzw. `fix/kurzbeschreibung` von `develop`
+  abzweigen.
+- **Entwicklungsversionen:** Während der aktiven Entwicklung eines
+  Milestones trägt `manifest.json` die Version
+  `<Milestone>-dev.<LAUFNUMMER>` (z. B. `2026.9.1-dev.7`), fortlaufend
+  hochgezählt pro abgeschlossener Änderung. Vor der Veröffentlichung
+  wird mindestens ein Release Candidate `<Milestone>-rc.<LAUFNUMMER>`
+  (z. B. `2026.9.1-rc.1`) erstellt, geprüft und dokumentiert – erst
+  danach erfolgt der eigentliche produktive Release unter der reinen
+  Milestone-Version (z. B. `2026.9.1`) auf `main`.
 - **Commit-Nachrichten:** kurze, aussagekräftige erste Zeile (Deutsch,
   Imperativ, z. B. „Öffnungszeiten-Berechnung um Mitternachtsfall
   ergänzen“), bei Bedarf ausführlichere Beschreibung im Body. Kein
@@ -82,17 +93,31 @@ Funktionalität gilt:
 
 ## Pull-Request-Ablauf
 
-1. Von `main` abzweigen, Änderung umsetzen.
+1. Von `develop` abzweigen, Änderung umsetzen.
 2. Sicherstellen: `pytest`, `pyflakes` und `mypy` laufen fehlerfrei
    (siehe oben).
-3. `CHANGELOG.md` unter `## [Unveröffentlicht]` um die nutzerrelevante
-   Änderung ergänzen (Format: [Keep a Changelog](https://keepachangelog.com/de/1.0.0/)).
-4. Pull Request gegen `main` öffnen mit kurzer Beschreibung von **Was**
-   und **Warum**.
+3. `CHANGELOG.md` unter der aktuellen `<Milestone>-dev.<LAUFNUMMER>`-
+   Version um die nutzerrelevante Änderung ergänzen (Format:
+   [Keep a Changelog](https://keepachangelog.com/de/1.0.0/)).
+4. Pull Request gegen `develop` öffnen mit kurzer Beschreibung von
+   **Was** und **Warum**.
 5. Nach Review und grünen Checks: Merge durch den/die Projektbetreuer:in.
 
+## Release-Ablauf
+
+Sobald `develop` für einen Milestone funktional abgeschlossen ist:
+
+1. Ein oder mehrere Release Candidates (`<Milestone>-rc.<LAUFNUMMER>`)
+   auf `develop` erstellen: Dokumentation konsolidieren/nachführen,
+   Release-Metadaten prüfen, offensichtliche Unstimmigkeiten
+   bereinigen – ohne funktionale Codeänderung.
+2. Nach erfolgreicher Prüfung des Release Candidates: `develop` nach
+   `main` mergen, `manifest.json` auf die reine Milestone-Version
+   setzen (z. B. `2026.9.1`), `CHANGELOG.md`-Abschnitt entsprechend
+   umbenennen/datieren, GitHub Release/Tag auf `main` erstellen.
+
 Es gibt aktuell keine automatisierte CI-Pipeline; Tests/Linting werden
-manuell vor dem Merge ausgeführt.
+manuell vor Merge und Release ausgeführt.
 
 ## Umgang mit Übersetzungen
 

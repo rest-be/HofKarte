@@ -4,14 +4,16 @@ Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden (Direktvermarkter, Selbstbedienungsläden,
 Hofläden mit und ohne Personal).
 
-> **Status:** MVP-Release. Die Integration ist funktional vollständig
-> und getestet. Home Assistant ist sowohl Laufzeit- als auch
-> Verwaltungsoberfläche für HofKarte – die vom Benutzer gepflegten
-> Hofläden werden in einem integrationsinternen, persistenten Store
-> gehalten (keine externe Datenbank, kein externer Dienst). Zusätzlich
-> zu den regulären Home-Assistant-Entities bietet HofKarte eine
-> **eigene grafische Verwaltungsoberfläche** (Sidebar-Panel) für
-> Administrator:innen.
+> **Status:** Release Candidate. Die Integration ist funktional
+> vollständig und durchgehend getestet; der aktuelle Stand auf
+> `develop` wird vor der Veröffentlichung als produktiver Release
+> abschliessend geprüft (siehe `CHANGELOG.md`). Home Assistant ist
+> sowohl Laufzeit- als auch Verwaltungsoberfläche für HofKarte – die
+> vom Benutzer gepflegten Hofläden werden in einem
+> integrationsinternen, persistenten Store gehalten (keine externe
+> Datenbank, kein externer Dienst). Zusätzlich zu den regulären
+> Home-Assistant-Entities bietet HofKarte eine **eigene grafische
+> Verwaltungsoberfläche** (Sidebar-Panel) für Administrator:innen.
 
 **📖 Für die vollständige Anleitung als Endanwender:in siehe das
 [Anwendungshandbuch](docs/handbuch.md)** – Installation, Ersteinrichtung,
@@ -125,7 +127,37 @@ Home-Assistant-Actions.
 
 Nach der Einrichtung steht im Home-Assistant-Seitenmenü die
 Verwaltungsseite **HofKarte** zur Verfügung (nur für Administratoren
-sichtbar). Dort können Administratoren:
+sichtbar).
+
+**Übersicht (Kacheln, Liste oder Karte):** Ein Umschalter oberhalb der
+Übersicht wechselt zwischen einer **Kachel-Ansicht** (Hauptbild oder
+Platzhalter, Name, Adresse, anklickbare Webseite, Öffnungsstatus,
+Routing-Auswahl), einer **sortierbaren Listen-/Tabellenansicht** (Name,
+Adresse, Status – jede Spalte einzeln sortierbar, inkl. Freitextfilter
+und Routing-Auswahl je Zeile) und einer **eingebetteten Kartenansicht**
+mit einer Stecknadel je Hofladen mit hinterlegten Koordinaten (Klick
+öffnet ein Popup mit Namen und Button „Zur Detailansicht“; optionale
+Checkbox „Nur aktuell geöffnete Hofläden anzeigen“). In Kacheln und
+Liste öffnet ein Klick auf den Namen direkt die Detailansicht. Der
+Öffnungsstatus wird serverseitig über dieselbe Funktion berechnet, die
+auch die Entity „Geöffnet“ verwendet (`opening_hours.is_open`, siehe
+`management.py`) – keine abweichende Berechnung im Browser. Details
+zur Kartenansicht (Bibliothekswahl, externe Kommunikation) siehe
+Abschnitt „Standort auf Karte anzeigen“ unten und
+„Datenschutz- und Standort-Hinweise“.
+
+**Export/Import:** In Kacheln und Liste lassen sich Hofläden per
+Checkbox mehrfach auswählen und über einen Button als eine JSON-Datei
+exportieren (z. B. für Sicherungen oder zur Weitergabe). Eine solche
+Datei lässt sich über den Import-Button wieder einlesen; erkannte
+Duplikate (Übereinstimmung von Name und, falls vorhanden, Adresse)
+werden in einem Konfliktdialog mit farblich hervorgehobenen
+Unterschieden zur Entscheidung („Aktualisieren“/„Beibehalten“)
+vorgelegt – ohne Entscheidung bleibt der bestehende Datensatz
+unverändert. Details siehe Handbuch, Abschnitt „Hofläden exportieren
+und importieren“.
+
+Dort können Administratoren:
 
 - neue Hofläden erstellen,
 - bestehende Hofläden bearbeiten,
@@ -143,7 +175,7 @@ sichtbar). Dort können Administratoren:
 
 Zusätzlich gibt es eine **read-only Detailansicht** je Hofladen
 („Details“-Button in der Liste): zeigt alle Stammdaten, Adresse,
-Standort/Koordinaten (inkl. Karten-Button), Öffnungszeiten, Sortiment
+Standort/Koordinaten (inkl. Routing-Auswahl), Öffnungszeiten, Sortiment
 und Bilder kompakt und übersichtlich an, **ohne** editierbare Felder –
 gedacht für den schnellen Überblick, getrennt von der Bearbeitung. Die
 Gruppierung der Informationen (Allgemeines, Adresse, Standort, Kontakt,
@@ -168,15 +200,42 @@ gestalterisch konsistent zur restlichen Home-Assistant-Oberfläche
 (nutzt die Home-Assistant-Theme-Farbe `--info-color`, passt sich damit
 hellen wie dunklen Themes an).
 
-**Standort auf Karte anzeigen:** Neben den Koordinaten steht in
-„Bearbeiten“ **und** „Details“ ein Button „🗺️ Auf Google Maps anzeigen“
-zur Verfügung, der den Standort anhand der gespeicherten
-WGS84-Koordinaten in einem neuen Browser-Tab auf Google Maps öffnet.
-Der Button ist deaktiviert, solange keine gültigen Koordinaten
-hinterlegt sind. Beide Ansichten nutzen dieselbe Hilfsfunktion
-(`mapButton`/`googleMapsUrl` in `hofkarte-panel.js`) für identisches
-Verhalten. Öffnet nur eine externe, rein lesende Kartenansicht –
-verändert keine Daten.
+**Standort auf Karte anzeigen (Bearbeiten):** Neben den Koordinaten
+steht im Bearbeitungsformular weiterhin ein Button „🗺️ Auf Google Maps
+anzeigen“ zur Verfügung, der den Standort anhand der gerade
+eingegebenen WGS84-Koordinaten in einem neuen Browser-Tab auf Google
+Maps öffnet (Standort-Pin, keine Route) – zur Kontrolle der Eingabe,
+solange noch keine gespeicherte, konsistente Adresse vorliegt. Der
+Button ist deaktiviert, solange keine gültigen Koordinaten hinterlegt
+sind. Öffnet nur eine externe, rein lesende Kartenansicht – verändert
+keine Daten.
+
+**Route zum Hofladen (Kacheln, Liste, Details):** In diesen drei
+Ansichten steht statt des Kartenlinks eine kompakte Routing-Auswahl
+mit zwei Icon-Buttons zur Verfügung: 🗺️ öffnet eine Wegbeschreibung
+(Route, nicht nur ein Pin) in Google Maps, 🧭 dieselbe Wegbeschreibung
+in Apple Maps – jeweils in einem neuen Browser-Tab, ausgehend vom
+aktuellen Standort. Ist eine Adresse hinterlegt, wird sie als
+Routenziel verwendet; sonst, falls vorhanden, die WGS84-Koordinaten.
+Ohne Adresse und ohne gültige Koordinaten sind beide Buttons
+deaktiviert. Beide Kartendienste erhalten das Ziel als reinen
+Freitext bzw. `lat,lon` – es findet keine eigene Geocoding-Umwandlung
+und keine Kommunikation mit einem zusätzlichen Geodienst statt.
+
+**Eingebettete Kartenansicht (alle Hofläden gleichzeitig):** Die
+Übersichtsansicht „🗺️ Karte“ zeigt zusätzlich zur externen
+Routing-Auswahl eine **eingebettete** Karte mit einer Stecknadel für
+**jeden** Hofladen mit gültigen Koordinaten gleichzeitig – dafür
+technisch nötig, da eine einzelne externe Karte immer nur einen
+Standort zeigt. Umgesetzt mit [Leaflet](https://leafletjs.com/) `1.9.4`
+und OpenStreetMap-Kartenkacheln, per `<script>`/`<link>` mit fest
+gepinnter Version von einem CDN nachgeladen – bewusst erst beim ersten
+Öffnen dieser Ansicht, keine Build-Pipeline, kein API-Schlüssel nötig.
+Das ist eine bewusste, im Architekturdokument begründete Ausnahme vom
+Projektgrundsatz „keine neuen Abhängigkeiten“ (siehe
+`docs/architecture.md`). Der Klick auf eine Stecknadel führt über ein
+Popup mit Button „Zur Detailansicht“ zur selben Detailansicht wie in
+Kacheln/Liste.
 
 **Technischer Aufbau:** `frontend.py` registriert das Sidebar-Panel
 sowie die statischen JS-Assets; `management.py` stellt dafür
@@ -308,25 +367,6 @@ Haversine-Formel. Zustand „unbekannt“, wenn der Hofladen keine
 Koordinaten hinterlegt hat oder die Home-Assistant-Position nicht
 bekannt ist – es wird kein Wert erfunden oder geschätzt (siehe
 „Datenschutz- und Standort-Hinweise“ unten).
-
-**Entfernung vom aktuellen Gerät:** Da eine Home-Assistant-Entity nur
-**einen** Zustand für alle Betrachter:innen hat, kann der obige Sensor
-nicht die Entfernung vom jeweils gerade verwendeten Gerät zeigen. In der
-Detailansicht der Verwaltungsoberfläche steht dafür **zusätzlich** ein
-Button „📍 Entfernung von diesem Gerät berechnen“ zur Verfügung, der
-über die Browser-Geolocation-API rein clientseitig die Entfernung vom
-aktuellen Gerät berechnet (dieselbe Haversine-Formel, in
-`hofkarte-panel.js` dupliziert). Der Gerätestandort wird dabei
-ausschliesslich lokal im Browser verwendet, nicht gespeichert und nicht
-an das Backend übertragen.
-
-**Wichtig – sichere Verbindung erforderlich:** Browser gewähren
-Geolocation-Zugriff ausschliesslich in einem „sicheren Kontext“
-(HTTPS oder `localhost`). Wird Home Assistant wie im Heimnetz üblich
-über einfaches `http://` aufgerufen (z. B. `http://192.168.1.50:8123`),
-zeigt der Button die Meldung „Standortermittlung erfordert eine sichere
-Verbindung“ – das ist keine Fehlfunktion, sondern eine grundsätzliche
-Browser-Einschränkung, die durch HofKarte nicht umgangen werden kann.
 
 ### Bilder
 
@@ -574,9 +614,22 @@ Erwartetes Verhalten – HofKarte ist eine Single-Instance-Integration
 Geräte & Dienste** verwenden.
 
 **Das Verwaltungs-Panel erscheint nicht im Seitenmenü:** Nur
-Administratoren sehen das Panel. Home Assistant neu laden
-(Browser-Cache leeren, falls das Panel nach einem Update von HofKarte
-nicht aktualisiert erscheint).
+Administratoren sehen das Panel. Home Assistant neu laden.
+
+**Nach einem Update von HofKarte zeigt das Panel weiterhin den alten
+Stand (z. B. fehlende Kacheln-/Listen-/Kartenansicht):** Behobener Bug
+(siehe CHANGELOG, `2026.9.1-dev.3`) – `js_url` des Panels enthält seit
+dieser Version einen sich pro Integrationsversion ändernden
+Query-Parameter (`?v=<version>`), der den Browser zwingt, nach einem
+Update eine neue, ihm bisher unbekannte URL zu laden, statt eine
+bereits zwischengespeicherte ältere Fassung von `hofkarte-panel.js`
+unbegrenzt weiterzuverwenden. Ab dieser Version behebt sich das Problem
+bei jedem künftigen Update automatisch. Beim **einmaligen** Wechsel auf
+diese oder eine neuere Version kann – je nachdem, wie hartnäckig der
+Browser die alte, unversionierte URL zwischengespeichert hat –
+zusätzlich ein einmaliger harter Neuladen der Seite
+(<kbd>Strg</kbd>/<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>) nötig
+sein.
 
 **Entity „Geöffnet“ zeigt dauerhaft „unbekannt“:** Für den Hofladen sind
 keine Öffnungszeiten hinterlegt. Über die Verwaltungsoberfläche
@@ -632,21 +685,27 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
 ## Datenschutz- und Standort-Hinweise
 
 - **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
-  externen Servern (ausser dem Laden von Hofladen-Bildern über die vom
-  Benutzer hinterlegten Bild-URLs, siehe „Bilder“). Es findet keine
-  Telemetrie und keine Datenübertragung an Dritte statt.
+  externen Servern – mit zwei Ausnahmen: dem Laden von Hofladen-Bildern
+  über die vom Benutzer hinterlegten Bild-URLs (siehe „Bilder“) sowie
+  dem Laden der Kartenbibliothek Leaflet und der Kartenkacheln von
+  OpenStreetMap, sobald die Übersichtsansicht „🗺️ Karte“ tatsächlich
+  geöffnet wird (siehe „Eingebettete Kartenansicht“ oben) – dabei werden
+  nur Kachel-/Ausschnittkoordinaten übertragen, keine Hofladen- oder
+  Standortdaten im Klartext. Ausserhalb davon findet keine Telemetrie
+  und keine Datenübertragung an Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor liest
   ausschliesslich die statische, in Home Assistant konfigurierte
   Position (`hass.config.latitude`/`longitude`) – kein `device_tracker`,
   keine Personen- oder Geräteverfolgung. Diese Position wird von
   HofKarte nicht gespeichert und nicht an externe Dienste übertragen;
   die Berechnung erfolgt vollständig lokal.
-- **Standort (aktuelles Gerät):** Der optionale Button „Entfernung von
-  diesem Gerät berechnen“ in der Detailansicht nutzt die
-  Browser-Geolocation-API nur nach expliziter Zustimmung im Browser.
-  Der Gerätestandort wird ausschliesslich im Browser für die einmalige
-  Berechnung verwendet, nirgends gespeichert und **nicht** an das
-  Home-Assistant-Backend übertragen.
+- **Routing-Auswahl (Google Maps/Apple Maps):** Die Buttons „🗺️“/„🧭“ in
+  Kacheln-, Listen- und Detailansicht öffnen erst nach einem bewussten
+  Klick einen neuen Browser-Tab bei Google bzw. Apple; dabei werden die
+  Adresse oder Koordinaten des jeweiligen Hofladens als Link-Parameter
+  an den externen Kartendienst übertragen (kein eigener Geocoding-/
+  Geodienst-Aufruf durch HofKarte selbst, keine Übertragung im
+  Hintergrund ohne Klick).
 - **Persistenz:** Alle Hofladen-Daten liegen ausschliesslich lokal im
   Home-Assistant-Storage (`.storage/`-Verzeichnis der
   Konfiguration) – keine Cloud-Synchronisation.

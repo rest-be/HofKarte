@@ -97,6 +97,44 @@ Nach der Einrichtung erscheint im Home-Assistant-Seitenmenü ein neuer
 Eintrag **HofKarte** (nur für Administrator:innen-Konten sichtbar). Dort
 können Hofläden verwaltet werden:
 
+### Übersicht: Kacheln, Liste oder Karte
+
+Oben auf der Übersichtsseite steht ein Umschalter
+„🔲 Kacheln“/„📋 Liste“/„🗺️ Karte“ zur Verfügung:
+
+- **Kacheln** (Standardansicht): eine Kachel pro Hofladen mit Hauptbild
+  (oder einem neutralen Platzhalter, falls keines hinterlegt ist),
+  Name, Adresse, anklickbarer Webseite (sofern hinterlegt und gültig),
+  einem Hinweis „🟢 Geöffnet“/„🔴 Geschlossen“/„Unbekannt“ sowie – bei
+  hinterlegter Adresse oder gültigen Koordinaten – einer kompakten
+  Routing-Auswahl (siehe unten).
+- **Liste:** eine Tabelle mit den Spalten Name, Adresse, Status und
+  Route, **jede Spalte einzeln sortierbar** (Klick auf die Kopfzeile,
+  erneuter Klick kehrt die Richtung um). Ein Freitextfeld oberhalb der
+  Tabelle filtert nach Name oder Adresse; jede Zeile hat ebenfalls die
+  Routing-Auswahl.
+- **Karte:** eine eingebettete Karte mit einer Stecknadel je Hofladen
+  mit hinterlegten Koordinaten. Ein Klick auf eine Stecknadel öffnet
+  ein kleines Fenster mit dem Namen des Hofladens und einem Button
+  „Zur Detailansicht“. Die Karte passt ihren Ausschnitt automatisch so
+  an, dass alle angezeigten Stecknadeln sichtbar sind. Eine Checkbox
+  „Nur aktuell geöffnete Hofläden anzeigen“ blendet Hofläden aus, die
+  gerade nicht geöffnet sind oder deren Status unbekannt ist (fehlende
+  Öffnungszeiten zählen dabei **nicht** als geöffnet). Sind für keinen
+  Hofladen Koordinaten hinterlegt, erscheint statt einer leeren Karte
+  ein entsprechender Hinweis. Die Kartenkacheln werden von
+  OpenStreetMap geladen, sobald diese Ansicht zum ersten Mal geöffnet
+  wird (siehe Kapitel 14, Datenschutz).
+
+In den Ansichten „Kacheln“ und „Liste“ öffnet ein Klick auf den
+**Namen** eines Hofladens direkt dessen Detailansicht (Kapitel 4
+unten) – zusätzlich zu den bestehenden Buttons
+„Details“/„Bearbeiten“/„Löschen“. In der Kartenansicht führt
+stattdessen der Button „Zur Detailansicht“ im Popup einer Stecknadel
+zum selben Ziel. Der Hinweis „Geöffnet“/„Geschlossen“ wird serverseitig
+berechnet und stimmt daher stets mit dem tatsächlichen Zustand der
+Entity „Geöffnet“ (Kapitel 5) überein.
+
 - **Neuer Hofladen:** über die Verwaltungsseite anlegen (Name,
   Beschreibung, Bemerkung, Adresse, PLZ/Ort, Land, Koordinaten,
   Webseite, Öffnungszeiten, Sortiment, Bilder).
@@ -109,6 +147,43 @@ können Hofläden verwaltet werden:
   Detailansicht gelangt man bei Bedarf gezielt in den Bearbeitungsmodus.
 - **Löschen:** Hofladen kontrolliert entfernen (inklusive des
   zugehörigen Geräts und aller Entities in Home Assistant).
+
+### Hofläden exportieren und importieren
+
+In den Ansichten „Kacheln“ und „Liste“ steht neben jedem Hofladen eine
+Checkbox „Auswählen“ zur Verfügung (in der Listenansicht als eigene
+Spalte). Über der Übersicht erscheinen dazu passend die Buttons
+„Alle auswählen“, „Auswahl aufheben“, „⬇️ Export“ und „⬆️ Import“:
+
+- **Export:** Mindestens einen Hofladen auswählen und auf „⬇️ Export“
+  klicken – der Browser lädt eine einzelne JSON-Datei mit allen
+  ausgewählten Hofläden herunter (Dateiname
+  `hoflaeden-export-<Zeitstempel>.json`). Diese Datei enthält
+  ausschliesslich die gespeicherten Daten (keine berechneten Werte wie
+  den aktuellen Öffnungsstatus) und lässt sich als Sicherung
+  aufbewahren oder an andere HofKarte-Nutzer:innen weitergeben.
+- **Import:** Auf „⬆️ Import“ klicken und eine zuvor exportierte
+  JSON-Datei auswählen. Ist die Datei fehlerhaft (kein gültiges JSON,
+  falsche Struktur, ungültige Werte), erscheint eine klare
+  Fehlermeldung und **nichts** wird verändert.
+  - Erkennt HofKarte für einen zu importierenden Hofladen einen
+    bereits vorhandenen mit demselben Namen (und, sofern beide eine
+    Adresse besitzen, auch derselben Adresse), öffnet sich ein
+    Konfliktdialog: Bestehender und importierter Datensatz werden
+    nebeneinander mit farblich hervorgehobenen Unterschieden
+    (abweichende Felder rot/grün markiert) angezeigt. Für jedes
+    Duplikat wird „Aktualisieren“ (bestehenden Hofladen mit den
+    importierten Daten überschreiben) oder „Beibehalten“ (bestehenden
+    Hofladen unverändert lassen, importierte Version verwerfen)
+    gewählt. Über „Alle aktualisieren“/„Alle beibehalten“ lässt sich
+    dieselbe Entscheidung auf einen Schlag für alle gefundenen
+    Duplikate treffen. Ohne getroffene Entscheidung wird ein Duplikat
+    beim Abschluss automatisch **beibehalten** – ein Import kann so
+    nichts versehentlich überschreiben.
+  - Hofläden ohne erkanntes Duplikat werden ohne Rückfrage als neue
+    Hofläden angelegt.
+  - Nach Abschluss zeigt eine Meldung, wie viele Hofläden neu
+    angelegt, aktualisiert bzw. beibehalten (übersprungen) wurden.
 
 ### Bilder hochladen
 
@@ -235,14 +310,30 @@ Koordinaten speichert. Ein deutlich sichtbarer, blau hinterlegter
 Infobutton (ⓘ) neben den Feldern zeigt eine kurze Erklärung direkt im
 Formular.
 
-**Standort auf einer Karte ansehen:** Sowohl in „Bearbeiten“ als auch
-in der Detailansicht (Kapitel 4) steht neben den Koordinaten ein Button
-„🗺️ Auf Google Maps anzeigen“ zur Verfügung. Ein Klick öffnet den
-Standort anhand der gespeicherten WGS84-Koordinaten in einem neuen
-Browser-Tab auf Google Maps. Der Button ist ausgegraut/deaktiviert,
-solange für den Hofladen keine gültigen Koordinaten hinterlegt sind.
-Die Kartenansicht ist rein informativ – es lassen sich dort keine Daten
-verändern.
+**Standort beim Bearbeiten ansehen:** Im Bearbeitungsformular steht
+neben den Koordinatenfeldern weiterhin ein Button „🗺️ Auf Google Maps
+anzeigen“ zur Verfügung. Ein Klick öffnet den Standort anhand der
+gerade eingegebenen WGS84-Koordinaten in einem neuen Browser-Tab auf
+Google Maps (als Pin, ohne Route) – so lässt sich die Eingabe vor dem
+Speichern kontrollieren. Der Button ist ausgegraut/deaktiviert, solange
+keine gültigen Koordinaten eingegeben sind. Die Kartenansicht ist rein
+informativ – es lassen sich dort keine Daten verändern.
+
+**Route zum Hofladen öffnen:** In den Ansichten „Kacheln“, „Liste“ und
+„Details“ steht statt dieses Kartenlinks eine kompakte Routing-Auswahl
+mit zwei Icon-Buttons zur Verfügung:
+
+- 🗺️ öffnet eine Wegbeschreibung zum Hofladen in **Google Maps**.
+- 🧭 öffnet dieselbe Wegbeschreibung in **Apple Maps**.
+
+Beide öffnen in einem neuen Browser-Tab eine echte Route ausgehend vom
+aktuellen Standort – nicht nur einen Pin. Ist beim Hofladen eine
+Adresse hinterlegt, wird sie als Ziel verwendet; nur wenn keine Adresse,
+aber gültige Koordinaten vorhanden sind, dienen diese als Ziel. Sind
+weder Adresse noch gültige Koordinaten hinterlegt, sind beide Buttons
+deaktiviert. Es findet dabei keine Kommunikation mit einem
+zusätzlichen Geodienst statt – Adresse bzw. Koordinaten werden direkt
+als Linkparameter an Google/Apple Maps übergeben.
 
 **Woher bekomme ich die Koordinaten eines Hofladens?** Auf Google Maps
 oder einem anderen Kartendienst den gewünschten Ort suchen, mit der
@@ -271,34 +362,6 @@ Höhenunterschiede oder Reisezeit – es ist eine reine Luftlinie.
   `device_tracker`, keine Personen-/Geräteverfolgung) – nur die
   statische, einmal konfigurierte Home-Position wird gelesen (siehe
   Kapitel 14, Datenschutz).
-
-### Entfernung vom aktuellen Gerät
-
-Da eine Home-Assistant-Entity nur **einen** Zustand für alle
-Betrachter:innen gleichzeitig haben kann, kann der obige Sensor nicht
-zeigen, wie weit **du gerade persönlich** vom Hofladen entfernt bist.
-Dafür steht in der **Detailansicht** eines Hofladens zusätzlich ein
-Button „📍 Entfernung von diesem Gerät berechnen“ zur Verfügung:
-
-1. Button anklicken.
-2. Der Browser fragt (beim ersten Mal) um Erlaubnis, den Standort zu
-   verwenden – diese Anfrage bestätigen.
-3. Die Entfernung wird direkt im Browser berechnet und angezeigt.
-
-Wird der Standortzugriff verweigert, ist er nicht verfügbar, oder
-dauert die Ermittlung zu lange, erscheint eine entsprechende, klare
-Meldung statt eines falschen Werts. Der Gerätestandort wird
-ausschliesslich für diese einmalige Berechnung im Browser verwendet –
-er wird **nicht** gespeichert und **nicht** an Home Assistant
-übertragen (siehe Kapitel 14, Datenschutz).
-
-**Meldung „Standortermittlung erfordert eine sichere Verbindung“:**
-Browser erlauben Standortzugriff nur über HTTPS oder `localhost`. Wird
-Home Assistant über einfaches `http://` aufgerufen (im Heimnetz
-üblich, z. B. `http://192.168.1.50:8123`), erscheint diese Meldung statt
-eines Freigabe-Dialogs – das ist eine grundsätzliche
-Browser-Einschränkung, keine Fehlfunktion von HofKarte. Abhilfe:
-Home Assistant über HTTPS oder über `localhost` aufrufen.
 
 ## 8. Angebote und Zahlungsarten
 
@@ -483,8 +546,18 @@ Kapitel 2 (Single-Instance). Die bestehende Instanz unter
 **Einstellungen → Geräte & Dienste** verwenden.
 
 **Das Verwaltungs-Panel „HofKarte“ erscheint nicht im Seitenmenü:** Nur
-sichtbar für Administrator:innen-Konten. Browser-Cache leeren, falls es
-nach einem Update nicht aktualisiert erscheint.
+sichtbar für Administrator:innen-Konten.
+
+**Nach einem Update zeigt das Panel weiterhin den alten Stand** (z. B.
+fehlende Kacheln-/Listen-/Kartenansicht): Behobener Bug (ab
+`2026.9.1-dev.3`) – die Panel-Adresse enthält seit dieser Version einen
+sich pro Version ändernden Query-Parameter, der einen erneuten Abruf
+beim Browser erzwingt, statt eine bereits zwischengespeicherte, ältere
+Fassung unbegrenzt weiterzuverwenden. Ab dieser Version löst sich das
+Problem bei künftigen Updates automatisch; beim Wechsel auf diese
+Version selbst kann noch ein einmaliger harter Neuladen der Seite
+(<kbd>Strg</kbd>/<kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>) nötig
+sein.
 
 **Entity „Geöffnet“ zeigt dauerhaft „Unbekannt“:** Für den Hofladen sind
 keine Öffnungszeiten hinterlegt – über die Verwaltungsoberfläche
@@ -561,9 +634,16 @@ unverändert (siehe Kapitel 14).
 ## 14. Datenschutz
 
 - **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
-  externen Servern – mit einer Ausnahme: Wird für einen Hofladen ein
+  externen Servern – mit zwei Ausnahmen: Wird für einen Hofladen ein
   Hauptbild über eine externe URL hinterlegt, ruft Home Assistant diese
-  URL beim Anzeigen des Bildes ab (siehe Kapitel 5, „Hauptbild“).
+  URL beim Anzeigen des Bildes ab (siehe Kapitel 5, „Hauptbild“); und
+  öffnet man in der Übersicht die Kartenansicht „🗺️ Karte“, lädt der
+  Browser die Kartenbibliothek Leaflet sowie die eigentlichen
+  Kartenkacheln von OpenStreetMap (siehe Kapitel 4, „Übersicht“) –
+  beides ausschliesslich beim tatsächlichen Öffnen dieser Ansicht,
+  nicht beim Start des Panels. Dabei werden ausschliesslich die für die
+  Kartendarstellung nötigen Ausschnitts-/Kachelkoordinaten übertragen,
+  keine Hofladen- oder Standortdaten im Klartext an OpenStreetMap.
   Ausserhalb davon findet keine Telemetrie und keine Datenübertragung an
   Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor
@@ -571,11 +651,12 @@ unverändert (siehe Kapitel 14).
   konfigurierte Position – kein `device_tracker`, keine Personen- oder
   Geräteverfolgung. Diese Position wird von HofKarte nicht separat
   gespeichert und nicht an externe Dienste übertragen.
-- **Standort (aktuelles Gerät):** Der optionale Button „Entfernung von
-  diesem Gerät berechnen“ (Kapitel 7) nutzt den Standort deines
-  Geräts/Browsers nur nach deiner ausdrücklichen Zustimmung. Dieser
-  Standort wird ausschliesslich einmalig im Browser verwendet, nicht
-  gespeichert und nicht an Home Assistant übertragen.
+- **Routing-Auswahl (Google Maps/Apple Maps):** Die Buttons „🗺️“/„🧭“
+  (Kapitel 4/7) öffnen erst nach einem bewussten Klick einen neuen
+  Browser-Tab bei Google bzw. Apple; dabei werden Adresse oder
+  Koordinaten des jeweiligen Hofladens als Link-Parameter an den
+  externen Kartendienst übertragen (kein eigener Geocoding-Aufruf
+  durch HofKarte selbst, keine Übertragung im Hintergrund ohne Klick).
 - **Speicherort aller Daten:** Alle Hofladen-Daten (Name, Adresse,
   Koordinaten, Öffnungszeiten, Sortiment, Bild-Adressen) liegen
   ausschliesslich lokal im Home-Assistant-Storage

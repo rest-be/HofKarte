@@ -13,6 +13,173 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.1-rc.1] - Release Candidate (develop)
+
+Erster Release Candidate für `2026.9.1`, konsolidiert aus den sieben
+Entwicklungsversionen `2026.9.1-dev.1` bis `-dev.7` (Issues #1–#6).
+Kein produktiver Release (kein Merge nach `main`, kein Tag) – dient der
+abschliessenden Prüfung vor der Veröffentlichung.
+
+### Hinzugefügt
+
+- **Übersicht als Kacheln oder Liste (Issue #1):** Neuer Umschalter
+  „🔲 Kacheln“/„📋 Liste“ oberhalb der Hofladen-Übersicht.
+  - **Kacheln:** erweitert um Hauptbild (mit neutralem Platzhalter ohne
+    gültiges Bild), klickbaren Namen (öffnet die Detailansicht,
+    zusätzlich zum bestehenden „Details“-Button), anklickbare Webseite,
+    Öffnungsstatus-Badge und einen Karten-Button bei hinterlegten
+    Koordinaten (letzterer mit Issue #3 durch die Routing-Auswahl
+    ersetzt, siehe unten).
+  - **Liste (neu):** sortierbare Tabelle (Name, Adresse, Status – jede
+    Spalte einzeln, beide Richtungen), Freitextfilter über Name/Adresse,
+    Karten-Button je Zeile. Vollständig clientseitig, kein neuer
+    Backend-Endpunkt für Sortierung/Filterung nötig.
+  - `management.py` liefert seither zwei neue, serverseitig berechnete
+    Felder über `ws_list`/`ws_save` (`geoeffnet`, `hauptbild_url`), um
+    Duplikation sicherheitsrelevanter bzw. zeitzonenabhängiger Logik in
+    JavaScript zu vermeiden – keine Breaking Changes an bestehenden
+    WebSocket-Verträgen. 8 neue Backend-Tests (`test_management.py`).
+- **Übersicht als Karte (Issue #2):** Dritte Umschalter-Option
+  „🗺️ Karte“ – Marker je Hofladen mit gültigen Koordinaten, Popup mit
+  Name und Button „Zur Detailansicht“, automatische Kartenausschnitt-
+  Anpassung (`fitBounds`), Checkbox „Nur aktuell geöffnete Hofläden
+  anzeigen“ (unbekannter Status gilt konsequent **nicht** als
+  geöffnet), klare Fehlermeldung statt leerer Fläche bei
+  nicht ladbarer Kartenbibliothek. **Neue, bewusst dokumentierte
+  Abhängigkeit:** [Leaflet](https://leafletjs.com/) `1.9.4`
+  (BSD-2-Clause) mit OpenStreetMap-Kartenkacheln, ausschliesslich per
+  `<script>`/`<link>` von einem CDN mit fest gepinnter Version
+  nachgeladen (kein „latest“, keine Paketverwaltung, keine
+  Build-Pipeline), erst beim ersten Öffnen der Kartenansicht geladen.
+  Begründung und geprüfte Alternativen siehe `docs/architecture.md`.
+- **Export/Import von Hofläden (Issue #5):** In Kachel- und Listenansicht
+  können einzelne Hofläden per Checkbox ausgewählt und über einen
+  „Export“-Button als eine JSON-Datei (Liste von Hofladen-Objekten,
+  identisch zum internen Datenmodell) heruntergeladen werden. Ein
+  „Import“-Button erlaubt die Auswahl einer solchen JSON-Datei; die
+  Struktur wird serverseitig validiert (neuer WebSocket-Befehl
+  `hofkarte/management/import_preview`) und mit einer klaren
+  Fehlermeldung abgelehnt, falls sie ungültig ist – ohne jeden
+  Teil-Import. Erkennt die Vorschau ein mögliches Duplikat (Name
+  **und**, sofern beide Datensätze eine Adresse besitzen, auch die
+  Adresse stimmen überein), erscheint ein Konfliktdialog mit einer
+  farblich hervorgehobenen Gegenüberstellung von bestehendem und
+  importiertem Datensatz; pro Duplikat kann „Aktualisieren“ oder
+  „Beibehalten“ gewählt werden (zusätzlich als Komfortfunktion: „Alle
+  aktualisieren“/„Alle beibehalten“). Unentschiedene Duplikate bleiben
+  beim Abschluss des Imports sicher erhalten statt stillschweigend
+  überschrieben zu werden. Der tatsächliche Import (neuer
+  WebSocket-Befehl `hofkarte/management/import_commit`) validiert und
+  schreibt in zwei Phasen (erst alle Einträge vollständig prüfen, dann
+  erst schreiben), damit ein ungültiger Einzeleintrag nie zu einem
+  beschädigten oder teilweise übernommenen Bestand führt. Eine in der
+  Importdatei enthaltene, von einer anderen HofKarte-Installation
+  stammende `id` wird für neu angelegte Hofläden verworfen und durch
+  eine frisch vergebene, lokale ID ersetzt. 28 neue Tests: 19 in
+  `test_management.py`, 9 strukturelle Tests in
+  `test_static_panel_js_export_import.py`.
+
+### Geändert
+
+- **Navigation zum Hofladen (Issue #3):** Der bisherige einzelne
+  Kartenlink „🗺️ Auf Google Maps anzeigen“ (zeigte nur einen
+  Standort-Pin, keine Route) wird in Kacheln-, Listen- und
+  Detailansicht durch eine kompakte Routing-Auswahl mit zwei
+  Icon-Buttons ersetzt: 🗺️ öffnet eine echte Wegbeschreibung in Google
+  Maps, 🧭 dieselbe Wegbeschreibung in Apple Maps – jeweils ausgehend
+  vom aktuellen Standort. Ist eine Adresse hinterlegt, hat sie beim
+  Routing Vorrang vor Koordinaten; ohne Adresse und ohne gültige
+  Koordinaten sind beide Buttons deaktiviert. Das Bearbeitungsformular
+  behält seinen bisherigen, einzelnen Google-Maps-Link zur
+  Koordinatenkontrolle unverändert (dort ist Adress-Routing nicht
+  sinnvoll, da ggf. noch keine gespeicherte, konsistente Adresse
+  vorliegt). 11 neue Tests (`test_static_panel_js_routing.py`):
+  Routing-URL-Schemata, Adress-Priorität vor Koordinaten, deaktivierter
+  Zustand ohne Ziel.
+
+### Behoben
+
+- **Panel zeigte nach einem Update weiterhin den alten Stand** (z. B.
+  fehlende Kacheln-/Listen-/Kartenansicht aus Issue #1/#2, obwohl der
+  Code selbst korrekt aktualisiert war): `frontend.py` übergab
+  `hofkarte-panel.js` bislang unter einer über alle Versionen hinweg
+  identischen URL – Browser (teils auch Home Assistants eigenes
+  Frontend) cachen per Custom-Panel geladenes JavaScript anhand dieser
+  URL, nicht anhand des Dateiinhalts, und lieferten dadurch nach einem
+  Update weiterhin eine bereits zwischengespeicherte ältere Fassung
+  aus. Behoben durch einen neuen, sich pro Integrationsversion
+  ändernden Query-Parameter (`?v=<version>`, aus `manifest.json`
+  gelesen) an `js_url` – siehe `docs/architecture.md`. **Einmalig**
+  konnte beim Wechsel auf diese Version noch ein harter Neuladen der
+  Seite nötig sein; künftige Updates lösen das Problem seither
+  automatisch. 2 neue Tests (`test_frontend.py`).
+- **Kartenansicht (Issue #2) zeigte statt eines Standortmarkers ein
+  defektes Bild-Icon ("?") an** (Issue #4): Leaflets eigene, bild-
+  basierte Standard-Icon-Erkennung (`Icon.Default._detectIconPath`)
+  erzeugt ein Sondierungselement im echten, globalen `document.body`
+  und fragt andernfalls `document.querySelector('link[href$="leaflet.css"]')`
+  ab. Beides findet das `<link rel="stylesheet">` nicht, das
+  `karteAnsicht()` innerhalb des Shadow DOM des `<hofkarte-panel>`-
+  Elements einbindet – Shadow-DOM-Grenzen werden dabei weder für die
+  Style-Zuordnung noch für `querySelector()` durchquert. Dadurch blieb
+  `Icon.Default.imagePath` leer und das erzeugte Marker-`<img>` zeigte
+  ein defektes Bild. Behoben, indem Marker nun ein eigenes, reines
+  Inline-SVG-Icon über `L.divIcon()` erhalten (neue Funktion
+  `erzeugeKarteMarkerIcon()` in `hofkarte-panel.js`) – ohne zusätzliche
+  Bildressource, ohne weiteren Netzwerk-Request und unabhängig von
+  Leaflets Shadow-DOM-inkompatibler Pfaderkennung. Marker-Position,
+  Popup-Inhalt/-Navigation und der Filter „nur aktuell geöffnete
+  Hofläden“ bleiben unverändert. 6 neue Tests (`test_static_panel_js.py`).
+- **Öffnungszeiten-Intervalle verdoppelten sich bei jedem Klick auf
+  „+ weiteres Intervall“, zusätzlich entstanden beim Speichern
+  doppelte, inhaltlich identische Hofladen-Einträge (Issue #6):**
+  `bind()` registriert Event-Listener, ohne zuvor bestehende zu
+  entfernen. Das ist unproblematisch, solange `bind()` ausschliesslich
+  einmalig nach einem vollständigen `innerHTML`-Ersatz in `render()`
+  läuft. Die Handler für „+ weiteres Intervall“ und „+ Sonderzeit
+  hinzufügen“ fügten eine neue Zeile jedoch gezielt per DOM-Insert ein
+  (bewusst ohne vollständigen Re-Render, um den restlichen
+  Formularzustand/Fokus zu erhalten) und riefen danach erneut
+  `this.bind()` auf demselben, unverändert bestehenden DOM auf – dabei
+  erhielten bereits vorhandene Elemente (u. a. der Button selbst sowie
+  der Formular-`submit`-Handler) bei jedem weiteren Klick einen
+  zusätzlichen, doppelten Listener obendrauf. Dadurch verdoppelte sich
+  die Anzahl neu eingefügter Zeilen pro Klick näherungsweise, und beim
+  Abschicken des Formulars löste der mehrfach gebundene
+  `submit`-Handler `this.save()` mehrfach aus – da ein neuer, noch
+  ungespeicherter Hofladen zu diesem Zeitpunkt keine `id` besitzt,
+  vergab `ws_save` bei jedem dieser parallelen Aufrufe eine neue,
+  eigene ID, wodurch mehrere identische Hofladen-Einträge entstanden.
+  Behoben, indem beide Handler `bind()` nicht mehr erneut aufrufen,
+  sondern gezielt nur den „entfernen“-Button der jeweils neu
+  eingefügten Zeile direkt verkabeln. 5 neue Tests
+  (`test_static_panel_js_formular_listener.py`).
+
+### Entfernt
+
+- **„Entfernung von diesem Gerät berechnen“ (Issue #3):** Der optionale
+  Button in der Detailansicht, der rein clientseitig über die
+  Browser-Geolocation-API die Luftlinien-Entfernung vom aktuell
+  verwendeten Gerät berechnete, wurde vollständig entfernt (Code und
+  Dokumentation) – laut Issue nicht mehr benötigt. Der unabhängige,
+  serverseitige Entfernungs-Sensor (`distance.py`, Entfernung zur in
+  Home Assistant konfigurierten Position) ist davon **nicht** betroffen
+  und bleibt unverändert bestehen. 11 neue Tests
+  (`test_static_panel_js_routing.py`, siehe „Geändert“ oben) decken
+  zusätzlich die vollständige Entfernung aus dem Quelltext ab.
+
+### Ausdrücklich unverändert
+
+- Detailansicht, Bearbeitungsansicht, Bilder-Upload,
+  Zahlungsarten-Logik sowie alle bestehenden WebSocket-Verträge und
+  Actions über die gesamte `dev.1`–`dev.7`-Reihe hinweg: keine
+  Breaking Changes.
+
+### Tests
+
+- 60 neue Tests seit `2026.9.0` (306 → 366), `pyflakes`/`mypy`/
+  `node --check` durchgehend fehlerfrei.
+
 ## [2026.9.0] - 2026-09-17
 
 ### Erstes offizielles Release (MVP)
