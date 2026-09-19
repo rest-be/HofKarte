@@ -181,23 +181,67 @@ erfasst und angezeigt – identisch zum internen Datenmodell
 Koordinatentransformation** statt: Eingabe-, Speicher- und
 Anzeigeformat sind durchgehend dasselbe.
 
-Sowohl „Bearbeiten“ als auch „Details“ bieten einen Button, der den
-Hofladen-Standort auf Google Maps öffnet (`hofkarte-panel.js`,
-Funktionen `googleMapsUrl`/`mapButton` – **eine** gemeinsame
-Implementierung für beide Ansichten, kein Code-Duplikat). Die
-gespeicherten WGS84-Koordinaten werden direkt in Google Maps' offiziell
-dokumentiertes URL-Schema übernommen
+Das Bearbeitungsformular bietet weiterhin einen Button, der den anhand
+der gerade eingegebenen Koordinaten ermittelten Standort auf Google
+Maps öffnet (`hofkarte-panel.js`, Funktionen `googleMapsUrl`/
+`mapButton`). Die WGS84-Koordinaten werden direkt in Google Maps'
+offiziell dokumentiertes URL-Schema für einen Standort-Pin übernommen
 (`https://www.google.com/maps/search/?api=1&query={lat},{lon}`) – keine
 Umrechnung nötig. Der Button ist deaktiviert, wenn keine gültigen
 Koordinaten vorliegen (`isValidWgs84`); die Kartenansicht ist ein rein
-lesender externer Link ohne neue Abhängigkeit.
+lesender externer Link ohne neue Abhängigkeit. Dieser Button dient
+ausschliesslich der Kontrolle der gerade eingegebenen Koordinaten,
+nicht der Navigation zum Hofladen (dafür siehe „Routing-Auswahl“
+unten) – im Bearbeitungsformular liegt ggf. noch keine gespeicherte,
+konsistente Adresse vor, ein Adress-Routing wäre dort nicht sinnvoll.
+
+### Routing-Auswahl: Google Maps und Apple Maps (Issue #3)
+
+Kacheln-, Listen- und Detailansicht ersetzen den bisherigen einzelnen
+Kartenlink durch eine kompakte Routing-Auswahl (`routingAuswahl(item)`
+in `hofkarte-panel.js`), die eine echte Wegbeschreibung zum Hofladen
+öffnet statt nur eines Standort-Pins – der bisherige Anwendungsfall
+(Standort auf einer Karte betrachten) bleibt im Bearbeitungsformular
+über `mapButton` erhalten (siehe oben), hier geht es um Navigation.
+
+**Zielbestimmung (`ermittleRoutingZiel`):** Ist eine nicht-leere
+zusammengesetzte Adresse (`adresse`, `plz`, `ort`, `land`) hinterlegt,
+hat sie Vorrang als Routenziel – eine Adresse ist für eine echte
+Wegbeschreibung i. d. R. präziser als ein einzelner Koordinatenpunkt
+und wird von beiden Kartendiensten direkt als Freitext akzeptiert
+(kein eigener Geocoding-Schritt in HofKarte nötig). Nur wenn keine
+Adresse, aber gültige WGS84-Koordinaten (`isValidWgs84`) vorhanden
+sind, werden diese als `lat,lon` verwendet. Fehlen beide, gibt es kein
+Routing-Ziel – die Auswahl wird dann deaktiviert dargestellt (kein
+funktionsloser Link).
+
+**URL-Schemata:**
+
+- Google Maps (offiziell dokumentiert, Directions-Action):
+  `https://www.google.com/maps/dir/?api=1&destination={ziel}&travelmode=driving`
+- Apple Maps (offiziell dokumentiertes Maps-Link-Schema):
+  `https://maps.apple.com/?daddr={ziel}&dirflg=d`
+
+`{ziel}` ist dabei entweder die URL-kodierte Adresse oder
+`{lat},{lon}` – `encodeURIComponent` stellt sicher, dass Kommas/
+Leerzeichen in Adressen keine ungültige URL erzeugen.
+
+**UI-Entscheidung:** Zwei sehr kompakte, icon-only Buttons (🗺️/🧭)
+statt eines einzelnen Buttons mit ausklappbarem Auswahlmenü. Das
+vermeidet zusätzlichen Interaktions-/Zustands-Code (kein Öffnen/
+Schliessen-Zustand, kein Klick-ausserhalb-Handling) und ist trotzdem
+schmaler als der bisherige einzelne Textbutton (`.map-btn`, feste
+Höhe mit Text) – wichtig insbesondere in der Tabellenspalte der
+Listenansicht (eigenes `.route-btn`/`.route-actions`-CSS, quadratische
+34×34px-Buttons statt eines breiten Textbuttons).
 
 ### Eingebettete Mehrfach-Marker-Karte (Issue #2, Architekturabweichung)
 
-Der bestehende, rein externe Google-Maps-Link (siehe oben) zeigt
-bewusst **einen** Standort in einem neuen Tab – für eine **eingebettete**
-Karte, die **alle** Hofläden gleichzeitig als Marker zeigt (Issue #2),
-ist das technisch etwas anderes und nicht ausreichend.
+Der bestehende, rein externe Kartenlink (siehe oben) zeigt bewusst
+**einen** Standort bzw. eine Route in einem neuen Tab – für eine
+**eingebettete** Karte, die **alle** Hofläden gleichzeitig als Marker
+zeigt (Issue #2), ist das technisch etwas anderes und nicht
+ausreichend.
 
 **Geprüfte Optionen:**
 
@@ -334,32 +378,6 @@ Hofladen mit gültigen Koordinaten, zeigt `karteAnsicht()` direkt eine
 Meldung, **ohne** überhaupt zu versuchen, Leaflet nachzuladen oder
 einen Kartencontainer zu erzeugen – vermeidet unnötige Netzwerkzugriffe
 und eine leere/kaputt wirkende Fläche.
-
-### Entfernung vom aktuellen Gerät (clientseitig)
-
-`haversineDistanceKm` in `hofkarte-panel.js` ist ein bewusstes,
-dokumentiertes JS-Duplikat von `distance.haversine_distance_km`
-(numerisch gegen die Python-Referenz verifiziert) – **nicht**
-serverseitig implementiert, da der Gerätestandort aus
-Datenschutzgründen nie an das Backend übertragen wird. Ergänzt in der
-Detailansicht die bestehende, serverseitige Entfernungs-Entity, ersetzt
-sie nicht: Eine Home-Assistant-Entity hat genau einen Zustand für alle
-Betrachter:innen und kann sich nicht sinnvoll pro Gerät unterscheiden.
-Nutzt `navigator.geolocation.getCurrentPosition` mit expliziter
-Fehlerbehandlung für verweigerte/nicht unterstützte/zeitüberschreitende
-Standortabfragen.
-
-**Behobener Bug – unsicherer Kontext fälschlich als „verweigert“
-gemeldet:** Browser gewähren Geolocation-Zugriff ausschliesslich in
-einem sicheren Kontext (HTTPS oder `localhost`, siehe
-[`window.isSecureContext`](https://developer.mozilla.org/docs/Web/API/Window/isSecureContext)).
-Auf einer per einfachem `http://` erreichten Home-Assistant-Instanz
-(im Heimnetz häufig, z. B. `http://192.168.1.50:8123`) lehnt der
-Browser den Zugriff automatisch mit `PERMISSION_DENIED` ab, **ohne
-jemals einen Freigabe-Dialog anzuzeigen** – das erschien fälschlich als
-tatsächliche Ablehnung durch die Nutzerin/den Nutzer. Behoben durch
-eine explizite `window.isSecureContext`-Prüfung **vor** dem eigentlichen
-Geolocation-Aufruf, mit eigener, klar unterscheidbarer Fehlermeldung.
 
 ## Sortiment-Logik
 

@@ -17,28 +17,48 @@ function isValidWgs84(lat, lon) {
 }
 
 /** Google-Maps-Link für eine WGS84-Koordinate (offizielles URL-Schema,
- * siehe https://developers.google.com/maps/documentation/urls/get-started). */
+ * siehe https://developers.google.com/maps/documentation/urls/get-started).
+ * Zeigt den Standort nur als Suchergebnis/Pin an (keine Route) – wird
+ * ausschliesslich noch im Bearbeitungsformular verwendet, um die gerade
+ * eingegebenen Koordinaten zu kontrollieren (siehe mapButton()). */
 function googleMapsUrl(lat, lon) {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
 }
 
-/** Grosskreisdistanz zwischen zwei WGS84-Koordinaten in Kilometern
- * (Haversine-Formel) – client-seitiges Äquivalent zu
- * distance.haversine_distance_km() in distance.py, für die Entfernung
- * vom aktuell verwendeten Gerät aus (siehe deviceDistanceBlock()).
- * Bewusst dupliziert statt im Backend berechnet: Der Gerätestandort
- * wird nicht an das Backend übertragen (Datenschutz), die Berechnung
- * muss daher im Browser erfolgen. */
-function haversineDistanceKm(lat1, lon1, lat2, lon2) {
-  const erdradiusKm = 6371.0088;
-  const toRad = (grad) => (grad * Math.PI) / 180;
-  const phi1 = toRad(lat1);
-  const phi2 = toRad(lat2);
-  const deltaPhi = toRad(lat2 - lat1);
-  const deltaLambda = toRad(lon2 - lon1);
-  const a = Math.sin(deltaPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return erdradiusKm * c;
+/** Zusammengesetzte Adresse eines Hofladens (Strasse, PLZ, Ort, Land),
+ * wie sie bereits in Kacheln-/Listenansicht zur Anzeige verwendet wird. */
+function zusammengesetzteAdresse(item) {
+  return [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ");
+}
+
+/** Routing-Ziel für Google/Apple Maps (Issue #3): Ist eine (nicht-leere)
+ * Adresse hinterlegt, hat sie Vorrang vor Koordinaten (Adressen sind für
+ * Routenberechnungen i. d. R. präziser als ein einzelner Punkt, siehe
+ * Issue-Vorgabe). Erst wenn keine Adresse, aber gültige WGS84-Koordinaten
+ * vorhanden sind, werden diese als Ziel verwendet. Ohne beides gibt es
+ * kein Routing-Ziel (kein funktionsloser Link). */
+function ermittleRoutingZiel(item) {
+  const adresse = zusammengesetzteAdresse(item);
+  if (adresse) return adresse;
+  if (isValidWgs84(item.latitude, item.longitude)) return `${item.latitude},${item.longitude}`;
+  return null;
+}
+
+/** Google-Maps-Routen-Link (offizielles URL-Schema für Wegbeschreibungen,
+ * siehe https://developers.google.com/maps/documentation/urls/get-started#directions-action).
+ * ``destination`` akzeptiert sowohl eine Adresse als Freitext als auch
+ * ``lat,lon`` – keine eigene Geocoding-Umwandlung nötig. */
+function googleMapsRoutenUrl(ziel) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ziel)}&travelmode=driving`;
+}
+
+/** Apple-Maps-Routen-Link (offizielles URL-Schema, siehe
+ * https://developer.apple.com/library/archive/featuredarticles/iPhoneURLScheme_Reference/MapLinks/MapLinks.html).
+ * ``daddr`` akzeptiert ebenfalls Adresse als Freitext oder ``lat,lon``;
+ * ``dirflg=d`` wählt eine Autoroute (analog zu Google Maps'
+ * ``travelmode=driving``). */
+function appleMapsRoutenUrl(ziel) {
+  return `https://maps.apple.com/?daddr=${encodeURIComponent(ziel)}&dirflg=d`;
 }
 
 // --- Kartenansicht (Issue #2): Leaflet + OpenStreetMap ------------------
@@ -142,8 +162,6 @@ class HofkartePanel extends HTMLElement {
     this.message = "";
     this.error = "";
     this.showCoordInfo = false;
-    this.deviceDistance = null; // { km } - clientseitig ermittelte Entfernung vom aktuellen Gerät
-    this.deviceDistanceStatus = ""; // Lade-/Fehlermeldung während der Ermittlung
     this.uebersichtsAnsicht = "kacheln"; // "kacheln" | "liste" | "karte" (Issue #1/#2)
     this.listenSortSpalte = null; // "name" | "adresse" | "geoeffnet"
     this.listenSortRichtung = "asc"; // "asc" | "desc"
@@ -243,10 +261,13 @@ class HofkartePanel extends HTMLElement {
     return { latitude: lat, longitude: lon };
   }
 
-  /** Gemeinsame Kartenlogik für "Bearbeiten" und "Details" (identisches
-   * Verhalten in beiden Ansichten). Öffnet Google Maps anhand der
-   * gespeicherten WGS84-Koordinaten in einem neuen Tab, verändert keine
-   * Daten (rein lesender externer Link), keine neue Abhängigkeit. */
+  /** Kartenlogik für das Bearbeitungsformular (editor()). Öffnet Google
+   * Maps anhand der gerade eingegebenen WGS84-Koordinaten in einem neuen
+   * Tab, um die Eingabe zu kontrollieren – verändert keine Daten (rein
+   * lesender externer Link), keine neue Abhängigkeit. Die Detail-,
+   * Kacheln- und Listenansicht verwenden stattdessen die Routing-Auswahl
+   * (routingAuswahl(), Issue #3), da es dort um Navigation zum Hofladen
+   * geht statt um Eingabekontrolle. */
   mapButton(lat, lon) {
     if (!isValidWgs84(lat, lon)) {
       return `<button type="button" class="map-btn" disabled title="Keine gültigen Koordinaten hinterlegt">🗺️ Auf Google Maps anzeigen</button>`;
@@ -255,81 +276,30 @@ class HofkartePanel extends HTMLElement {
     return `<a class="map-btn" href="${this.escAttr(url)}" target="_blank" rel="noopener noreferrer" title="Standort auf Google Maps anzeigen (neuer Tab)">🗺️ Auf Google Maps anzeigen</a>`;
   }
 
-  /** Entfernung vom aktuell verwendeten Gerät (nicht vom
-   * Home-Assistant-Server) zum Hofladen ermitteln – rein clientseitig
-   * über die Browser-Geolocation-API. Der Gerätestandort wird
-   * ausschliesslich lokal für diese Berechnung verwendet, nicht
-   * gespeichert und nicht an das Backend übertragen (siehe
-   * haversineDistanceKm-Kommentar). Ergänzt die bestehende,
-   * serverseitige Entfernungs-Entity, ersetzt sie nicht.
-   */
-  ermittleGeraeteEntfernung() {
-    const hofladen = this.viewing;
-    if (!hofladen || !isValidWgs84(hofladen.latitude, hofladen.longitude)) return;
-
-    if (!("geolocation" in navigator)) {
-      this.deviceDistanceStatus = "Dieser Browser unterstützt keine Standortermittlung.";
-      this.render();
-      return;
+  /** Kompakte Routing-Auswahl (Issue #3) für Kacheln-, Listen- und
+   * Detailansicht: öffnet eine echte Wegbeschreibung (nicht nur einen
+   * Standort-Pin) vom aktuellen Standort zum Hofladen, wahlweise in
+   * Google Maps oder Apple Maps. Adresse hat Vorrang vor Koordinaten
+   * (siehe ermittleRoutingZiel()). Bewusst als zwei sehr kompakte,
+   * icon-only Buttons statt eines einzelnen Buttons mit ausklappbarem
+   * Menü umgesetzt: das braucht keinen zusätzlichen Interaktions-/
+   * Zustands-Code (kein Öffnen/Schliessen, kein Klick-ausserhalb-
+   * Handling) und beansprucht dennoch weniger horizontalen Platz als
+   * der bisherige einzelne Textbutton. */
+  routingAuswahl(item) {
+    const ziel = ermittleRoutingZiel(item);
+    if (!ziel) {
+      return `<span class="route-actions" title="Keine Adresse oder gültigen Koordinaten hinterlegt">
+        <button type="button" class="route-btn" disabled aria-label="Route in Google Maps öffnen">🗺️</button>
+        <button type="button" class="route-btn" disabled aria-label="Route in Apple Maps öffnen">🧭</button>
+      </span>`;
     }
-
-    // Browser gewähren Geolocation-Zugriff ausschliesslich in einem
-    // "sicheren Kontext" (HTTPS oder localhost). Wird Home Assistant
-    // wie im lokalen Netzwerk üblich über einfaches http:// aufgerufen
-    // (z. B. http://192.168.1.50:8123), lehnt der Browser den Zugriff
-    // automatisch als PERMISSION_DENIED ab, OHNE jemals einen
-    // Freigabe-Dialog anzuzeigen. Das führte bisher fälschlich zur
-    // Meldung "Standortzugriff wurde verweigert", obwohl der Nutzer nie
-    // gefragt wurde und in seinem Browser ganz allgemein
-    // Standortzugriffe erlaubt haben kann. Diese Prüfung unterscheidet
-    // den Fall klar von einer tatsächlichen Ablehnung durch die
-    // Nutzerin/den Nutzer.
-    if (!window.isSecureContext) {
-      this.deviceDistanceStatus = "Standortermittlung erfordert eine sichere Verbindung (HTTPS) oder den Aufruf über localhost.";
-      this.render();
-      return;
-    }
-
-    this.deviceDistanceStatus = "Standort wird ermittelt …";
-    this.deviceDistance = null;
-    this.render();
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const km = haversineDistanceKm(
-          position.coords.latitude, position.coords.longitude,
-          hofladen.latitude, hofladen.longitude
-        );
-        this.deviceDistance = { km };
-        this.deviceDistanceStatus = "";
-        this.render();
-      },
-      (fehler) => {
-        const meldungen = {
-          1: "Standortzugriff wurde verweigert.", // PERMISSION_DENIED
-          2: "Standort konnte nicht ermittelt werden.", // POSITION_UNAVAILABLE
-          3: "Standortermittlung hat zu lange gedauert.", // TIMEOUT
-        };
-        this.deviceDistanceStatus = meldungen[fehler.code] || "Standort konnte nicht ermittelt werden.";
-        this.render();
-      },
-      { timeout: 10000, maximumAge: 60000 }
-    );
-  }
-
-  /** Anzeigeblock für die Geräte-Entfernung in der Detailansicht. */
-  deviceDistanceBlock(hofladen) {
-    if (!isValidWgs84(hofladen.latitude, hofladen.longitude)) return "";
-
-    let inhalt;
-    if (this.deviceDistance) {
-      inhalt = `<span class="muted">Entfernung von diesem Gerät: <strong>${this.deviceDistance.km.toFixed(1)} km</strong></span>`;
-    } else if (this.deviceDistanceStatus) {
-      inhalt = `<span class="muted">${this.esc(this.deviceDistanceStatus)}</span>`;
-    } else {
-      inhalt = `<button type="button" class="secondary" data-geraete-entfernung title="Nutzt den Standort dieses Geräts/Browsers, nicht den des Home-Assistant-Servers">📍 Entfernung von diesem Gerät berechnen</button>`;
-    }
-    return `<div class="coord-row" style="margin-top:8px">${inhalt}</div>`;
+    const googleUrl = googleMapsRoutenUrl(ziel);
+    const appleUrl = appleMapsRoutenUrl(ziel);
+    return `<span class="route-actions">
+      <a class="route-btn" href="${this.escAttr(googleUrl)}" target="_blank" rel="noopener noreferrer" title="Route in Google Maps öffnen" aria-label="Route in Google Maps öffnen">🗺️</a>
+      <a class="route-btn" href="${this.escAttr(appleUrl)}" target="_blank" rel="noopener noreferrer" title="Route in Apple Maps öffnen" aria-label="Route in Apple Maps öffnen">🧭</a>
+    </span>`;
   }
 
   // --- Bilder: geführter Upload -----------------------------------------
@@ -501,7 +471,7 @@ class HofkartePanel extends HTMLElement {
 
   start(item = null) { this.error = ""; this.viewing = null; this.showCoordInfo = false; this.editing = item ? this.clone(item) : this.empty(); this.render(); }
   cancel() { this.editing = null; this.error = ""; this.render(); }
-  view(item) { this.error = ""; this.editing = null; this.viewing = item; this.deviceDistance = null; this.deviceDistanceStatus = ""; this.render(); }
+  view(item) { this.error = ""; this.editing = null; this.viewing = item; this.render(); }
   closeView() { this.viewing = null; this.render(); }
 
   // --- Rendering -----------------------------------------------------
@@ -673,6 +643,9 @@ class HofkartePanel extends HTMLElement {
       .map-btn{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);text-decoration:none;font-size:.95em;box-sizing:border-box}
       .map-btn[disabled],.map-btn.disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
       .coord-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+      .route-actions{display:inline-flex;gap:4px;flex-wrap:wrap}
+      .route-btn{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border-radius:8px;background:var(--secondary-background-color);color:var(--primary-text-color);text-decoration:none;font-size:1.05em;box-sizing:border-box;border:0;cursor:pointer}
+      .route-btn[disabled]{opacity:.5;cursor:not-allowed;pointer-events:none}
       .info-box{margin-top:8px;padding:12px 14px;border-radius:8px;background:var(--secondary-background-color);font-size:.9em;line-height:1.5}
       .info-box code{background:var(--primary-background-color);padding:1px 5px;border-radius:4px}
       .day-block{border:1px solid var(--divider-color);border-radius:10px;padding:10px 12px;margin:8px 0}
@@ -768,7 +741,7 @@ class HofkartePanel extends HTMLElement {
       ${adresse ? `<div>${this.esc(adresse)}</div>` : ""}
       ${this.websiteLinkHtml(item.website)}
       <div>${this.geoeffnetBadge(item.geoeffnet)}</div>
-      <div class="coord-actions">${this.mapButton(item.latitude, item.longitude)}</div>
+      <div class="coord-actions">${this.routingAuswahl(item)}</div>
       <div class="actions">
         <button class="secondary" data-view="${item.id}">Details</button>
         <button class="secondary" data-edit="${item.id}">Bearbeiten</button>
@@ -817,7 +790,7 @@ class HofkartePanel extends HTMLElement {
               <th><button type="button" class="table-sort" data-sort="name">Name${pfeil("name")}</button></th>
               <th><button type="button" class="table-sort" data-sort="adresse">Adresse${pfeil("adresse")}</button></th>
               <th><button type="button" class="table-sort" data-sort="geoeffnet">Status${pfeil("geoeffnet")}</button></th>
-              <th>Karte</th>
+              <th>Route</th>
             </tr>
           </thead>
           <tbody>
@@ -828,7 +801,7 @@ class HofkartePanel extends HTMLElement {
                 <td><button type="button" class="link-button" data-view="${item.id}">${this.esc(item.name)}</button></td>
                 <td>${this.esc(adresse) || '<span class="muted">–</span>'}</td>
                 <td>${this.geoeffnetBadge(item.geoeffnet)}</td>
-                <td>${this.mapButton(item.latitude, item.longitude)}</td>
+                <td>${this.routingAuswahl(item)}</td>
               </tr>`;
             }).join("") : `<tr><td colspan="5" class="muted">Keine Treffer für diesen Filter.</td></tr>`}
           </tbody>
@@ -1091,8 +1064,7 @@ class HofkartePanel extends HTMLElement {
         <div class="coord-row">
           <div class="muted">${hatKoordinaten ? `Latitude ${d.latitude.toFixed(6)}, Longitude ${d.longitude.toFixed(6)}` : "Keine Koordinaten hinterlegt"}</div>
         </div>
-        <div class="coord-actions">${this.mapButton(d.latitude, d.longitude)}</div>
-        ${this.deviceDistanceBlock(d)}
+        <div class="coord-actions">${this.routingAuswahl(d)}</div>
       </section>
 
       ${this.websiteLinkBlock(d.website)}
@@ -1428,7 +1400,6 @@ class HofkartePanel extends HTMLElement {
     this.shadowRoot.querySelector("[data-edit-from-detail]")?.addEventListener("click", (e) => this.start(this.items.find(x => x.id === e.target.dataset.editFromDetail)));
     this.shadowRoot.querySelectorAll("[data-view]").forEach(b => b.addEventListener("click", () => this.view(this.items.find(x => x.id === b.dataset.view))));
     this.shadowRoot.querySelector("[data-back]")?.addEventListener("click", () => this.closeView());
-    this.shadowRoot.querySelector("[data-geraete-entfernung]")?.addEventListener("click", () => this.ermittleGeraeteEntfernung());
     this.shadowRoot.querySelectorAll("[data-delete]").forEach(b => b.addEventListener("click", () => this.remove(b.dataset.delete)));
     this.shadowRoot.querySelector("[data-cancel]")?.addEventListener("click", () => this.cancel());
     this.shadowRoot.querySelector("form")?.addEventListener("submit", e => { e.preventDefault(); this.save(); });

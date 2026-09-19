@@ -13,6 +13,40 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.1-dev.7] - Unveröffentlicht (develop)
+
+### Geändert
+
+- **Navigation zum Hofladen (Issue #3):** Der bisherige einzelne
+  Kartenlink „🗺️ Auf Google Maps anzeigen“ (zeigte nur einen
+  Standort-Pin, keine Route) wird in Kacheln-, Listen- und
+  Detailansicht durch eine kompakte Routing-Auswahl mit zwei
+  Icon-Buttons ersetzt: 🗺️ öffnet eine echte Wegbeschreibung in Google
+  Maps, 🧭 dieselbe Wegbeschreibung in Apple Maps – jeweils ausgehend
+  vom aktuellen Standort. Ist eine Adresse hinterlegt, hat sie beim
+  Routing Vorrang vor Koordinaten; ohne Adresse und ohne gültige
+  Koordinaten sind beide Buttons deaktiviert. Das Bearbeitungsformular
+  behält seinen bisherigen, einzelnen Google-Maps-Link zur
+  Koordinatenkontrolle unverändert (dort ist Adress-Routing nicht
+  sinnvoll, da ggf. noch keine gespeicherte, konsistente Adresse
+  vorliegt).
+
+### Entfernt
+
+- **„Entfernung von diesem Gerät berechnen“ (Issue #3):** Der optionale
+  Button in der Detailansicht, der rein clientseitig über die
+  Browser-Geolocation-API die Luftlinien-Entfernung vom aktuell
+  verwendeten Gerät berechnete, wurde vollständig entfernt (Code und
+  Dokumentation) – laut Issue nicht mehr benötigt. Der unabhängige,
+  serverseitige Entfernungs-Sensor (`distance.py`, Entfernung zur in
+  Home Assistant konfigurierten Position) ist davon **nicht** betroffen
+  und bleibt unverändert bestehen.
+- 11 neue Tests (`test_static_panel_js_routing.py`): strukturelle
+  Regressionsprüfung der neuen Routing-URL-Schemata (Google Maps/Apple
+  Maps), der Adress-Priorität vor Koordinaten, des deaktivierten
+  Zustands ohne Adresse/Koordinaten sowie der vollständigen Entfernung
+  der Geräte-Entfernungs-Funktion aus dem Quelltext.
+
 ## [2026.9.1-dev.6] - Unveröffentlicht (develop)
 
 ### Behoben

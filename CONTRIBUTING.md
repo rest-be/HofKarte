@@ -56,7 +56,7 @@ Findings in beiden Werkzeugen).
 pytest custom_components/hofkarte/tests
 ```
 
-Erwartung: alle Tests grün (aktueller Stand: 355 Tests). Für neue
+Erwartung: alle Tests grün (aktueller Stand: 366 Tests). Für neue
 Funktionalität gilt:
 
 - Jede neue Fach-/Berechnungslogik (z. B. in `opening_hours.py`,

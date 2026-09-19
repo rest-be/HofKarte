@@ -106,13 +106,13 @@ Oben auf der Übersichtsseite steht ein Umschalter
   (oder einem neutralen Platzhalter, falls keines hinterlegt ist),
   Name, Adresse, anklickbarer Webseite (sofern hinterlegt und gültig),
   einem Hinweis „🟢 Geöffnet“/„🔴 Geschlossen“/„Unbekannt“ sowie – bei
-  hinterlegten Koordinaten – einem Button zum Öffnen des Standorts auf
-  Google Maps.
-- **Liste:** eine Tabelle mit den Spalten Name, Adresse und Status,
-  **jede Spalte einzeln sortierbar** (Klick auf die Kopfzeile, erneuter
-  Klick kehrt die Richtung um). Ein Freitextfeld oberhalb der Tabelle
-  filtert nach Name oder Adresse; jede Zeile hat ebenfalls einen
-  Karten-Button.
+  hinterlegter Adresse oder gültigen Koordinaten – einer kompakten
+  Routing-Auswahl (siehe unten).
+- **Liste:** eine Tabelle mit den Spalten Name, Adresse, Status und
+  Route, **jede Spalte einzeln sortierbar** (Klick auf die Kopfzeile,
+  erneuter Klick kehrt die Richtung um). Ein Freitextfeld oberhalb der
+  Tabelle filtert nach Name oder Adresse; jede Zeile hat ebenfalls die
+  Routing-Auswahl.
 - **Karte:** eine eingebettete Karte mit einer Stecknadel je Hofladen
   mit hinterlegten Koordinaten. Ein Klick auf eine Stecknadel öffnet
   ein kleines Fenster mit dem Namen des Hofladens und einem Button
@@ -310,14 +310,30 @@ Koordinaten speichert. Ein deutlich sichtbarer, blau hinterlegter
 Infobutton (ⓘ) neben den Feldern zeigt eine kurze Erklärung direkt im
 Formular.
 
-**Standort auf einer Karte ansehen:** Sowohl in „Bearbeiten“ als auch
-in der Detailansicht (Kapitel 4) steht neben den Koordinaten ein Button
-„🗺️ Auf Google Maps anzeigen“ zur Verfügung. Ein Klick öffnet den
-Standort anhand der gespeicherten WGS84-Koordinaten in einem neuen
-Browser-Tab auf Google Maps. Der Button ist ausgegraut/deaktiviert,
-solange für den Hofladen keine gültigen Koordinaten hinterlegt sind.
-Die Kartenansicht ist rein informativ – es lassen sich dort keine Daten
-verändern.
+**Standort beim Bearbeiten ansehen:** Im Bearbeitungsformular steht
+neben den Koordinatenfeldern weiterhin ein Button „🗺️ Auf Google Maps
+anzeigen“ zur Verfügung. Ein Klick öffnet den Standort anhand der
+gerade eingegebenen WGS84-Koordinaten in einem neuen Browser-Tab auf
+Google Maps (als Pin, ohne Route) – so lässt sich die Eingabe vor dem
+Speichern kontrollieren. Der Button ist ausgegraut/deaktiviert, solange
+keine gültigen Koordinaten eingegeben sind. Die Kartenansicht ist rein
+informativ – es lassen sich dort keine Daten verändern.
+
+**Route zum Hofladen öffnen:** In den Ansichten „Kacheln“, „Liste“ und
+„Details“ steht statt dieses Kartenlinks eine kompakte Routing-Auswahl
+mit zwei Icon-Buttons zur Verfügung:
+
+- 🗺️ öffnet eine Wegbeschreibung zum Hofladen in **Google Maps**.
+- 🧭 öffnet dieselbe Wegbeschreibung in **Apple Maps**.
+
+Beide öffnen in einem neuen Browser-Tab eine echte Route ausgehend vom
+aktuellen Standort – nicht nur einen Pin. Ist beim Hofladen eine
+Adresse hinterlegt, wird sie als Ziel verwendet; nur wenn keine Adresse,
+aber gültige Koordinaten vorhanden sind, dienen diese als Ziel. Sind
+weder Adresse noch gültige Koordinaten hinterlegt, sind beide Buttons
+deaktiviert. Es findet dabei keine Kommunikation mit einem
+zusätzlichen Geodienst statt – Adresse bzw. Koordinaten werden direkt
+als Linkparameter an Google/Apple Maps übergeben.
 
 **Woher bekomme ich die Koordinaten eines Hofladens?** Auf Google Maps
 oder einem anderen Kartendienst den gewünschten Ort suchen, mit der
@@ -346,34 +362,6 @@ Höhenunterschiede oder Reisezeit – es ist eine reine Luftlinie.
   `device_tracker`, keine Personen-/Geräteverfolgung) – nur die
   statische, einmal konfigurierte Home-Position wird gelesen (siehe
   Kapitel 14, Datenschutz).
-
-### Entfernung vom aktuellen Gerät
-
-Da eine Home-Assistant-Entity nur **einen** Zustand für alle
-Betrachter:innen gleichzeitig haben kann, kann der obige Sensor nicht
-zeigen, wie weit **du gerade persönlich** vom Hofladen entfernt bist.
-Dafür steht in der **Detailansicht** eines Hofladens zusätzlich ein
-Button „📍 Entfernung von diesem Gerät berechnen“ zur Verfügung:
-
-1. Button anklicken.
-2. Der Browser fragt (beim ersten Mal) um Erlaubnis, den Standort zu
-   verwenden – diese Anfrage bestätigen.
-3. Die Entfernung wird direkt im Browser berechnet und angezeigt.
-
-Wird der Standortzugriff verweigert, ist er nicht verfügbar, oder
-dauert die Ermittlung zu lange, erscheint eine entsprechende, klare
-Meldung statt eines falschen Werts. Der Gerätestandort wird
-ausschliesslich für diese einmalige Berechnung im Browser verwendet –
-er wird **nicht** gespeichert und **nicht** an Home Assistant
-übertragen (siehe Kapitel 14, Datenschutz).
-
-**Meldung „Standortermittlung erfordert eine sichere Verbindung“:**
-Browser erlauben Standortzugriff nur über HTTPS oder `localhost`. Wird
-Home Assistant über einfaches `http://` aufgerufen (im Heimnetz
-üblich, z. B. `http://192.168.1.50:8123`), erscheint diese Meldung statt
-eines Freigabe-Dialogs – das ist eine grundsätzliche
-Browser-Einschränkung, keine Fehlfunktion von HofKarte. Abhilfe:
-Home Assistant über HTTPS oder über `localhost` aufrufen.
 
 ## 8. Angebote und Zahlungsarten
 
