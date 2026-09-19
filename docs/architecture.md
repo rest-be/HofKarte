@@ -490,6 +490,43 @@ Cache-Invalidierung entfällt dann für diesen Einzelfall, das Panel
 selbst bleibt aber funktionsfähig (bewusst fehlertolerant, kein
 Hard-Fail beim Setup wegen eines reinen Anzeige-Optimierungsmerkmals).
 
+### Event-Listener-Bindung: `bind()` nur nach vollständigem Re-Render (`2026.9.1-dev.6`)
+
+`bind()` registriert sämtliche Event-Listener des Panels ausschliesslich
+additiv über `addEventListener` – ohne zuvor bestehende Listener zu
+entfernen (kein `removeEventListener`, kein Klonen der Knoten, kein
+„bereits gebunden“-Flag). Das ist unproblematisch, solange `bind()`
+**ausschliesslich** einmalig direkt nach einem vollständigen
+`innerHTML`-Ersatz in `render()` aufgerufen wird: Die zuvor
+existierenden Elemente samt ihrer Listener sind zu diesem Zeitpunkt
+bereits aus dem DOM entfernt.
+
+Die Handler für „+ weiteres Intervall“ und „+ Sonderzeit hinzufügen“
+weichen aus gutem Grund von `render()` ab: Sie fügen eine neue Zeile
+gezielt per `insertBefore`/`append` in den bestehenden DOM ein, statt
+den gesamten Shadow-DOM-Inhalt neu aufzubauen – ein vollständiger
+Re-Render würde sonst z. B. den Eingabefokus in anderen Formularfeldern
+verwerfen. Bis `2026.9.1-dev.5` riefen beide Handler danach jedoch
+erneut `this.bind()` auf demselben, unverändert bestehenden DOM auf.
+Da `bind()` keine bestehenden Listener entfernt, erhielten dabei
+**alle** bereits vorhandenen Elemente – u. a. der jeweilige Button
+selbst sowie der Formular-`submit`-Handler – bei jedem Klick einen
+weiteren, zusätzlichen Listener obendrauf. Ergebnis: Die Anzahl neu
+eingefügter Zeilen verdoppelte sich näherungsweise mit jedem Klick,
+und der mehrfach gebundene `submit`-Handler löste beim Abschicken des
+Formulars `this.save()` mehrfach aus – bei einem neuen, noch
+ungespeicherten Hofladen (ohne `id`) vergab `ws_save` dadurch je
+Aufruf eine eigene, neue ID, wodurch mehrere identische Hofladen-
+Einträge entstanden (Issue #6).
+
+**Behoben**, indem beide Handler `bind()` nicht mehr erneut aufrufen,
+sondern gezielt nur den „entfernen“-Button der jeweils neu eingefügten
+Zeile direkt per `addEventListener` verkabeln. Dieses Muster – bei
+einem gezielten, nicht vollständigen DOM-Insert ausserhalb von
+`render()` werden ausschliesslich die neu erzeugten Elemente selbst
+gebunden, niemals erneut `bind()` über den gesamten Shadow DOM – gilt
+verbindlich für jede künftige, ähnlich gebaute Stelle im Panel.
+
 ### Übersicht: Kacheln/Liste, serverseitig berechnete Anzeigefelder
 
 Die Listenansicht selbst bietet zwei Darstellungen (`uebersichtsAnsicht`,

@@ -13,6 +13,39 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.1-dev.6] - Unveröffentlicht (develop)
+
+### Behoben
+
+- **Öffnungszeiten-Intervalle verdoppelten sich bei jedem Klick auf
+  „+ weiteres Intervall“, zusätzlich entstanden beim Speichern
+  doppelte, inhaltlich identische Hofladen-Einträge (Issue #6):**
+  `bind()` registriert Event-Listener, ohne zuvor bestehende zu
+  entfernen. Das ist unproblematisch, solange `bind()` ausschliesslich
+  einmalig nach einem vollständigen `innerHTML`-Ersatz in `render()`
+  läuft. Die Handler für „+ weiteres Intervall“ und „+ Sonderzeit
+  hinzufügen“ fügten eine neue Zeile jedoch gezielt per DOM-Insert ein
+  (bewusst ohne vollständigen Re-Render, um den restlichen
+  Formularzustand/Fokus zu erhalten) und riefen danach erneut
+  `this.bind()` auf demselben, unverändert bestehenden DOM auf – dabei
+  erhielten bereits vorhandene Elemente (u. a. der Button selbst sowie
+  der Formular-`submit`-Handler) bei jedem weiteren Klick einen
+  zusätzlichen, doppelten Listener obendrauf. Dadurch verdoppelte sich
+  die Anzahl neu eingefügter Zeilen pro Klick näherungsweise, und beim
+  Abschicken des Formulars löste der mehrfach gebundene
+  `submit`-Handler `this.save()` mehrfach aus – da ein neuer, noch
+  ungespeicherter Hofladen zu diesem Zeitpunkt keine `id` besitzt,
+  vergab `ws_save` bei jedem dieser parallelen Aufrufe eine neue,
+  eigene ID, wodurch mehrere identische Hofladen-Einträge entstanden.
+  Behoben, indem beide Handler `bind()` nicht mehr erneut aufrufen,
+  sondern gezielt nur den „entfernen“-Button der jeweils neu
+  eingefügten Zeile direkt verkabeln.
+- 5 neue Tests (`test_static_panel_js_formular_listener.py`):
+  strukturelle Regressionsprüfung, dass `bind()` nur noch an genau
+  einer Stelle (in `render()`) aufgerufen wird und dass neu eingefügte
+  Intervall-/Sonderzeit-Zeilen weiterhin einen funktionierenden
+  „entfernen“-Button erhalten.
+
 ## [2026.9.1-dev.5] - Unveröffentlicht (develop)
 
 ### Hinzugefügt

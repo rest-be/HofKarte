@@ -1445,8 +1445,25 @@ class HofkartePanel extends HTMLElement {
       const container = this.shadowRoot.querySelector(`[data-day-intervals="${day}"]`);
       const el = document.createElement("div");
       el.innerHTML = this.intervalRow(day, { beginn: "", ende: "" });
-      container.insertBefore(el.firstElementChild, b);
-      this.bind();
+      const neueZeile = el.firstElementChild;
+      container.insertBefore(neueZeile, b);
+      // Bewusst KEIN erneuter bind()-Aufruf: render() wird hier
+      // nicht durchlaufen (Formularzustand/Fokus soll erhalten bleiben,
+      // siehe Klassenkommentar oben), der restliche DOM existiert also
+      // unverändert weiter. Ein erneuter bind()-Aufruf würde auf allen
+      // bereits vorhandenen Elementen - u. a. diesem "+ weiteres
+      // Intervall"-Button selbst sowie dem Formular-submit-Handler -
+      // einen zusätzlichen, doppelten Listener registrieren (bind()
+      // entfernt keine bestehenden Listener). Behobener Bug: Jeder
+      // weitere Klick verdoppelte dadurch die Anzahl neu eingefügter
+      // Zeilen, und beim Abschicken des Formulars löste der mehrfach
+      // gebundene submit-Handler this.save() ebenso mehrfach aus - was
+      // bei einem neuen, noch ungespeicherten Hofladen (ohne id) zu
+      // mehreren, inhaltlich identischen Hofladen-Einträgen führte, da
+      // ws_save() für jeden Aufruf ohne id eine eigene, neue id vergibt.
+      // Stattdessen wird hier gezielt nur der "entfernen"-Button der
+      // neu eingefügten Zeile selbst verkabelt.
+      neueZeile.querySelector("[data-remove-interval]")?.addEventListener("click", () => neueZeile.remove());
     }));
     this.shadowRoot.querySelectorAll("[data-remove-interval]").forEach(b => b.addEventListener("click", () => b.parentElement.remove()));
 
@@ -1454,8 +1471,15 @@ class HofkartePanel extends HTMLElement {
     this.shadowRoot.querySelector("[data-add-special]")?.addEventListener("click", () => {
       const el = document.createElement("div");
       el.innerHTML = `<div class="special" data-special><label>Von<input type=date name=datum_von></label><label>Bis<input type=date name=datum_bis></label><label>Beginn<input type=time name=beginn></label><label>Ende<input type=time name=ende></label><label>Geschlossen<input type=checkbox name=geschlossen></label><button type=button class=secondary data-remove-special>−</button></div>`;
-      this.shadowRoot.querySelector("#specials").append(el.firstElementChild);
-      this.bind();
+      const neueZeile = el.firstElementChild;
+      this.shadowRoot.querySelector("#specials").append(neueZeile);
+      // Derselbe Grund wie beim "+ weiteres Intervall"-Handler oben:
+      // gezielt nur den neu eingefügten "entfernen"-Button verkabeln,
+      // statt erneut bind() über den gesamten, unverändert
+      // bestehenden DOM laufen zu lassen (kein doppeltes Binden des
+      // "+ Sonderzeit hinzufügen"-Buttons bzw. des Formular-submit-
+      // Handlers).
+      neueZeile.querySelector("[data-remove-special]")?.addEventListener("click", () => neueZeile.remove());
     });
 
     // --- Bilder ---
