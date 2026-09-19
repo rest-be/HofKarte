@@ -405,6 +405,94 @@ class HofkartePanel extends HTMLElement {
     this.render();
   }
 
+  setWebseiteInfoStatus(text, kind = "") {
+    const el = this.shadowRoot.querySelector("[data-webseite-info-status]");
+    if (!el) return;
+    el.textContent = text;
+    el.className = `webseite-info-status muted${kind ? " " + kind : ""}`;
+  }
+
+  /** Fehlermeldungen für die drei in Issue #8 geforderten Fehlerfälle,
+   * passend zu den Fehlercodes aus management.ws_webseite_info. */
+  static WEBSEITE_INFO_FEHLERMELDUNGEN = {
+    invalid_url: "Bitte eine gültige, erreichbare Website-Adresse eingeben.",
+    unreachable: "Die Website konnte nicht erreicht oder nicht gelesen werden.",
+    not_found: "Auf der Website wurden keine verwertbaren Informationen gefunden.",
+  };
+
+  async ermittleWebseiteInfo() {
+    const f = this.shadowRoot.querySelector("form");
+    const website = (f?.elements["website"]?.value || "").trim();
+    if (!website) {
+      this.setWebseiteInfoStatus("Bitte zuerst eine Website-Adresse eingeben.", "error");
+      return;
+    }
+
+    const btn = this.shadowRoot.querySelector("[data-webseite-info-btn]");
+    if (btn) btn.disabled = true;
+    this.setWebseiteInfoStatus("Informationen werden ermittelt …");
+
+    try {
+      const result = await this.call("hofkarte/management/webseite_info", { website });
+      const uebernommen = this.uebernehmeWebseiteInfo(result.info || {});
+      this.setWebseiteInfoStatus(
+        uebernommen
+          ? "Informationen ermittelt – bitte vor dem Speichern prüfen und bei Bedarf anpassen."
+          : "Es konnten keine zusätzlichen Angaben ermittelt werden.",
+        uebernommen ? "success" : "",
+      );
+      this.render();
+    } catch (err) {
+      const meldung = HofkartePanel.WEBSEITE_INFO_FEHLERMELDUNGEN[err?.code]
+        || err?.message || "Informationen konnten nicht ermittelt werden.";
+      this.setWebseiteInfoStatus(meldung, "error");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /** Überträgt vom Server ermittelte Vorschlagsdaten (webseite_info.py) in
+   * das gerade bearbeitete Formular (this.editing). Reine
+   * Vorschlagsübernahme in den Bearbeitungszustand – nichts wird dabei
+   * gespeichert (siehe management.ws_webseite_info); die Benutzerin/der
+   * Benutzer prüft und passt die Felder danach im Formular an, bevor sie
+   * regulär über "Speichern" übernommen werden.
+   *
+   * Bereits ausgefüllte Textfelder werden durch einen gefundenen
+   * Vorschlag ersetzt (die Ausgangsdaten sind ja noch ungespeichert und
+   * damit gefahrlos revidierbar); Angebote/Zahlungsarten werden hingegen
+   * ergänzt statt ersetzt, um bereits erfasste Einträge nicht zu
+   * verwerfen. Gibt zurück, ob überhaupt etwas übernommen wurde. */
+  uebernehmeWebseiteInfo(info) {
+    if (!this.editing) return false;
+    let uebernommen = false;
+
+    for (const feld of ["name", "beschreibung", "adresse", "plz", "ort", "land"]) {
+      if (info[feld]) { this.editing[feld] = info[feld]; uebernommen = true; }
+    }
+
+    if (Array.isArray(info.oeffnungszeiten) && info.oeffnungszeiten.length) {
+      this.editing.oeffnungszeiten = info.oeffnungszeiten.map(z => ({ wochentag: z.wochentag, beginn: z.beginn, ende: z.ende }));
+      uebernommen = true;
+    }
+
+    for (const feld of ["angebote", "zahlungsarten"]) {
+      const vorschlaege = Array.isArray(info[feld]) ? info[feld] : [];
+      if (!vorschlaege.length) continue;
+      if (!this.editing[feld]) this.editing[feld] = [];
+      const bestehendeSlugs = new Set(this.editing[feld].map(x => this.slug(x.name || x)));
+      for (const name of vorschlaege) {
+        const eintragSlug = this.slug(name);
+        if (bestehendeSlugs.has(eintragSlug)) continue;
+        bestehendeSlugs.add(eintragSlug);
+        this.editing[feld].push({ id: eintragSlug, name });
+        uebernommen = true;
+      }
+    }
+
+    return uebernommen;
+  }
+
   addExternalUrl(value) {
     const trimmed = (value || "").trim();
     if (!trimmed) return;
@@ -1200,6 +1288,11 @@ class HofkartePanel extends HTMLElement {
           <div class="fields">
             <div class="field-row">${this.input("Webseite", "website", d.website || "")}</div>
           </div>
+          <div class="webseite-info-row">
+            <button type="button" class="secondary" data-webseite-info-btn title="Informationen von der Website übernehmen" aria-label="Informationen von der Website übernehmen">🔎 Infos ermitteln</button>
+            <span class="webseite-info-status muted" data-webseite-info-status></span>
+          </div>
+          <p class="muted">Ermittelt Name, Adresse, Beschreibung, Öffnungszeiten, Angebote und Zahlungsarten anhand strukturierter Daten der Website (sofern vorhanden) und trägt sie zur Überprüfung in die Felder oben ein. Es wird dabei nichts automatisch gespeichert.</p>
         </section>
 
         <section class=card>
@@ -1458,6 +1551,9 @@ class HofkartePanel extends HTMLElement {
     // versteckten Datei-Felds aus (input.click()); der eigentliche
     // Upload-Ablauf (Validierung, Upload, Rückmeldung) bleibt
     // unverändert an das "change"-Ereignis dieses Felds gebunden.
+    this.shadowRoot.querySelector("[data-webseite-info-btn]")?.addEventListener("click", () => {
+      this.ermittleWebseiteInfo();
+    });
     this.shadowRoot.querySelector("[data-start-upload]")?.addEventListener("click", () => {
       this.shadowRoot.querySelector("#bild-upload-input")?.click();
     });

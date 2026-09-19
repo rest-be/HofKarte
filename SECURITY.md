@@ -84,8 +84,46 @@ offenen Sicherheitslücken:
   (JPEG/PNG/GIF) und Grössenprüfung (max. 10 MB) erfolgen serverseitig
   durch diese Komponente.
 - Die Verwaltungsoberfläche (`frontend.py`, `management.py`) erfordert
-  Home-Assistant-Administratorrechte (`require_admin`).
+  Home-Assistant-Administratorrechte (`require_admin`) – auch für die
+  Funktion „Infos ermitteln“ (`ws_webseite_info`, siehe unten).
 - Es findet keine Kommunikation mit externen Diensten durch HofKarte
   selbst statt (siehe README, Abschnitt „Datenschutz- und
-  Standort-Hinweise“) – Ausnahme: das Laden von Hofladen-Bildern über
-  die vom Benutzer hinterlegten externen Bild-Adressen.
+  Standort-Hinweise“) – Ausnahmen: das Laden von Hofladen-Bildern über
+  die vom Benutzer hinterlegten externen Bild-Adressen, sowie (seit
+  Issue #8) der Abruf einer vom Benutzer im Verwaltungs-Panel
+  eingegebenen Website-Adresse über die Funktion „Infos ermitteln“.
+
+### Funktion „Infos ermitteln“ (`webseite_info.py`, Issue #8)
+
+Diese Funktion ist die **erste eigene ausgehende Netzwerkanfrage im
+Backend-Code von HofKarte** – bisher wurde jede Netzwerkkommunikation an
+Home-Assistant-Komponenten oder den Browser delegiert. Getroffene
+Sicherheitsmassnahmen:
+
+- **Kein externer/Cloud-/KI-Dienst:** Die Extraktion erfolgt
+  ausschliesslich lokal und deterministisch (schema.org-JSON-LD,
+  `<title>`/Meta-Beschreibung als Fallback). Es wird kein Cloud-Dienst,
+  kein LLM und kein Scraping-Dienst eingebunden.
+- **SSRF-Schutz über den Standard aus `images.py` hinaus:** Neben der
+  syntaktischen Grundprüfung (Schema, Zugangsdaten, „localhost“,
+  private/interne IP-Literale – ausgelagert in
+  `custom_components/hofkarte/url_sicherheit.py` und von `images.py`
+  und `webseite_info.py` gemeinsam genutzt) gelten zusätzlich ein
+  Antwortgrössen-Limit (2 MB), eine Content-Type-Prüfung (nur
+  HTML-artige Antworten), eine Zeitüberschreitung (10 Sekunden) sowie
+  eine manuelle, bei jedem Sprung erneut geprüfte Weiterleitungsauflösung
+  (maximal 3 Sprünge) – eine Weiterleitung auf ein privates/internes
+  Ziel wird dadurch abgelehnt, statt ihr automatisch zu folgen.
+- **Home Assistants verwaltete Client-Session:** Der Abruf verwendet
+  `homeassistant.helpers.aiohttp_client.async_get_clientsession`, keine
+  eigene, unverwaltete `aiohttp.ClientSession` (siehe
+  `custom_components/hofkarte/quality_scale.yaml`, Kriterium
+  `inject-websession`).
+- **Review vor dem Speichern:** Das Ergebnis ist ausschliesslich ein
+  Vorschlag im Bearbeitungsformular – es wird dabei nichts automatisch
+  gespeichert; das eigentliche Speichern erfolgt unverändert über den
+  bestehenden, administratorpflichtigen `ws_save`-Befehl.
+- **Bekannte, bewusste Einschränkung (wie bei `images.py`):** Es findet
+  **keine DNS-Auflösung** zur Prüfung statt – ein Domainname, der erst
+  beim tatsächlichen Verbindungsaufbau auf eine private Adresse
+  auflöst (DNS-Rebinding), wird nicht erkannt.

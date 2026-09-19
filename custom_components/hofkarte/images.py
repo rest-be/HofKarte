@@ -45,6 +45,15 @@ Prüfung nicht abgedeckt – IP-Literale und der Hostname "localhost"
 werden aber zuverlässig abgelehnt, was den Hauptteil versehentlicher
 oder offensichtlich böswilliger interner Ziele abdeckt.
 
+## Gemeinsamer Prüfkern: ``url_sicherheit.py``
+
+Die eigentliche Schema-/Zugangsdaten-/IP-Literal-Prüfung ist seit Issue #8
+("Informationen aus Homepage", die serverseitig erstmals eine frei
+eingegebene Website-URL selbst abruft) in ``url_sicherheit.py``
+ausgelagert, da dieselbe Grundprüfung dort ein zweites Mal benötigt wird.
+Dieses Modul ergänzt ausschliesslich noch die oben beschriebene
+Herkunfts-Ausnahme für über den geführten Upload erzeugte Bilder.
+
 Das Hauptbild eines Hofladens wird über Home Assistants natives
 ``image``-Entity-Platform dargestellt (siehe ``image.py``) – das ist die
 plattformgerechte Lösung, da nur echte Image-Entities in Lovelace
@@ -56,33 +65,10 @@ Attribut an dieser Entity bereitgestellt, da Home Assistant keine native
 
 from __future__ import annotations
 
-import ipaddress
 from urllib.parse import urlparse
 
 from .models import Bild
-
-_UNSICHERE_HOSTNAMEN = frozenset({"localhost"})
-
-
-def _ist_unsicheres_ip_literal(hostname: str) -> bool:
-    """Ob ein Hostname ein IP-Literal ist, das auf ein privates/internes
-    Ziel zeigt (Loopback, privates Netz, Link-Local, reserviert,
-    Multicast). Reine String-/Literal-Prüfung, **keine DNS-Auflösung**:
-    Ist ``hostname`` kein IP-Literal (sondern ein Domainname), liefert
-    diese Funktion ``False`` – die Domain wird dann nicht weiter geprüft
-    (siehe Moduldoc, Abschnitt „Bewusste Grenze“).
-    """
-    try:
-        ip = ipaddress.ip_address(hostname)
-    except ValueError:
-        return False  # kein IP-Literal, sondern ein Domainname.
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-    )
+from .url_sicherheit import ist_sichere_externe_url
 
 
 def is_valid_image_url(url: str | None, *, hochgeladen: bool = False) -> bool:
@@ -135,11 +121,10 @@ def is_valid_image_url(url: str | None, *, hochgeladen: bool = False) -> bool:
         # Home-Assistant-Upload-Weg erzeugt) ersetzt hier die
         # Adressbereichs-Prüfung, siehe Moduldoc.
         return True
-    if hostname.lower() in _UNSICHERE_HOSTNAMEN:
-        return False
-    if _ist_unsicheres_ip_literal(hostname):
-        return False
-    return True
+    # Schema/Zugangsdaten wurden bereits oben geprüft; die restliche
+    # Prüfung (localhost/private IP-Literale) übernimmt der gemeinsame
+    # Prüfkern in url_sicherheit.py (siehe Moduldoc).
+    return ist_sichere_externe_url(url)
 
 
 def get_main_image_url(bilder: tuple[Bild, ...]) -> str | None:

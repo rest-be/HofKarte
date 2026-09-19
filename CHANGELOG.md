@@ -13,6 +13,73 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.2-dev.1] - Entwicklungsversion (develop)
+
+Kein produktiver Release. Erste Entwicklungsversion für Milestone
+`2026.9.2` (Issue #8).
+
+### Hinzugefügt
+
+- **Informationen aus Homepage (Issue #8):** Im Bearbeitungsformular
+  steht im Bereich „Kontakt & Webseite“ jetzt der Button
+  „🔎 Infos ermitteln“ zur Verfügung. Er ruft – nur auf ausdrücklichen
+  Klick – die dort eingetragene Website-Adresse ab und wertet
+  ausschliesslich strukturierte, von der Seite selbst veröffentlichte
+  Daten (schema.org-JSON-LD, ergänzend `<title>`/Meta-Beschreibung als
+  Fallback) aus, um Name, Adresse, Beschreibung, Öffnungszeiten,
+  Angebote und Zahlungsarten als **Vorschlag zur Überprüfung** in die
+  Formularfelder zu übernehmen – es wird dabei **nichts automatisch
+  gespeichert**; das Speichern erfolgt unverändert über den
+  bestehenden „Speichern“-Weg.
+  - Rein lokale, deterministische Extraktion – **kein externer/Cloud-/
+    KI-Dienst**, keine neue Python-Abhängigkeit (Python-Standardbibliothek
+    `html.parser`/`json`). Nicht zuverlässig ermittelbare Felder (z. B.
+    Öffnungszeiten aus unstrukturiertem Fliesstext) bleiben bewusst
+    leer statt geraten zu werden.
+  - Deckt alle drei im Issue geforderten Fehlerfälle mit eigenen,
+    unterscheidbaren Meldungen ab: keine Website-Adresse eingegeben,
+    Website nicht erreichbar/lesbar, keine Informationen gefunden.
+  - Neuer WebSocket-Befehl `hofkarte/management/webseite_info`
+    (`ws_webseite_info`, administratorpflichtig wie alle übrigen
+    Verwaltungsbefehle) sowie neues Modul
+    `custom_components/hofkarte/webseite_info.py`.
+  - **Diese Funktion ist die erste eigene, ausgehende HTTP-Anfrage im
+    Backend-Code von HofKarte** – bisher wurde jede
+    Netzwerkkommunikation an Home-Assistant-Komponenten oder den
+    Browser delegiert (siehe README/SECURITY.md/
+    docs/architecture.md für die ausführliche Begründung und das
+    Sicherheitsmodell). SSRF-Schutz über den bestehenden
+    Bild-URL-Standard hinaus: Antwortgrössen-Limit (2 MB),
+    Content-Type-Prüfung, Zeitüberschreitung (10 s) sowie eine
+    manuelle, bei jedem Sprung erneut geprüfte
+    Weiterleitungsauflösung (max. 3 Sprünge). Verwendet Home
+    Assistants verwaltete Client-Session
+    (`aiohttp_client.async_get_clientsession`).
+  - Neues, von `images.py` und `webseite_info.py` gemeinsam genutztes
+    Modul `custom_components/hofkarte/url_sicherheit.py`: bündelt den
+    bisher nur in `images.py` vorhandenen syntaktischen
+    SSRF-Prüfkern (Schema, Zugangsdaten, „localhost“, private/interne
+    IP-Literale), keine Verhaltensänderung der bestehenden
+    Bild-URL-Prüfung.
+  - 40 neue Tests: `test_webseite_info.py` (23),
+    `test_url_sicherheit.py` (10), `test_management.py` (7 zu
+    `ws_webseite_info`), `test_static_panel_js_webseite_info.py` (7
+    strukturelle Frontend-Tests).
+
+### Geändert
+
+- `quality_scale.yaml`, Kriterium `inject-websession`: von `exempt`
+  auf `done` geändert – die bisherige Begründung („keine eigene
+  HTTP-Client-Session“) trifft seit Issue #8 nicht mehr zu; der neue
+  Abruf verwendet konsequent Home Assistants verwaltete Client-Session.
+- README.md/SECURITY.md/docs/handbuch.md, Abschnitt „Datenschutz“:
+  „mit zwei Ausnahmen“ auf „mit drei Ausnahmen“ erweitert (neue
+  Ausnahme: Abruf einer vom Benutzer im Verwaltungs-Panel angegebenen
+  Website-Adresse über „Infos ermitteln“).
+- `docs/architecture.md`: neuer Abschnitt „Informationen aus Homepage
+  (Issue #8)“ mit Datenfluss, Extraktionsstrategie und
+  Sicherheitsmodell.
+
 ## [2026.9.1] - 2026-09-19
 
 Enthält die in den sieben Entwicklungsversionen `2026.9.1-dev.1` bis

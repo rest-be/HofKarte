@@ -219,6 +219,42 @@ erzeugten Entities bleiben als „nicht verfügbar“ in der Entity-Liste
 bestehen (stabile Entity-ID), statt automatisch entfernt zu werden –
 das ist eine bekannte, bewusste Einschränkung.
 
+### Informationen von der Website übernehmen
+
+Im Bearbeitungsformular steht im Bereich „Kontakt & Webseite“ neben
+dem Eingabefeld für die Webseite der Button „🔎 Infos ermitteln“ zur
+Verfügung:
+
+1. Zunächst die Website-Adresse des Hofladens in das Feld „Webseite“
+   eintragen.
+2. Auf „🔎 Infos ermitteln“ klicken. HofKarte ruft die Seite ab und
+   wertet – rein lokal, ohne einen externen Cloud- oder KI-Dienst –
+   strukturierte, von der Seite selbst veröffentlichte Informationen
+   aus (sofern vorhanden): Name, Adresse, Beschreibung, Öffnungszeiten,
+   Angebote und Zahlungsarten.
+3. Gefundene Angaben werden **direkt in die entsprechenden Felder des
+   Formulars übernommen** – dabei wird **nichts automatisch
+   gespeichert**. Bitte die übernommenen Werte vor dem Speichern
+   prüfen und bei Bedarf anpassen, bevor regulär auf „Speichern“
+   geklickt wird.
+4. Je nach Website werden dabei nicht alle Felder befüllt: Fehlt eine
+   Information auf der Seite, oder lässt sie sich nicht zuverlässig
+   auslesen (z. B. Öffnungszeiten in reinem Fliesstext ohne
+   strukturierte Auszeichnung), bleibt das jeweilige Feld bewusst leer,
+   statt einen möglicherweise falschen Wert vorzuschlagen.
+
+Mögliche Rückmeldungen:
+
+- **„Bitte zuerst eine Website-Adresse eingeben.“** – das Feld
+  „Webseite“ ist leer oder enthält keine gültige, erreichbare Adresse.
+- **„Die Website konnte nicht erreicht oder nicht gelesen werden.“** –
+  die Seite war zum Zeitpunkt des Abrufs nicht erreichbar (z. B.
+  Zeitüberschreitung oder Fehlerstatus) oder ihre Antwort liess sich
+  nicht als Webseite verarbeiten.
+- **„Auf der Website wurden keine verwertbaren Informationen
+  gefunden.“** – die Seite war erreichbar, enthielt aber keine der
+  gesuchten Angaben in auswertbarer Form.
+
 ## 5. Entities
 
 Für **jeden** Hofladen legt HofKarte automatisch folgende fünf Entities
@@ -634,7 +670,7 @@ unverändert (siehe Kapitel 14).
 ## 14. Datenschutz
 
 - **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
-  externen Servern – mit zwei Ausnahmen: Wird für einen Hofladen ein
+  externen Servern – mit drei Ausnahmen: Wird für einen Hofladen ein
   Hauptbild über eine externe URL hinterlegt, ruft Home Assistant diese
   URL beim Anzeigen des Bildes ab (siehe Kapitel 5, „Hauptbild“); und
   öffnet man in der Übersicht die Kartenansicht „🗺️ Karte“, lädt der
@@ -644,7 +680,12 @@ unverändert (siehe Kapitel 14).
   nicht beim Start des Panels. Dabei werden ausschliesslich die für die
   Kartendarstellung nötigen Ausschnitts-/Kachelkoordinaten übertragen,
   keine Hofladen- oder Standortdaten im Klartext an OpenStreetMap.
-  Ausserhalb davon findet keine Telemetrie und keine Datenübertragung an
+  Klickt man im Bearbeitungsformular auf „🔎 Infos ermitteln“
+  (Kapitel 4, „Informationen von der Website übernehmen“), ruft
+  HofKarte die dort eingetragene Website-Adresse **nur auf diesen
+  ausdrücklichen Klick hin** ab und wertet sie rein lokal aus – ohne
+  einen externen Cloud- oder KI-Dienst einzubinden. Ausserhalb dieser
+  drei Fälle findet keine Telemetrie und keine Datenübertragung an
   Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor
   (Kapitel 7) liest ausschliesslich die statische, in Home Assistant

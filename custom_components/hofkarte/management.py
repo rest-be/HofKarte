@@ -26,12 +26,19 @@ from .images import get_main_image_url
 from .models import Hofladen
 from .opening_hours import is_open
 from .parsing import HofladenValidationError, parse_hofladen
+from .webseite_info import (
+    WebseiteInformationenNichtGefundenError,
+    WebseiteNichtErreichbarError,
+    WebseiteUngueltigeUrlError,
+    async_ermittle_webseite_info,
+)
 
 WS_LIST = "hofkarte/management/list"
 WS_SAVE = "hofkarte/management/save"
 WS_DELETE = "hofkarte/management/delete"
 WS_IMPORT_PREVIEW = "hofkarte/management/import_preview"
 WS_IMPORT_COMMIT = "hofkarte/management/import_commit"
+WS_WEBSEITE_INFO = "hofkarte/management/webseite_info"
 
 # Gültige Werte für "aktion" in einem einzelnen Eintrag von
 # WS_IMPORT_COMMIT (siehe ws_import_commit()).
@@ -390,6 +397,60 @@ async def ws_import_commit(
     )
 
 
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_WEBSEITE_INFO, vol.Required("website"): str}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_webseite_info(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Informationen von einer vom Benutzer angegebenen Website ermitteln
+    (Issue #8, "Informationen aus Homepage").
+
+    Liefert ausschliesslich **Vorschlagsdaten zur Überprüfung** – es wird
+    dabei nichts gespeichert; das Speichern erfolgt unverändert über
+    ``ws_save``, nachdem die Benutzerin/der Benutzer die vorgeschlagenen
+    Werte im Formular geprüft und ggf. angepasst hat.
+
+    Bildet die drei im Issue geforderten Fehlerfälle jeweils auf einen
+    eigenen, unterscheidbaren Fehlercode ab (siehe ``webseite_info.py``
+    für die jeweilige Bedeutung):
+
+    - ``invalid_url`` - keine oder syntaktisch ungültige/unsichere
+      Website-Adresse (Fehlerfall 1).
+    - ``unreachable`` - Website nicht erreichbar oder nicht lesbar
+      (Fehlerfall 2).
+    - ``not_found`` - keine verwertbaren Informationen gefunden
+      (Fehlerfall 3).
+
+    Prüft (wie die übrigen Verwaltungsbefehle) zunächst, ob HofKarte
+    eindeutig eingerichtet ist – der eigentliche Abruf verwendet den
+    Coordinator zwar nicht, die Prüfung verhindert aber, dass die
+    Verwaltungsoberfläche diesen Befehl in einem nicht betriebsbereiten
+    Zustand aufrufen kann, konsistent mit ``ws_list``/``ws_save``/etc.
+    """
+    try:
+        _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    try:
+        info = await async_ermittle_webseite_info(hass, msg["website"])
+    except WebseiteUngueltigeUrlError as err:
+        connection.send_error(msg["id"], "invalid_url", str(err))
+        return
+    except WebseiteNichtErreichbarError as err:
+        connection.send_error(msg["id"], "unreachable", str(err))
+        return
+    except WebseiteInformationenNichtGefundenError as err:
+        connection.send_error(msg["id"], "not_found", str(err))
+        return
+
+    connection.send_result(msg["id"], {"info": _json_value(info)})
+
+
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
     """HofKarte-WebSocket-Befehle registrieren (einmalig, Domain-Ebene)."""
     websocket_api.async_register_command(hass, ws_list)
@@ -397,3 +458,4 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_delete)
     websocket_api.async_register_command(hass, ws_import_preview)
     websocket_api.async_register_command(hass, ws_import_commit)
+    websocket_api.async_register_command(hass, ws_webseite_info)

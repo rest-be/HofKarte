@@ -163,11 +163,17 @@ rules:
   # --- Platinum --------------------------------------------------------------
   async-dependency: done
   inject-websession:
-    status: exempt
+    status: done
     comment: |
-      HofKarte hat keine eigene HTTP-Client-Session - es findet keine
-      Netzwerkkommunikation durch die Integration selbst statt (die
-      Bildanzeige läuft vollständig über Home Assistants eigene
-      ImageEntity-Infrastruktur, nicht über einen von uns injizierten
-      aiohttp-Client).
+      Seit Issue #8 ("Informationen aus Homepage") führt HofKarte
+      erstmals eine eigene ausgehende HTTP-Anfrage aus (Abruf einer vom
+      Benutzer angegebenen Website zur Informationsextraktion, siehe
+      webseite_info.py). Die vorherige exempt-Begründung ("keine eigene
+      HTTP-Client-Session") trifft damit nicht mehr zu. Der Abruf
+      verwendet konsequent Home Assistants verwaltete Client-Session
+      (homeassistant.helpers.aiohttp_client.async_get_clientsession),
+      keine eigene, unverwaltete aiohttp.ClientSession - das Kriterium
+      gilt damit als erfüllt. Die Bildanzeige selbst läuft weiterhin
+      vollständig über Home Assistants eigene ImageEntity-Infrastruktur,
+      ohne eigenen HTTP-Client.
   strict-typing: done

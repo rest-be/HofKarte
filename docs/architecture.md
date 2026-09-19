@@ -449,6 +449,80 @@ ist damit die **Herkunft** (von HofKarte selbst erzeugt), nicht der
 Adressbereich – eine bewusste, im Modul dokumentierte Ausnahme statt
 einer fragilen Erkennung anhand des URL-Musters.
 
+## Informationen aus Homepage (Issue #8)
+
+`webseite_info.py` implementiert die **erste eigene, ausgehende
+HTTP-Anfrage im Backend-Code von HofKarte** – bisher delegierte
+HofKarte jede Netzwerkkommunikation entweder an Home Assistants eigene
+`image`-Entity-Infrastruktur (siehe Kapitel „Bilder“ oben) oder an den
+Browser (Leaflet/OpenStreetMap, siehe „Eingebettete Kartenansicht“
+weiter unten). Architektonisch bewusst als eigenständiges Modul
+umgesetzt, nicht innerhalb von `management.py`, analog zur bestehenden
+Trennung `images.py`/`opening_hours.py`/`search.py`.
+
+**Datenfluss:**
+
+1. Verwaltungsoberfläche (`hofkarte-panel.js`): Klick auf „🔎 Infos
+   ermitteln“ im Bearbeitungsformular (Abschnitt „Kontakt & Webseite“)
+   ruft `ermittleWebseiteInfo()` auf, das den WebSocket-Befehl
+   `hofkarte/management/webseite_info` mit der aktuell im Formular
+   eingetragenen Website-Adresse sendet.
+2. `management.ws_webseite_info` (administratorpflichtig, wie alle
+   Verwaltungsbefehle) delegiert an
+   `webseite_info.async_ermittle_webseite_info(hass, website)`.
+3. `webseite_info.py` prüft die Adresse syntaktisch (siehe
+   „Sicherheitsmodell“ unten), ruft sie über Home Assistants verwaltete
+   Client-Session ab, extrahiert strukturierte Daten und liefert ein
+   `WebseiteInfo`-Objekt (oder wirft einen der drei unten beschriebenen
+   Fehler) zurück.
+4. `ws_webseite_info` bildet die Fehlerfälle auf eigene WebSocket-
+   Fehlercodes ab (`invalid_url`/`unreachable`/`not_found`) bzw.
+   serialisiert das Ergebnis (`_json_value`, dieselbe Hilfsfunktion wie
+   für `Hofladen`-Objekte).
+5. `hofkarte-panel.js` übernimmt das Ergebnis ausschliesslich in
+   `this.editing` (den Bearbeitungszustand des offenen Formulars,
+   `uebernehmeWebseiteInfo()`) – **es wird dabei nichts gespeichert**.
+   Das eigentliche Speichern erfolgt unverändert über den bestehenden
+   `ws_save`-Befehl, nachdem die Benutzerin/der Benutzer die
+   übernommenen Werte geprüft und ggf. angepasst hat.
+
+**Extraktionsstrategie (kein externer/Cloud-/KI-Dienst):**
+Ausschliesslich lokale, deterministische Auswertung mit der
+Python-Standardbibliothek (`html.parser`, `json` – keine neue
+Abhängigkeit). Primär schema.org-konforme JSON-LD-Daten
+(`<script type="application/ld+json">`, aufgelöst inkl. `@graph` und
+Objekt-Listen; ein Objekt gilt als Hofladen-Kandidat, wenn es einen
+`name` sowie mindestens ein typisches Geschäfts-Feld – `address`,
+`openingHours(Specification)`, `telephone`, `priceRange`,
+`paymentAccepted` oder `makesOffer` – trägt). Ergänzend, nur zur
+Lückenfüllung: `<title>` (unverfälschter Namens-Fallback) und
+`<meta name="description">` (Beschreibungs-Fallback). Öffnungszeiten
+werden ausschliesslich aus dem vollständig strukturierten
+`openingHoursSpecification` übernommen – das kompakte schema.org-
+Kurzformat (`openingHours`, z. B. `"Mo-Fr 08:00-18:00"`) wird bewusst
+**nicht** geparst (Tagesbereich-Interpretation wäre eine zusätzliche,
+fehleranfällige Heuristik-Schicht). Nicht zuverlässig ermittelbare
+Felder bleiben leer statt geraten zu werden („lieber nichts als
+falsch“ – siehe Moduldoc in `webseite_info.py`).
+
+**Sicherheitsmodell:** Der gemeinsame syntaktische Prüfkern
+(`url_sicherheit.py`, aus `images.py` herausgelöst und von beiden
+Modulen genutzt – Schema-Whitelist, keine Zugangsdaten, kein
+„localhost“, keine privaten/internen IP-Literale, keine DNS-Auflösung)
+wird hier um Massnahmen erweitert, die speziell für den tatsächlichen
+Abruf und die Verarbeitung des Antwortinhalts nötig sind: ein
+Antwortgrössen-Limit (2 MB), eine Content-Type-Prüfung (nur HTML-artige
+Antworten), eine Zeitüberschreitung (10 Sekunden) sowie eine manuelle,
+bei jedem Sprung erneut gegen denselben Prüfkern validierte
+Weiterleitungsauflösung (maximal 3 Sprünge – verhindert, dass eine
+zunächst sichere URL über einen `Location`-Header stillschweigend auf
+ein privates/internes Ziel umgeleitet wird). Der HTTP-Abruf verwendet
+`homeassistant.helpers.aiohttp_client.async_get_clientsession` statt
+einer eigenen, unverwalteten `aiohttp.ClientSession` (siehe
+`quality_scale.yaml`, Kriterium `inject-websession`, seit diesem Issue
+`done` statt `exempt`). Ausführliche Begründung siehe `SECURITY.md`,
+Abschnitt „Funktion ‚Infos ermitteln‘“.
+
 ## Suche/Filter
 
 `search.py` (`find_hoflaeden`) ist eine reine, HA-unabhängige

@@ -684,14 +684,26 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
 ## Datenschutz- und Standort-Hinweise
 
 - **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
-  externen Servern – mit zwei Ausnahmen: dem Laden von Hofladen-Bildern
-  über die vom Benutzer hinterlegten Bild-URLs (siehe „Bilder“) sowie
-  dem Laden der Kartenbibliothek Leaflet und der Kartenkacheln von
+  externen Servern – mit drei Ausnahmen: dem Laden von Hofladen-Bildern
+  über die vom Benutzer hinterlegten Bild-URLs (siehe „Bilder“), dem
+  Laden der Kartenbibliothek Leaflet und der Kartenkacheln von
   OpenStreetMap, sobald die Übersichtsansicht „🗺️ Karte“ tatsächlich
   geöffnet wird (siehe „Eingebettete Kartenansicht“ oben) – dabei werden
   nur Kachel-/Ausschnittkoordinaten übertragen, keine Hofladen- oder
-  Standortdaten im Klartext. Ausserhalb davon findet keine Telemetrie
-  und keine Datenübertragung an Dritte statt.
+  Standortdaten im Klartext – sowie dem Abruf einer vom Benutzer selbst
+  im Verwaltungs-Panel angegebenen Website-Adresse über die Funktion
+  „🔎 Infos ermitteln“ (Formular „Hofladen bearbeiten“, Abschnitt
+  „Kontakt & Webseite“): Auf ausdrücklichen Klick ruft HofKarte diese
+  eine, vom Benutzer selbst eingegebene Adresse ab und wertet
+  ausschliesslich strukturierte, von der Seite selbst veröffentlichte
+  Daten (schema.org-JSON-LD) sowie Titel/Meta-Beschreibung aus, um Name,
+  Adresse, Beschreibung, Öffnungszeiten, Angebote und Zahlungsarten als
+  **Vorschlag zur Überprüfung** vorzubelegen – es wird dabei nichts
+  automatisch gespeichert und kein externer/Cloud-/KI-Dienst
+  eingebunden (rein lokale, deterministische Auswertung). Die Adresse
+  wird dabei serverseitig gegen private/interne Ziele geprüft (siehe
+  [`SECURITY.md`](SECURITY.md)). Ausserhalb dieser drei Fälle findet
+  keine Telemetrie und keine Datenübertragung an Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor liest
   ausschliesslich die statische, in Home Assistant konfigurierte
   Position (`hass.config.latitude`/`longitude`) – kein `device_tracker`,

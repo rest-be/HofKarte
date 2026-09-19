@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import Unauthorized
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.hofkarte.const import DOMAIN
@@ -24,8 +26,15 @@ from custom_components.hofkarte.management import (
     ws_import_preview,
     ws_list,
     ws_save,
+    ws_webseite_info,
 )
 from custom_components.hofkarte.models import Hofladen, Oeffnungszeit
+from custom_components.hofkarte.webseite_info import (
+    WebseiteInfo,
+    WebseiteInformationenNichtGefundenError,
+    WebseiteNichtErreichbarError,
+    WebseiteUngueltigeUrlError,
+)
 
 
 class _FakeConnection:
@@ -959,4 +968,185 @@ async def test_async_register_websocket_commands_registriert_import_befehle(
     ws_handlers = hass.data.get("websocket_api", {})
     assert "hofkarte/management/import_preview" in ws_handlers
     assert "hofkarte/management/import_commit" in ws_handlers
+
+
+# ---------------------------------------------------------------------------
+# ws_webseite_info (Issue #8, "Informationen aus Homepage")
+# ---------------------------------------------------------------------------
+
+
+async def test_async_register_websocket_commands_registriert_webseite_info(
+    hass: HomeAssistant,
+) -> None:
+    async_register_websocket_commands(hass)
+
+    ws_handlers = hass.data.get("websocket_api", {})
+    assert "hofkarte/management/webseite_info" in ws_handlers
+
+
+async def test_ws_webseite_info_liefert_ermittelte_informationen(
+    hass: HomeAssistant,
+) -> None:
+    """Erfolgsfall: Das Ergebnis wird unverändert (als Vorschlag) an die
+    Verbindung zurückgegeben - ws_webseite_info speichert dabei nichts."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_webseite_info"
+    ) as fake:
+        fake.return_value = WebseiteInfo(name="Hofladen X", angebote=("Eier",))
+
+        connection = _FakeConnection()
+        ws_webseite_info(
+            hass,
+            connection,
+            {
+                "id": 40,
+                "type": "hofkarte/management/webseite_info",
+                "website": "https://beispiel.example",
+            },
+        )
+        await hass.async_block_till_done()
+
+    fake.assert_called_once_with(hass, "https://beispiel.example")
+    assert len(connection.errors) == 0
+    msg_id, ergebnis = connection.results[0]
+    assert msg_id == 40
+    assert ergebnis["info"]["name"] == "Hofladen X"
+    assert ergebnis["info"]["angebote"] == ["Eier"]
+
+
+async def test_ws_webseite_info_fehlerfall_ungueltige_url(
+    hass: HomeAssistant,
+) -> None:
+    """Fehlerfall 1 (keine/ungültige Website-Adresse) -> Fehlercode
+    'invalid_url'."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_webseite_info"
+    ) as fake:
+        fake.side_effect = WebseiteUngueltigeUrlError("keine URL")
+
+        connection = _FakeConnection()
+        ws_webseite_info(
+            hass,
+            connection,
+            {"id": 41, "type": "hofkarte/management/webseite_info", "website": ""},
+        )
+        await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 41
+    assert code == "invalid_url"
+
+
+async def test_ws_webseite_info_fehlerfall_nicht_erreichbar(
+    hass: HomeAssistant,
+) -> None:
+    """Fehlerfall 2 (Website nicht erreichbar/lesbar) -> Fehlercode
+    'unreachable'."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_webseite_info"
+    ) as fake:
+        fake.side_effect = WebseiteNichtErreichbarError("nicht erreichbar")
+
+        connection = _FakeConnection()
+        ws_webseite_info(
+            hass,
+            connection,
+            {
+                "id": 42,
+                "type": "hofkarte/management/webseite_info",
+                "website": "https://nicht-erreichbar.example",
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 42
+    assert code == "unreachable"
+
+
+async def test_ws_webseite_info_fehlerfall_nichts_gefunden(
+    hass: HomeAssistant,
+) -> None:
+    """Fehlerfall 3 (keine Informationen gefunden) -> Fehlercode
+    'not_found'."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_webseite_info"
+    ) as fake:
+        fake.side_effect = WebseiteInformationenNichtGefundenError("nichts gefunden")
+
+        connection = _FakeConnection()
+        ws_webseite_info(
+            hass,
+            connection,
+            {
+                "id": 43,
+                "type": "hofkarte/management/webseite_info",
+                "website": "https://leere-seite.example",
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 43
+    assert code == "not_found"
+
+
+async def test_ws_webseite_info_erfordert_admin(hass: HomeAssistant) -> None:
+    """Wie alle übrigen Verwaltungsbefehle erfordert auch dieser Befehl
+    Home-Assistant-Administratorrechte (require_admin). Der Dekorator
+    wirft dafür - wenn er (wie hier im Test) ausserhalb des normalen
+    Verbindungs-Dispatch direkt aufgerufen wird - eine ``Unauthorized``-
+    Exception, statt einen Verbindungsfehler zu senden (das Umwandeln in
+    einen Verbindungsfehler übernimmt normalerweise der WebSocket-
+    Verbindungs-Dispatch von Home Assistant selbst)."""
+    await _setup_mit_coordinator(hass)
+
+    connection = _FakeConnection()
+    connection.user = SimpleNamespace(is_admin=False)
+
+    with pytest.raises(Unauthorized):
+        ws_webseite_info(
+            hass,
+            connection,
+            {
+                "id": 44,
+                "type": "hofkarte/management/webseite_info",
+                "website": "https://beispiel.example",
+            },
+        )
+
+    assert len(connection.results) == 0
+    assert len(connection.errors) == 0
+
+
+async def test_ws_webseite_info_ohne_eingerichtete_integration_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    connection = _FakeConnection()
+    ws_webseite_info(
+        hass,
+        connection,
+        {
+            "id": 45,
+            "type": "hofkarte/management/webseite_info",
+            "website": "https://beispiel.example",
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 45
+    assert code == "not_ready"
 
