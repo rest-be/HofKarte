@@ -13,12 +13,11 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
-## [2026.9.1-rc.1] - Release Candidate (develop)
+## [2026.9.1] - 2026-09-19
 
-Erster Release Candidate für `2026.9.1`, konsolidiert aus den sieben
-Entwicklungsversionen `2026.9.1-dev.1` bis `-dev.7` (Issues #1–#6).
-Kein produktiver Release (kein Merge nach `main`, kein Tag) – dient der
-abschliessenden Prüfung vor der Veröffentlichung.
+Enthält die in den sieben Entwicklungsversionen `2026.9.1-dev.1` bis
+`-dev.7` (Issues #1–#6) entwickelten und im Release Candidate
+`2026.9.1-rc.1` abschliessend geprüften Änderungen.
 
 ### Hinzugefügt
 

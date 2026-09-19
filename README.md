@@ -4,16 +4,15 @@ Private, lokal betriebene Home-Assistant-Custom-Integration zur Verwaltung
 und Darstellung von Hofläden (Direktvermarkter, Selbstbedienungsläden,
 Hofläden mit und ohne Personal).
 
-> **Status:** Release Candidate. Die Integration ist funktional
-> vollständig und durchgehend getestet; der aktuelle Stand auf
-> `develop` wird vor der Veröffentlichung als produktiver Release
-> abschliessend geprüft (siehe `CHANGELOG.md`). Home Assistant ist
-> sowohl Laufzeit- als auch Verwaltungsoberfläche für HofKarte – die
-> vom Benutzer gepflegten Hofläden werden in einem
-> integrationsinternen, persistenten Store gehalten (keine externe
-> Datenbank, kein externer Dienst). Zusätzlich zu den regulären
-> Home-Assistant-Entities bietet HofKarte eine **eigene grafische
-> Verwaltungsoberfläche** (Sidebar-Panel) für Administrator:innen.
+> **Status:** Stabiles Release. Die Integration ist funktional
+> vollständig und durchgehend getestet (siehe `CHANGELOG.md` für den
+> aktuellen Versionsstand). Home Assistant ist sowohl Laufzeit- als
+> auch Verwaltungsoberfläche für HofKarte – die vom Benutzer gepflegten
+> Hofläden werden in einem integrationsinternen, persistenten Store
+> gehalten (keine externe Datenbank, kein externer Dienst).
+> Zusätzlich zu den regulären Home-Assistant-Entities bietet HofKarte
+> eine **eigene grafische Verwaltungsoberfläche** (Sidebar-Panel) für
+> Administrator:innen.
 
 **📖 Für die vollständige Anleitung als Endanwender:in siehe das
 [Anwendungshandbuch](docs/handbuch.md)** – Installation, Ersteinrichtung,
