@@ -651,11 +651,12 @@ unverändert (siehe Kapitel 14).
   konfigurierte Position – kein `device_tracker`, keine Personen- oder
   Geräteverfolgung. Diese Position wird von HofKarte nicht separat
   gespeichert und nicht an externe Dienste übertragen.
-- **Standort (aktuelles Gerät):** Der optionale Button „Entfernung von
-  diesem Gerät berechnen“ (Kapitel 7) nutzt den Standort deines
-  Geräts/Browsers nur nach deiner ausdrücklichen Zustimmung. Dieser
-  Standort wird ausschliesslich einmalig im Browser verwendet, nicht
-  gespeichert und nicht an Home Assistant übertragen.
+- **Routing-Auswahl (Google Maps/Apple Maps):** Die Buttons „🗺️“/„🧭“
+  (Kapitel 4/7) öffnen erst nach einem bewussten Klick einen neuen
+  Browser-Tab bei Google bzw. Apple; dabei werden Adresse oder
+  Koordinaten des jeweiligen Hofladens als Link-Parameter an den
+  externen Kartendienst übertragen (kein eigener Geocoding-Aufruf
+  durch HofKarte selbst, keine Übertragung im Hintergrund ohne Klick).
 - **Speicherort aller Daten:** Alle Hofladen-Daten (Name, Adresse,
   Koordinaten, Öffnungszeiten, Sortiment, Bild-Adressen) liegen
   ausschliesslich lokal im Home-Assistant-Storage

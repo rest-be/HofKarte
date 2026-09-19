@@ -18,10 +18,17 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _HOFKARTE_DIR = _REPO_ROOT / "custom_components" / "hofkarte"
 
 # Erlaubt sowohl reguläre Releases (JAHR.MONAT.LAUFNUMMER, z. B.
-# "2026.9.0") als auch Entwicklungsversionen auf dem `develop`-Zweig
-# (JAHR.MONAT.LAUFNUMMER-dev.FORTLAUFENDE_NUMMER, z. B. "2026.9.1-dev.1"
-# - siehe CONTRIBUTING.md, Abschnitt Entwicklungs-Versionierung).
-_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+(-dev\.\d+)?$")
+# "2026.9.0") als auch Entwicklungsversionen (JAHR.MONAT.LAUFNUMMER-dev.
+# FORTLAUFENDE_NUMMER, z. B. "2026.9.1-dev.1") und Release Candidates
+# (JAHR.MONAT.LAUFNUMMER-rc.FORTLAUFENDE_NUMMER, z. B. "2026.9.1-rc.1")
+# auf dem `develop`-Zweig - siehe CONTRIBUTING.md, Abschnitt
+# „Branch- und Commit-Konventionen“.
+_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+(-(dev|rc)\.\d+)?$")
+
+# Reihenfolge der Release-Stufen innerhalb desselben JAHR.MONAT.LAUFNUMMER
+# -Kerns: Entwicklungsversionen kommen vor Release Candidates, die
+# wiederum vor dem regulären, suffixlosen Release kommen.
+_STUFEN_RANG = {"dev": 0, "rc": 1, None: 2}
 
 
 def _version_tuple(version: str) -> tuple[float, ...]:
@@ -32,16 +39,20 @@ def _version_tuple(version: str) -> tuple[float, ...]:
     wäre "2026.10.0" < "2026.9.0", da "1" < "9" als erstes abweichendes
     Zeichen - numerisch ist Oktober aber später als September.
 
-    Eine Entwicklungsversion (```-dev.N```-Suffix) muss dabei stets vor
-    dem zugehörigen, noch ausstehenden regulären Release einsortiert
-    werden: ``2026.9.1-dev.1`` < ``2026.9.1-dev.2`` < ``2026.9.1``. Ein
-    regulärer Release ohne Suffix erhält dafür ``math.inf`` als vierte
-    Vergleichsstelle.
+    Eine Entwicklungs- oder Release-Candidate-Version (```-dev.N```- bzw.
+    ```-rc.N```-Suffix) muss dabei stets vor dem zugehörigen, noch
+    ausstehenden regulären Release einsortiert werden, und innerhalb
+    desselben Kerns kommt ``-dev.N`` stets vor ``-rc.N``:
+    ``2026.9.1-dev.1`` < ``2026.9.1-dev.2`` < ``2026.9.1-rc.1`` <
+    ``2026.9.1``. Ein regulärer Release ohne Suffix erhält dafür
+    ``math.inf`` als vierte Vergleichsstelle.
     """
-    kern, _, dev_teil = version.partition("-dev.")
-    zahlen = tuple(int(teil) for teil in kern.split("."))
-    dev_nummer = int(dev_teil) if dev_teil else math.inf
-    return zahlen + (dev_nummer,)
+    match = re.match(r"^(?P<kern>\d+\.\d+\.\d+)(-(?P<stufe>dev|rc)\.(?P<nummer>\d+))?$", version)
+    assert match, f"Unbekanntes Versionsformat: '{version}'."
+    zahlen = tuple(int(teil) for teil in match.group("kern").split("."))
+    stufe = match.group("stufe")
+    nummer = int(match.group("nummer")) if match.group("nummer") else math.inf
+    return zahlen + (_STUFEN_RANG[stufe], nummer)
 
 
 def _load_manifest() -> dict:
@@ -105,9 +116,12 @@ def test_version_tuple_vergleicht_numerisch_nicht_lexikografisch() -> None:
 
 def test_version_tuple_ordnet_dev_versionen_vor_dem_release_ein() -> None:
     """Eine Entwicklungsversion (-dev.N) muss stets vor dem zugehörigen,
-    noch ausstehenden regulären Release liegen."""
+    noch ausstehenden Release Candidate bzw. regulären Release liegen,
+    und ein Release Candidate (-rc.N) stets vor dem regulären Release."""
     assert _version_tuple("2026.9.1-dev.1") < _version_tuple("2026.9.1-dev.2")
-    assert _version_tuple("2026.9.1-dev.2") < _version_tuple("2026.9.1")
+    assert _version_tuple("2026.9.1-dev.2") < _version_tuple("2026.9.1-rc.1")
+    assert _version_tuple("2026.9.1-rc.1") < _version_tuple("2026.9.1-rc.2")
+    assert _version_tuple("2026.9.1-rc.2") < _version_tuple("2026.9.1")
 
 
 
@@ -163,7 +177,7 @@ def test_manifest_version_stimmt_mit_neuestem_changelog_eintrag_ueberein() -> No
     changelog = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
     versions_in_changelog = re.findall(
-        r"^## \[(\d+\.\d+\.\d+(?:-dev\.\d+)?)\]", changelog, re.MULTILINE
+        r"^## \[(\d+\.\d+\.\d+(?:-(?:dev|rc)\.\d+)?)\]", changelog, re.MULTILINE
     )
     assert versions_in_changelog, "Keine Versionseinträge im CHANGELOG gefunden."
 
