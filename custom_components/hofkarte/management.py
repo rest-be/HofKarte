@@ -25,6 +25,12 @@ from .data_provider import HofladenNotFoundError
 from .images import get_main_image_url
 from .models import Hofladen
 from .opening_hours import is_open
+from .osm_info import (
+    OsmKeineOrteGefundenError,
+    OsmNichtErreichbarError,
+    OsmUngueltigeKoordinatenError,
+    async_ermittle_osm_orte,
+)
 from .parsing import HofladenValidationError, parse_hofladen
 from .webseite_info import (
     WebseiteInformationenNichtGefundenError,
@@ -39,6 +45,7 @@ WS_DELETE = "hofkarte/management/delete"
 WS_IMPORT_PREVIEW = "hofkarte/management/import_preview"
 WS_IMPORT_COMMIT = "hofkarte/management/import_commit"
 WS_WEBSEITE_INFO = "hofkarte/management/webseite_info"
+WS_OSM_INFO = "hofkarte/management/osm_info"
 
 # Gültige Werte für "aktion" in einem einzelnen Eintrag von
 # WS_IMPORT_COMMIT (siehe ws_import_commit()).
@@ -451,6 +458,68 @@ async def ws_webseite_info(
     connection.send_result(msg["id"], {"info": _json_value(info)})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_OSM_INFO,
+        vol.Required("latitude"): vol.Coerce(float),
+        vol.Required("longitude"): vol.Coerce(float),
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_osm_info(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """In der Nähe der angegebenen Koordinaten nach Orten (OpenStreetMap /
+    Overpass API) suchen (Issue #10, "Ort in der Nähe suchen").
+
+    Liefert ausschliesslich **Vorschlagsdaten zur Überprüfung** – es wird
+    dabei nichts gespeichert; das Speichern erfolgt unverändert über
+    ``ws_save``, nachdem die Benutzerin/der Benutzer einen der
+    vorgeschlagenen Treffer geprüft und ggf. angepasst hat.
+
+    Bildet die drei möglichen Fehlerfälle jeweils auf einen eigenen,
+    unterscheidbaren Fehlercode ab (siehe ``osm_info.py`` für die
+    jeweilige Bedeutung):
+
+    - ``invalid_coordinates`` - Koordinaten fehlen oder sind ausserhalb
+      des gültigen Wertebereichs.
+    - ``unreachable`` - Overpass API nicht erreichbar oder Antwort nicht
+      auswertbar.
+    - ``not_found`` - keine (benannten) Orte im Suchradius gefunden.
+
+    Prüft (wie die übrigen Verwaltungsbefehle) zunächst, ob HofKarte
+    eindeutig eingerichtet ist – der eigentliche Abruf verwendet den
+    Coordinator zwar nicht, die Prüfung verhindert aber, dass die
+    Verwaltungsoberfläche diesen Befehl in einem nicht betriebsbereiten
+    Zustand aufrufen kann, konsistent mit ``ws_list``/``ws_save``/
+    ``ws_webseite_info``.
+    """
+    try:
+        _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    try:
+        orte = await async_ermittle_osm_orte(
+            hass, msg["latitude"], msg["longitude"]
+        )
+    except OsmUngueltigeKoordinatenError as err:
+        connection.send_error(msg["id"], "invalid_coordinates", str(err))
+        return
+    except OsmNichtErreichbarError as err:
+        connection.send_error(msg["id"], "unreachable", str(err))
+        return
+    except OsmKeineOrteGefundenError as err:
+        connection.send_error(msg["id"], "not_found", str(err))
+        return
+
+    connection.send_result(
+        msg["id"], {"orte": [_json_value(ort) for ort in orte]}
+    )
+
+
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
     """HofKarte-WebSocket-Befehle registrieren (einmalig, Domain-Ebene)."""
     websocket_api.async_register_command(hass, ws_list)
@@ -459,3 +528,4 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_import_preview)
     websocket_api.async_register_command(hass, ws_import_commit)
     websocket_api.async_register_command(hass, ws_webseite_info)
+    websocket_api.async_register_command(hass, ws_osm_info)

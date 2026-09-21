@@ -265,6 +265,41 @@ Mögliche Rückmeldungen:
   gefunden.“** – die Seite war erreichbar, enthielt aber keine der
   gesuchten Angaben in auswertbarer Form.
 
+### Ort in der Nähe suchen (OpenStreetMap)
+
+Im Bearbeitungsformular steht im Bereich „Standort / Koordinaten“ der
+Button „📍 Ort in der Nähe suchen“ zur Verfügung – eine zweite, auf
+Koordinaten statt auf einer Website basierende Möglichkeit, Angaben zu
+einem Hofladen automatisch vorzubelegen:
+
+1. Zunächst gültige Koordinaten (Latitude/Longitude) eintragen – ohne
+   gültige Koordinaten ist der Button deaktiviert.
+2. Auf „📍 Ort in der Nähe suchen“ klicken. HofKarte fragt die freie,
+   kostenlose OpenStreetMap-Overpass-API nach benannten Orten (z. B.
+   Läden) im nahen Umkreis der eingetragenen Koordinaten ab. **Dabei
+   werden die Koordinaten dieses Hofladens an diesen externen Dienst
+   übermittelt** (siehe Kapitel 14, „Datenschutz“).
+3. Findet sich **genau ein** Treffer, öffnet sich direkt dasselbe
+   Bestätigungs-Popup wie bei „Infos ermitteln“ (siehe oben). Finden
+   sich **mehrere** Treffer, wird zunächst eine Liste zur Auswahl
+   angezeigt (Name, Adresse, Entfernung); nach Auswahl eines Eintrags
+   öffnet sich ebenfalls dieses Popup.
+4. Wie bei „Infos ermitteln“ trägt erst ein Klick auf **„Übernehmen“**
+   die angezeigten Vorschläge in die Formularfelder ein; **„Abbrechen“**
+   (auch per Escape-Taste) verwirft sie vollständig. Es wird dabei
+   **nichts automatisch gespeichert** – die übernommenen Werte vor dem
+   Speichern prüfen und bei Bedarf anpassen.
+
+Mögliche Rückmeldungen:
+
+- **„Bitte zuerst gültige Latitude-/Longitude-Werte eintragen.“** – es
+  sind keine gültigen Koordinaten im Formular eingetragen.
+- **„Die Overpass API (OpenStreetMap) konnte nicht erreicht werden.“** –
+  der Dienst war zum Zeitpunkt der Suche nicht erreichbar (z. B.
+  Zeitüberschreitung oder Fehlerstatus).
+- **„Im Umkreis wurden keine Orte gefunden.“** – im Suchradius sind auf
+  OpenStreetMap keine benannten, passenden Orte hinterlegt.
+
 ## 5. Entities
 
 Für **jeden** Hofladen legt HofKarte automatisch folgende fünf Entities
@@ -680,7 +715,7 @@ unverändert (siehe Kapitel 14).
 ## 14. Datenschutz
 
 - **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
-  externen Servern – mit drei Ausnahmen: Wird für einen Hofladen ein
+  externen Servern – mit vier Ausnahmen: Wird für einen Hofladen ein
   Hauptbild über eine externe URL hinterlegt, ruft Home Assistant diese
   URL beim Anzeigen des Bildes ab (siehe Kapitel 5, „Hauptbild“); und
   öffnet man in der Übersicht die Kartenansicht „🗺️ Karte“, lädt der
@@ -694,9 +729,16 @@ unverändert (siehe Kapitel 14).
   (Kapitel 4, „Informationen von der Website übernehmen“), ruft
   HofKarte die dort eingetragene Website-Adresse **nur auf diesen
   ausdrücklichen Klick hin** ab und wertet sie rein lokal aus – ohne
-  einen externen Cloud- oder KI-Dienst einzubinden. Ausserhalb dieser
-  drei Fälle findet keine Telemetrie und keine Datenübertragung an
-  Dritte statt.
+  einen externen Cloud- oder KI-Dienst einzubinden. Klickt man
+  stattdessen auf „📍 Ort in der Nähe suchen“ (Kapitel 4, „Ort in der
+  Nähe suchen (OpenStreetMap)“), übermittelt HofKarte **nur auf diesen
+  ausdrücklichen Klick hin** die im Formular eingetragenen Koordinaten
+  dieses Hofladens an die freie, kostenlose OpenStreetMap-Overpass-API
+  – anders als bei den Kartenkacheln werden hier also tatsächlich
+  hofladenspezifische Standortdaten an einen externen Dienst übertragen
+  (weiterhin kein kommerzieller Cloud- oder KI-Dienst). Ausserhalb
+  dieser vier Fälle findet keine Telemetrie und keine Datenübertragung
+  an Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor
   (Kapitel 7) liest ausschliesslich die statische, in Home Assistant
   konfigurierte Position – kein `device_tracker`, keine Personen- oder

@@ -13,6 +13,76 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.2-dev.3] - Entwicklungsversion (develop)
+
+Kein produktiver Release. Erweiterung des „Infos ermitteln“-Workflows
+(Issue #8/#9) um eine zweite Datenquelle: die OpenStreetMap-Overpass-API
+(Issue #10, „Erweiterung OpenStreetMap zu #8“).
+
+### Hinzugefügt
+
+- **„Ort in der Nähe suchen“ (Issue #10):** Neuer Button im Abschnitt
+  „Standort / Koordinaten“ des Bearbeitungsformulars. Sucht über die
+  freie, kostenlose, kontofreie OpenStreetMap-Overpass-API
+  (`overpass-api.de`) nach benannten, hofladenartigen Orten (OSM-Tags
+  `shop=*` bzw. `craft=agricultural`) im Umkreis der aktuell im
+  Formular eingetragenen Koordinaten (Standardradius 50 m). Der Button
+  ist ohne gültige WGS84-Koordinaten deaktiviert (analog zu „Auf Google
+  Maps anzeigen“).
+  - Genau ein Treffer öffnet direkt das bereits aus Issue #9 bekannte
+    Bestätigungs-Popup; mehrere Treffer zeigen zunächst eine
+    Trefferauswahl (Name, Adresse, Entfernung) zum Auswählen. Das
+    Bestätigungs-Popup selbst wird für beide Datenquellen
+    (Website/OSM) gemeinsam genutzt statt dupliziert – ergänzt um eine
+    zusätzliche „Webseite“-Zeile.
+  - Neuer Backend-Baustein `osm_info.py` (`async_ermittle_osm_orte()`)
+    sowie neuer, admin-geschützter WebSocket-Befehl
+    `hofkarte/management/osm_info` (`ws_osm_info`), der wie
+    `ws_webseite_info` ausschliesslich Vorschlagsdaten zur Überprüfung
+    liefert – gespeichert wird weiterhin nur über das bestehende
+    `ws_save`.
+  - Enthält einen begrenzten, dokumentierten Parser für OpenStreetMaps
+    `opening_hours`-Syntax (Semikolon-getrennte Regeln, englische
+    Wochentagskürzel, Wochentag-/Zeitbereiche inkl. mehrerer
+    Zeitintervalle pro Tag, `24/7`) – nicht unterstützte Syntax
+    (Feiertagsregeln, Datumsbereiche, `off`-Ausnahmen u. Ä.) wird
+    bewusst ignoriert statt geraten oder teilweise interpretiert
+    (Prinzip „lieber nichts als falsch“, wie schon bei der
+    Text-Heuristik aus Issue #9).
+  - **Architektonische Einordnung:** Wie das clientseitige
+    Leaflet/OpenStreetMap-Kartenmodul (Issue #2) und
+    `webseite_info.py` (Issue #8) ist dies eine bewusst begrenzte,
+    dokumentierte Ausnahme vom Grundsatz „kein externer/Cloud-/
+    KI-Dienst“ – kein kommerzieller Cloud-Dienst, kein LLM,
+    kein „Scraping-as-a-Service“. Anders als bei den rein
+    clientseitigen Kartenkacheln werden hier serverseitig konkrete
+    Hofladen-Koordinaten an einen externen, wenn auch kostenlosen und
+    kontofreien Dienst übermittelt – ausschliesslich auf ausdrücklichen
+    Klick, nie automatisch (siehe README.md, Abschnitt
+    „Datenschutz- und Standort-Hinweise“, sowie SECURITY.md für die
+    ausführliche Begründung).
+  - Bewusst auf koordinatenbasierte Suche begrenzt (keine
+    Freitext-/Adresssuche) – eine solche würde einen dritten externen
+    Dienst (z. B. Nominatim-Geocoding) erfordern und wird hier nicht
+    eingeführt.
+
+### Tests
+
+- 43 neue Tests in `tests/test_osm_info.py`: `opening_hours`-Parsing
+  (inkl. Mehrfach-Intervalle pro Tag, widersprüchliche Regeln, `24/7`,
+  `24:00`-Normalisierung, ignorierte `PH`/`off`-Regeln), Adress-/
+  Entfernungshilfsfunktionen, Koordinatenvalidierung sowie alle drei
+  Fehlerfälle des Overpass-Abrufs (Fake-Session, kein echtes Netzwerk).
+- 8 neue Tests in `tests/test_management.py` für `ws_osm_info`
+  (Registrierung, Erfolgsfall, alle drei Fehlercodes, Admin-Pflicht,
+  „nicht eingerichtet“).
+- 20 neue strukturelle Frontend-Tests in
+  `tests/test_static_panel_js_osm_info.py`: Button-Verkabelung,
+  Formularzustand-Erfassung vor jedem Re-Render (Regressionsschutz wie
+  bei Issue #9), Ein-Treffer-/Mehr-Treffer-Verzweigung, Trefferauswahl
+  (Verkabelung, Escape-Handling, Barrierefreiheit), Wiederverwendung des
+  Bestätigungs-Popups, Datenschutzhinweis im Formular.
+
 ## [2026.9.2-dev.2] - Entwicklungsversion (develop)
 
 Kein produktiver Release. Korrektur- und Härtungsrunde für die in

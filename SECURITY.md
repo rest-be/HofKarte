@@ -85,13 +85,16 @@ offenen Sicherheitslücken:
   durch diese Komponente.
 - Die Verwaltungsoberfläche (`frontend.py`, `management.py`) erfordert
   Home-Assistant-Administratorrechte (`require_admin`) – auch für die
-  Funktion „Infos ermitteln“ (`ws_webseite_info`, siehe unten).
+  Funktionen „Infos ermitteln“ (`ws_webseite_info`) und „Ort in der Nähe
+  suchen“ (`ws_osm_info`, siehe unten).
 - Es findet keine Kommunikation mit externen Diensten durch HofKarte
   selbst statt (siehe README, Abschnitt „Datenschutz- und
   Standort-Hinweise“) – Ausnahmen: das Laden von Hofladen-Bildern über
-  die vom Benutzer hinterlegten externen Bild-Adressen, sowie (seit
+  die vom Benutzer hinterlegten externen Bild-Adressen, (seit
   Issue #8) der Abruf einer vom Benutzer im Verwaltungs-Panel
-  eingegebenen Website-Adresse über die Funktion „Infos ermitteln“.
+  eingegebenen Website-Adresse über die Funktion „Infos ermitteln“,
+  sowie (seit Issue #10) die Suche über die OpenStreetMap-Overpass-API
+  über die Funktion „Ort in der Nähe suchen“.
 
 ### Funktion „Infos ermitteln“ (`webseite_info.py`, Issue #8)
 
@@ -127,3 +130,55 @@ Sicherheitsmassnahmen:
   **keine DNS-Auflösung** zur Prüfung statt – ein Domainname, der erst
   beim tatsächlichen Verbindungsaufbau auf eine private Adresse
   auflöst (DNS-Rebinding), wird nicht erkannt.
+
+### Funktion „Ort in der Nähe suchen“ (`osm_info.py`, Issue #10)
+
+Diese Funktion führt die **zweite eigene ausgehende Netzwerkanfrage im
+Backend-Code von HofKarte** ein – diesmal an die OpenStreetMap-Overpass-
+API (`overpass-api.de`), einen von HofKarte nicht kontrollierten, aber
+freien, kostenlosen, kontofreien OpenStreetMap-Community-Dienst (kein
+kommerzieller Cloud-Dienst, kein LLM/KI-Dienst, kein
+„Scraping-as-a-Service“). Anders als die rein clientseitig vom Browser
+geladenen Leaflet/OpenStreetMap-Kartenkacheln (Issue #2) überträgt diese
+Funktion **serverseitig konkrete Koordinaten eines bestimmten
+Hofladens** an den externen Dienst – ausschliesslich auf ausdrücklichen
+Klick auf „📍 Ort in der Nähe suchen“, nie automatisch oder im
+Hintergrund. Getroffene Sicherheitsmassnahmen bzw. bewusste
+Abgrenzungen:
+
+- **Kein externer/Cloud-/KI-Dienst im Sinne des Kernprinzips:** Die
+  Overpass API ist ein reiner OpenStreetMap-Datenabruf (strukturierte
+  Kartendaten, kein LLM, kein Konto, keine Nutzungsgebühr) – keine
+  Interpretation durch einen Cloud-/KI-Dienst. Die Antwort wird
+  ausschliesslich lokal und deterministisch ausgewertet (siehe
+  `osm_info.py`, Moduldoc, für die genaue Einordnung dieser bewusst
+  begrenzten, zweiten Ausnahme).
+- **Kein SSRF-Schutz à la `url_sicherheit.py` nötig, dafür andere
+  Limits:** Anders als bei `webseite_info.py` ist das Anfrageziel hier
+  **fest im Code hinterlegt** (`OVERPASS_URL`) und wird nie durch
+  Benutzereingaben beeinflusst – nur Koordinaten und Radius (reine
+  Zahlenwerte) fliessen in den Anfragetext ein, eine Prüfung einer
+  benutzergesteuerten Ziel-URL entfällt damit. Es gelten dieselben
+  allgemeinen Abwehrmassnahmen wie in `webseite_info.py`: ein
+  Antwortgrössen-Limit (1 MB) sowie eine Zeitüberschreitung
+  (15 Sekunden).
+- **Home Assistants verwaltete Client-Session:** Wie
+  `webseite_info.py` verwendet auch dieser Abruf
+  `homeassistant.helpers.aiohttp_client.async_get_clientsession`, keine
+  eigene, unverwaltete `aiohttp.ClientSession` (siehe
+  `custom_components/hofkarte/quality_scale.yaml`, Kriterium
+  `inject-websession`).
+- **Begrenzter, dokumentierter `opening_hours`-Parser statt
+  Freitext-Raten:** OpenStreetMaps `opening_hours`-Tag folgt einer
+  eigenen, formal spezifizierten Syntax – dieses Modul unterstützt
+  bewusst nur eine gängige Teilmenge davon (siehe `osm_info.py`,
+  Moduldoc); nicht unterstützte Syntax (Feiertagsregeln, Datumsbereiche,
+  `off`-Ausnahmen u. Ä.) wird komplett übersprungen statt teilweise oder
+  falsch interpretiert.
+- **Review vor dem Speichern:** Wie bei `webseite_info.py` ist das
+  Ergebnis ausschliesslich ein Vorschlag im Bearbeitungsformular – es
+  wird dabei nichts automatisch gespeichert; das eigentliche Speichern
+  erfolgt unverändert über den bestehenden, administratorpflichtigen
+  `ws_save`-Befehl. Bei mehreren Treffern wird zunächst eine
+  Trefferauswahl gezeigt, bevor der gewählte Treffer im bereits aus
+  Issue #9 bekannten Bestätigungs-Popup zur Prüfung erscheint.

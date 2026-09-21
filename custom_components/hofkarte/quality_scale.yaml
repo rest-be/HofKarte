@@ -173,7 +173,11 @@ rules:
       verwendet konsequent Home Assistants verwaltete Client-Session
       (homeassistant.helpers.aiohttp_client.async_get_clientsession),
       keine eigene, unverwaltete aiohttp.ClientSession - das Kriterium
-      gilt damit als erfüllt. Die Bildanzeige selbst läuft weiterhin
-      vollständig über Home Assistants eigene ImageEntity-Infrastruktur,
-      ohne eigenen HTTP-Client.
+      gilt damit als erfüllt. Seit Issue #10 ("Erweiterung OpenStreetMap
+      zu #8") führt eine zweite eigene ausgehende HTTP-Anfrage
+      denselben Weg (Abruf der OpenStreetMap-Overpass-API, siehe
+      osm_info.py) - ebenfalls über dieselbe verwaltete Client-Session,
+      keine zusätzliche, unverwaltete Session. Die Bildanzeige selbst
+      läuft weiterhin vollständig über Home Assistants eigene
+      ImageEntity-Infrastruktur, ohne eigenen HTTP-Client.
   strict-typing: done

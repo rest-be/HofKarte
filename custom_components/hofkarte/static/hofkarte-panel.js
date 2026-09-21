@@ -172,9 +172,12 @@ class HofkartePanel extends HTMLElement {
     this._leafletResizeHandler = null;
     this.auswahl = new Set(); // ausgewählte Hofladen-IDs für den Export (Issue #5)
     this.importDialog = null; // { eintraege, entscheidungen: Map<bestehende_id, "aktualisieren"|"ueberspringen"> } - nicht null während der Duplikat-Konfliktlösung eines Imports (Issue #5)
-    this.webseiteInfoVorschlag = null; // vom Server ermittelte Vorschlagsdaten, bis sie im Bestätigungs-Popup übernommen/verworfen werden (Issue #9)
+    this.webseiteInfoVorschlag = null; // vom Server ermittelte Vorschlagsdaten, bis sie im Bestätigungs-Popup übernommen/verworfen werden (Issue #9). Wird seit Issue #10 auch für OSM-Treffer (ein einzelner Treffer oder ein aus der Trefferauswahl gewählter Treffer) genutzt - dasselbe Bestätigungs-Popup, unabhängig von der Datenquelle.
     this.webseiteInfoStatusText = ""; // Statusmeldung neben "Infos ermitteln" - in this.* gehalten statt nur im DOM, da render() (u. a. beim Öffnen/Schliessen des Popups) das Formular sonst aus this.editing neu aufbaut und eine rein im DOM gesetzte Meldung dabei verloren ginge (Issue #9)
     this.webseiteInfoStatusKind = ""; // "" | "success" | "error", passend zu webseiteInfoStatusText
+    this.osmOrteAuswahl = null; // Liste der von der Overpass API gefundenen Treffer, solange mehr als einer gefunden wurde und noch keiner ausgewählt ist (Issue #10, "Ort in der Nähe suchen"); bei genau einem Treffer wird die Auswahlliste übersprungen und direkt this.webseiteInfoVorschlag gesetzt.
+    this.osmInfoStatusText = ""; // Statusmeldung neben "Ort in der Nähe suchen" - analog zu webseiteInfoStatusText (Issue #10)
+    this.osmInfoStatusKind = ""; // "" | "success" | "error", passend zu osmInfoStatusText
     this.attachShadow({ mode: "open" });
   }
 
@@ -469,6 +472,111 @@ class HofkartePanel extends HTMLElement {
     }
   }
 
+  /** Setzt die Statusmeldung neben "Ort in der Nähe suchen" - analog zu
+   * setWebseiteInfoStatus() (Issue #10). Eigener Zustand/eigenes
+   * DOM-Element, da der Button in einem anderen Formularabschnitt
+   * ("Standort / Koordinaten") sitzt als der "Infos ermitteln"-Button
+   * ("Kontakt & Webseite") und beide Meldungen unabhängig voneinander
+   * sichtbar bleiben sollen. */
+  setOsmInfoStatus(text, kind = "") {
+    this.osmInfoStatusText = text;
+    this.osmInfoStatusKind = kind;
+    const el = this.shadowRoot.querySelector("[data-osm-info-status]");
+    if (!el) return;
+    el.textContent = text;
+    el.className = `webseite-info-status muted${kind ? " " + kind : ""}`;
+  }
+
+  /** Fehlermeldungen für die drei Fehlerfälle aus management.ws_osm_info
+   * (Issue #10, siehe osm_info.py für die jeweilige Bedeutung). */
+  static OSM_INFO_FEHLERMELDUNGEN = {
+    invalid_coordinates: "Bitte zuerst gültige Latitude-/Longitude-Werte eintragen.",
+    unreachable: "Die Overpass API (OpenStreetMap) konnte nicht erreicht werden.",
+    not_found: "Im Umkreis wurden keine Orte gefunden.",
+  };
+
+  /** Übersetzt einen von der Overpass API gefundenen Ort (osm_info.py,
+   * OsmOrt) in dieselbe Vorschlags-Form, die auch webseiteInfoPopup()/
+   * uebernehmeWebseiteInfo() für Website-Vorschläge verwenden (Issue #10,
+   * Anforderung 5.3: Popup wiederverwenden statt duplizieren) - beide
+   * Quellen teilen bereits dieselben Feldnamen (name/adresse/plz/ort/
+   * website/oeffnungszeiten), eine Umbenennung ist dafür nicht nötig. */
+  osmOrtZuVorschlag(ort) {
+    return {
+      name: ort.name || null,
+      adresse: ort.adresse || null,
+      plz: ort.plz || null,
+      ort: ort.ort || null,
+      website: ort.website || null,
+      oeffnungszeiten: ort.oeffnungszeiten || [],
+    };
+  }
+
+  /** Sucht per Overpass API (osm_info.py) nach Orten in der Nähe der
+   * aktuell im Formular eingetragenen Koordinaten (Issue #10, "Ort in der
+   * Nähe suchen"). Wie ermittleWebseiteInfo() (Issue #9, Korrektur 5.1)
+   * muss der vollständige Formularzustand VOR dem ersten this.render()
+   * gesichert werden - sonst gingen bereits eingetippte, aber noch nicht
+   * gespeicherte Werte beim Neuaufbau des Formulars verloren. */
+  async ermittleOsmInfo() {
+    this.erfasseFormularZustand();
+
+    const { latitude, longitude } = this.editing || {};
+    if (!isValidWgs84(latitude, longitude)) {
+      this.setOsmInfoStatus("Bitte zuerst gültige Latitude-/Longitude-Werte eintragen.", "error");
+      return;
+    }
+
+    const btn = this.shadowRoot.querySelector("[data-osm-info-btn]");
+    if (btn) btn.disabled = true;
+    this.setOsmInfoStatus("Orte werden gesucht …");
+
+    try {
+      const result = await this.call("hofkarte/management/osm_info", { latitude, longitude });
+      const orte = result.orte || [];
+      if (orte.length === 0) {
+        // Sollte durch den not_found-Fehlerfall des Backends normalerweise
+        // nicht vorkommen - defensiv dennoch abgedeckt.
+        this.setOsmInfoStatus(HofkartePanel.OSM_INFO_FEHLERMELDUNGEN.not_found, "error");
+      } else if (orte.length === 1) {
+        // Genau ein Treffer -> Auswahlliste überspringen, direkt ins
+        // bereits bestehende Bestätigungs-Popup (Issue #9/#10, 5.3).
+        this.webseiteInfoVorschlag = this.osmOrtZuVorschlag(orte[0]);
+        this.setOsmInfoStatus("Ein Ort gefunden – bitte im Popup prüfen.", "success");
+        this.render();
+      } else {
+        // Mehrere Treffer -> zunächst Auswahlliste anzeigen (Issue #10, 5.2).
+        this.osmOrteAuswahl = orte;
+        this.setOsmInfoStatus(`${orte.length} Orte gefunden – bitte auswählen.`, "success");
+        this.render();
+      }
+    } catch (err) {
+      const meldung = HofkartePanel.OSM_INFO_FEHLERMELDUNGEN[err?.code]
+        || err?.message || "Es konnten keine Orte ermittelt werden.";
+      this.setOsmInfoStatus(meldung, "error");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  /** Wählt einen Treffer aus der OSM-Trefferauswahl (Issue #10, 5.2) und
+   * öffnet dafür das bestehende Bestätigungs-Popup (Issue #9/#10, 5.3). */
+  waehleOsmOrt(index) {
+    const ort = (this.osmOrteAuswahl || [])[index];
+    this.osmOrteAuswahl = null;
+    if (!ort) { this.render(); return; }
+    this.webseiteInfoVorschlag = this.osmOrtZuVorschlag(ort);
+    this.render();
+  }
+
+  /** Bricht die OSM-Trefferauswahl ab, ohne einen Treffer zu übernehmen
+   * (Issue #10, 5.2) - this.editing wurde bereits vor dem Öffnen der Liste
+   * über erfasseFormularZustand() gesichert (siehe ermittleOsmInfo()). */
+  abbrechenOsmAuswahl() {
+    this.osmOrteAuswahl = null;
+    this.render();
+  }
+
   /** Verwirft die im Popup gezeigten Vorschläge vollständig (Issue #9,
    * "Abbrechen"). this.editing wurde bereits vor dem Öffnen des Popups
    * über erfasseFormularZustand() gesichert (siehe ermittleWebseiteInfo())
@@ -510,7 +618,10 @@ class HofkartePanel extends HTMLElement {
     if (!this.editing) return false;
     let uebernommen = false;
 
-    for (const feld of ["name", "beschreibung", "adresse", "plz", "ort", "land"]) {
+    // "website" ist seit Issue #10 Teil der gemeinsamen Vorschlagsform
+    // (osmOrtZuVorschlag()) - WebseiteInfo (Issue #8/#9) liefert dieses
+    // Feld nicht, daher ändert die Ergänzung dessen Verhalten nicht.
+    for (const feld of ["name", "beschreibung", "adresse", "plz", "ort", "land", "website"]) {
       if (info[feld]) { this.editing[feld] = info[feld]; uebernommen = true; }
     }
 
@@ -665,11 +776,13 @@ class HofkartePanel extends HTMLElement {
   start(item = null) {
     this.error = ""; this.viewing = null; this.showCoordInfo = false;
     this.webseiteInfoVorschlag = null; this.webseiteInfoStatusText = ""; this.webseiteInfoStatusKind = "";
+    this.osmOrteAuswahl = null; this.osmInfoStatusText = ""; this.osmInfoStatusKind = "";
     this.editing = item ? this.clone(item) : this.empty(); this.render();
   }
   cancel() {
     this.editing = null; this.error = "";
     this.webseiteInfoVorschlag = null; this.webseiteInfoStatusText = ""; this.webseiteInfoStatusKind = "";
+    this.osmOrteAuswahl = null; this.osmInfoStatusText = ""; this.osmInfoStatusKind = "";
     this.render();
   }
   view(item) { this.error = ""; this.editing = null; this.viewing = item; this.render(); }
@@ -697,6 +810,9 @@ class HofkartePanel extends HTMLElement {
     // navigiert werden muss.
     if (this.webseiteInfoVorschlag) {
       this.shadowRoot.querySelector("[data-webseite-info-dialog]")?.focus();
+    }
+    if (this.osmOrteAuswahl) {
+      this.shadowRoot.querySelector("[data-osm-orte-dialog]")?.focus();
     }
   }
 
@@ -899,6 +1015,9 @@ class HofkartePanel extends HTMLElement {
       .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:1000}
       .modal{background:var(--ha-card-background,var(--card-background-color));border-radius:12px;padding:20px;max-width:480px;width:100%;max-height:85vh;overflow:auto;box-shadow:0 4px 24px rgba(0,0,0,.4)}
       .modal h2{margin-top:0}
+      .osm-orte-liste{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+      .osm-orte-eintrag{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;width:100%;padding:10px 12px;border-radius:8px}
+      .osm-orte-name{font-weight:bold}
       .webseite-info-zeile{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--divider-color);font-size:.95em}
       .webseite-info-zeile:last-of-type{border-bottom:0}
       .webseite-info-label{font-weight:500;flex:0 0 auto}
@@ -1411,6 +1530,11 @@ class HofkartePanel extends HTMLElement {
           </div>
           <div class="coord-actions">${this.mapButton(latValue === "" ? NaN : Number(latValue), lonValue === "" ? NaN : Number(lonValue))}</div>
           ${this.showCoordInfo ? this.coordInfoBox() : ""}
+          <div class="webseite-info-row">
+            <button type="button" class="secondary" data-osm-info-btn ${isValidWgs84(latValue === "" ? NaN : Number(latValue), lonValue === "" ? NaN : Number(lonValue)) ? "" : "disabled"} title="Ort anhand der Koordinaten in OpenStreetMap suchen" aria-label="Ort anhand der Koordinaten in OpenStreetMap suchen">📍 Ort in der Nähe suchen</button>
+            <span class="webseite-info-status muted${this.osmInfoStatusKind ? " " + this.osmInfoStatusKind : ""}" data-osm-info-status>${this.esc(this.osmInfoStatusText)}</span>
+          </div>
+          <p class="muted">Sucht über die freie OpenStreetMap-Overpass-API nach benannten Orten (z. B. Läden) im Umkreis der oben eingetragenen Koordinaten. Dabei werden die Koordinaten dieses Hofladens an einen externen, kostenlosen OpenStreetMap-Dienst übermittelt (siehe README.md, Abschnitt "Datenschutz- und Standort-Hinweise"). Gefundene Angaben werden vor jeder Übernahme in einem Popup zur Prüfung angezeigt; es wird dabei nichts automatisch gespeichert.</p>
         </section>
 
         <section class=card>
@@ -1463,7 +1587,8 @@ class HofkartePanel extends HTMLElement {
           <button type=submit>Speichern</button>
         </div>
       </form>
-      ${this.webseiteInfoVorschlag ? this.webseiteInfoPopup(this.webseiteInfoVorschlag) : ""}`;
+      ${this.webseiteInfoVorschlag ? this.webseiteInfoPopup(this.webseiteInfoVorschlag) : ""}
+      ${this.osmOrteAuswahl ? this.osmOrteAuswahlPopup(this.osmOrteAuswahl) : ""}`;
   }
 
   /** Bestätigungs-Popup für die von "Infos ermitteln" gefundenen
@@ -1496,12 +1621,46 @@ class HofkartePanel extends HTMLElement {
         ${zeile("Name", info.name)}
         ${zeile("Beschreibung", info.beschreibung)}
         ${zeile("Adresse", adresse)}
+        ${zeile("Webseite", info.website)}
         ${zeile("Öffnungszeiten", oeffnungszeitenText)}
         ${zeile("Angebote", namenListe(info.angebote))}
         ${zeile("Zahlungsarten", namenListe(info.zahlungsarten))}
         <div class="actions">
           <button type="button" class="secondary" data-webseite-info-abbrechen>Abbrechen</button>
           <button type="button" data-webseite-info-uebernehmen>Übernehmen</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  /** Trefferauswahl-Popup für "Ort in der Nähe suchen" (Issue #10, 5.2),
+   * wenn die Overpass-API-Suche mehr als einen Treffer liefert. Zeigt zu
+   * jedem Treffer Name, Adresse (falls vorhanden) und Entfernung, damit
+   * die Benutzerin/der Benutzer den passenden Ort auswählen kann - ohne
+   * hier bereits etwas zu übernehmen (das erfolgt erst im nachfolgenden,
+   * gemeinsam genutzten Bestätigungs-Popup, siehe waehleOsmOrt()/
+   * webseiteInfoPopup()). Bei genau einem Treffer wird diese Liste
+   * übersprungen (siehe ermittleOsmInfo()). */
+  osmOrteAuswahlPopup(orte) {
+    const eintraege = orte.map((ort, index) => {
+      const adresse = [ort.adresse, ort.plz, ort.ort].filter(Boolean).join(", ");
+      const entfernung = typeof ort.entfernung_meter === "number"
+        ? `${Math.round(ort.entfernung_meter)} m entfernt`
+        : "";
+      return `<button type="button" class="secondary osm-orte-eintrag" data-osm-orte-auswahl="${index}">
+        <span class="osm-orte-name">${this.esc(ort.name || "")}</span>
+        ${adresse ? `<span class="muted">${this.esc(adresse)}</span>` : ""}
+        ${entfernung ? `<span class="muted">${this.esc(entfernung)}</span>` : ""}
+      </button>`;
+    }).join("");
+
+    return `<div class="modal-overlay" data-osm-orte-overlay>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="osm-orte-titel" tabindex="-1" data-osm-orte-dialog>
+        <h2 id="osm-orte-titel">Gefundene Orte</h2>
+        <p class="muted">Bitte einen Ort auswählen. Die Angaben werden anschliessend noch einmal zur Prüfung angezeigt, bevor etwas übernommen wird.</p>
+        <div class="osm-orte-liste">${eintraege}</div>
+        <div class="actions">
+          <button type="button" class="secondary" data-osm-orte-abbrechen>Abbrechen</button>
         </div>
       </div>
     </div>`;
@@ -1736,6 +1895,21 @@ class HofkartePanel extends HTMLElement {
     this.shadowRoot.querySelector("[data-webseite-info-abbrechen]")?.addEventListener("click", () => this.abbrechenWebseiteInfo());
     this.shadowRoot.querySelector("[data-webseite-info-overlay]")?.addEventListener("keydown", (e) => {
       if (e.key === "Escape") { e.stopPropagation(); this.abbrechenWebseiteInfo(); }
+    });
+    // "Ort in der Nähe suchen" (Issue #10) - Trefferauswahl-Popup (nur bei
+    // mehr als einem Treffer, siehe ermittleOsmInfo()); das nachfolgende
+    // Bestätigungs-Popup wird bereits über die obigen
+    // data-webseite-info-*-Listener abgedeckt (wiederverwendet, siehe
+    // waehleOsmOrt()).
+    this.shadowRoot.querySelector("[data-osm-info-btn]")?.addEventListener("click", () => {
+      this.ermittleOsmInfo();
+    });
+    this.shadowRoot.querySelectorAll("[data-osm-orte-auswahl]").forEach(b =>
+      b.addEventListener("click", () => this.waehleOsmOrt(Number(b.dataset.osmOrteAuswahl)))
+    );
+    this.shadowRoot.querySelector("[data-osm-orte-abbrechen]")?.addEventListener("click", () => this.abbrechenOsmAuswahl());
+    this.shadowRoot.querySelector("[data-osm-orte-overlay]")?.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); this.abbrechenOsmAuswahl(); }
     });
     this.shadowRoot.querySelector("[data-start-upload]")?.addEventListener("click", () => {
       this.shadowRoot.querySelector("#bild-upload-input")?.click();

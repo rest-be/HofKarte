@@ -554,6 +554,80 @@ einer eigenen, unverwalteten `aiohttp.ClientSession` (siehe
 `done` statt `exempt`). Ausführliche Begründung siehe `SECURITY.md`,
 Abschnitt „Funktion ‚Infos ermitteln‘“.
 
+## Ort in der Nähe suchen (Issue #10, Erweiterung von Issue #8)
+
+`osm_info.py` führt die **zweite eigene, ausgehende HTTP-Anfrage im
+Backend-Code von HofKarte** ein – diesmal an die
+OpenStreetMap-Overpass-API (`https://overpass-api.de/api/interpreter`),
+einen von HofKarte nicht kontrollierten, aber freien, kostenlosen,
+kontofreien OpenStreetMap-Community-Dienst. Wie `webseite_info.py`
+bewusst als eigenständiges Modul umgesetzt, nicht innerhalb von
+`management.py`.
+
+**Architektonische Einordnung:** Eine zweite, bewusst eng begrenzte
+Ausnahme vom Grundsatz „kein externer/Cloud-/KI-Dienst“, analog zur
+bereits bestehenden Ausnahme für die clientseitig geladenen
+Leaflet/OpenStreetMap-Kartenkacheln (siehe „Eingebettete Kartenansicht“
+unten) – kein kommerzieller Cloud-Dienst, kein LLM/KI-Dienst, kein
+„Scraping-as-a-Service“. Anders als die Kartenkacheln (nur generische
+Kachel-/Ausschnittkoordinaten, keine Hofladendaten) überträgt dieses
+Modul **serverseitig konkrete Koordinaten eines bestimmten Hofladens**
+– ausschliesslich auf ausdrücklichen Klick, nie automatisch. Siehe
+`osm_info.py`, Moduldoc, sowie `SECURITY.md`, Abschnitt „Funktion ‚Ort
+in der Nähe suchen‘“, für die ausführliche Begründung.
+
+**Datenfluss:**
+
+1. Verwaltungsoberfläche (`hofkarte-panel.js`): Klick auf „📍 Ort in der
+   Nähe suchen“ im Bearbeitungsformular (Abschnitt „Standort /
+   Koordinaten“, nur aktiv bei gültigen WGS84-Koordinaten, siehe
+   `isValidWgs84()`) ruft `ermittleOsmInfo()` auf, das den
+   WebSocket-Befehl `hofkarte/management/osm_info` mit den aktuell im
+   Formular eingetragenen Koordinaten sendet.
+2. `management.ws_osm_info` (administratorpflichtig, wie alle
+   Verwaltungsbefehle) delegiert an
+   `osm_info.async_ermittle_osm_orte(hass, latitude, longitude)`.
+3. `osm_info.py` validiert die Koordinaten, baut eine Overpass-QL-Anfrage
+   (gefiltert auf die Tags `shop=*` und `craft=agricultural`, siehe
+   Moduldoc „Tag-Auswahl“), ruft sie über Home Assistants verwaltete
+   Client-Session ab, verwirft unbenannte Treffer und liefert eine nach
+   Entfernung sortierte Liste von `OsmOrt`-Objekten (oder wirft einen der
+   drei Fehler) zurück.
+4. `ws_osm_info` bildet die Fehlerfälle auf eigene WebSocket-Fehlercodes
+   ab (`invalid_coordinates`/`unreachable`/`not_found`) bzw. serialisiert
+   das Ergebnis (`_json_value`, derselbe generische Serialisierer wie für
+   `Hofladen`- und `WebseiteInfo`-Objekte).
+5. `hofkarte-panel.js`: Bei genau einem Treffer wird die Trefferauswahl
+   übersprungen und der Treffer direkt in `this.webseiteInfoVorschlag`
+   abgelegt; bei mehreren Treffern zeigt `osmOrteAuswahlPopup()` zunächst
+   eine Auswahlliste (Name, Adresse, Entfernung), aus der `waehleOsmOrt()`
+   den gewählten Treffer ebenfalls in `this.webseiteInfoVorschlag`
+   überträgt. Ab hier läuft der Ablauf **identisch zu „Infos ermitteln“**
+   weiter: dasselbe Bestätigungs-Popup (`webseiteInfoPopup()`, ergänzt um
+   eine „Webseite“-Zeile), dieselbe Übernahme-Funktion
+   (`uebernehmeWebseiteInfo()`, ergänzt um das Feld `website`) – bewusst
+   wiederverwendet statt für die zweite Datenquelle dupliziert. Wie bei
+   „Infos ermitteln“ wird nie automatisch gespeichert.
+
+**`opening_hours`-Parser:** OpenStreetMaps `opening_hours`-Tag folgt
+einer eigenen, formal spezifizierten Syntax
+(https://wiki.openstreetmap.org/wiki/Key:opening_hours) – kein Fliesstext
+wie bei der Text-Heuristik aus Issue #9. `osm_info.py` unterstützt
+bewusst nur eine gängige Teilmenge (Semikolon-getrennte Regeln,
+englische Zwei-Buchstaben-Wochentagskürzel, Wochentag-/Zeitbereiche
+inkl. mehrerer Zeitintervalle pro Tag, `24/7`); nicht unterstützte Syntax
+(Feiertagsregeln, Datumsbereiche, `off`-Ausnahmen u. Ä.) wird komplett
+übersprungen statt teilweise interpretiert. Wie bei der Text-Heuristik
+aus Issue #9 gilt zusätzlich: Liefern mehrere Regeln unterschiedliche,
+widersprüchliche Zeiten für denselben Wochentag, gibt es für diesen Tag
+keinen Vorschlag; mehrere Zeitintervalle **derselben** Regel für denselben
+Tag (z. B. eine Mittagspause) sind dagegen kein Widerspruch.
+
+**Bewusst nicht umgesetzt (Scope-Abgrenzung):** Reine Koordinatensuche,
+keine Freitext-/Adresssuche – eine solche würde einen dritten externen
+Dienst (z. B. Nominatim-Geocoding) erfordern und wurde bewusst nicht
+eingeführt, um den Umfang dieser Erweiterung nicht unnötig auszuweiten.
+
 ## Suche/Filter
 
 `search.py` (`find_hoflaeden`) ist eine reine, HA-unabhängige

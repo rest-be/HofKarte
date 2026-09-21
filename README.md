@@ -684,13 +684,13 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
 ## Datenschutz- und Standort-Hinweise
 
 - **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
-  externen Servern – mit drei Ausnahmen: dem Laden von Hofladen-Bildern
+  externen Servern – mit vier Ausnahmen: dem Laden von Hofladen-Bildern
   über die vom Benutzer hinterlegten Bild-URLs (siehe „Bilder“), dem
   Laden der Kartenbibliothek Leaflet und der Kartenkacheln von
   OpenStreetMap, sobald die Übersichtsansicht „🗺️ Karte“ tatsächlich
   geöffnet wird (siehe „Eingebettete Kartenansicht“ oben) – dabei werden
   nur Kachel-/Ausschnittkoordinaten übertragen, keine Hofladen- oder
-  Standortdaten im Klartext – sowie dem Abruf einer vom Benutzer selbst
+  Standortdaten im Klartext – dem Abruf einer vom Benutzer selbst
   im Verwaltungs-Panel angegebenen Website-Adresse über die Funktion
   „🔎 Infos ermitteln“ (Formular „Hofladen bearbeiten“, Abschnitt
   „Kontakt & Webseite“): Auf ausdrücklichen Klick ruft HofKarte diese
@@ -702,8 +702,22 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
   automatisch gespeichert und kein externer/Cloud-/KI-Dienst
   eingebunden (rein lokale, deterministische Auswertung). Die Adresse
   wird dabei serverseitig gegen private/interne Ziele geprüft (siehe
-  [`SECURITY.md`](SECURITY.md)). Ausserhalb dieser drei Fälle findet
-  keine Telemetrie und keine Datenübertragung an Dritte statt.
+  [`SECURITY.md`](SECURITY.md)) – sowie, seit Issue #10, der Suche
+  über die freie OpenStreetMap-Overpass-API via „📍 Ort in der Nähe
+  suchen“ (Formular „Hofladen bearbeiten“, Abschnitt „Standort /
+  Koordinaten“): Auf ausdrücklichen Klick übermittelt HofKarte die
+  aktuell im Formular eingetragenen Koordinaten dieses Hofladens
+  serverseitig an `overpass-api.de` (ein freier, kostenloser,
+  kontofreier OpenStreetMap-Community-Dienst, kein kommerzieller
+  Cloud-Dienst und kein LLM) und schlägt gefundene, benannte Orte im
+  nahen Umkreis (Standardradius 50 m) ebenfalls nur als **Vorschlag zur
+  Überprüfung** vor – auch hier wird nichts automatisch gespeichert.
+  Anders als bei den rein clientseitig geladenen Kartenkacheln werden
+  dabei tatsächlich hofladenspezifische Standortdaten (die konkreten
+  Koordinaten) an den externen Dienst übertragen; siehe
+  [`SECURITY.md`](SECURITY.md) für die ausführliche Einordnung dieser
+  Ausnahme. Ausserhalb dieser vier Fälle findet keine Telemetrie und
+  keine Datenübertragung an Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor liest
   ausschliesslich die statische, in Home Assistant konfigurierte
   Position (`hass.config.latitude`/`longitude`) – kein `device_tracker`,
