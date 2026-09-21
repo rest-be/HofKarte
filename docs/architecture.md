@@ -558,11 +558,27 @@ Abschnitt „Funktion ‚Infos ermitteln‘“.
 
 `osm_info.py` führt die **zweite eigene, ausgehende HTTP-Anfrage im
 Backend-Code von HofKarte** ein – diesmal an die
-OpenStreetMap-Overpass-API (`https://overpass-api.de/api/interpreter`),
-einen von HofKarte nicht kontrollierten, aber freien, kostenlosen,
-kontofreien OpenStreetMap-Community-Dienst. Wie `webseite_info.py`
-bewusst als eigenständiges Modul umgesetzt, nicht innerhalb von
-`management.py`.
+OpenStreetMap-Overpass-API, einen von HofKarte nicht kontrollierten, aber
+freien, kostenlosen, kontofreien OpenStreetMap-Community-Dienst. Wie
+`webseite_info.py` bewusst als eigenständiges Modul umgesetzt, nicht
+innerhalb von `management.py`.
+
+**Mehrere Instanzen statt eines Einzelpunkts:** Die Haupt-Instanz
+`overpass-api.de` beschreibt sich selbst als häufig überlastet. Statt
+eines einzelnen, fest verdrahteten Endpunkts hinterlegt `osm_info.py`
+deshalb eine kurze, statische Liste bekannter, öffentlicher
+Overpass-Instanzen (`OVERPASS_URLS`: `overpass-api.de` als Haupt-Instanz,
+`overpass.private.coffee` sowie die für Schweizer Nutzung naheliegende
+Regional-Instanz `overpass.osm.ch`). `_rufe_overpass_ab()` versucht sie
+der Reihe nach; schlägt eine Instanz fehl (Verbindungsfehler,
+Zeitüberschreitung, Fehler- oder Drosselungs-Status wie HTTP 429), wird
+automatisch die nächste versucht, jeder Fehlversuch wird protokolliert
+(`_LOGGER.warning`) – erst wenn alle konfigurierten Instanzen
+fehlschlagen, wirft die Funktion `OsmNichtErreichbarError`. Jede Anfrage
+sendet zudem einen identifizierenden `User-Agent`-Header, wie von den
+Overpass-Nutzungsrichtlinien verlangt. Die eigentliche Overpass-QL-Anfrage
+nutzt den kombinierten `nwr`-Selektor (statt separater `node`-/
+`way`-Anweisungen) und deckt damit auch als Relation gemappte Läden ab.
 
 **Architektonische Einordnung:** Eine zweite, bewusst eng begrenzte
 Ausnahme vom Grundsatz „kein externer/Cloud-/KI-Dienst“, analog zur

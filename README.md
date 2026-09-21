@@ -707,10 +707,14 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
   suchen“ (Formular „Hofladen bearbeiten“, Abschnitt „Standort /
   Koordinaten“): Auf ausdrücklichen Klick übermittelt HofKarte die
   aktuell im Formular eingetragenen Koordinaten dieses Hofladens
-  serverseitig an `overpass-api.de` (ein freier, kostenloser,
-  kontofreier OpenStreetMap-Community-Dienst, kein kommerzieller
-  Cloud-Dienst und kein LLM) und schlägt gefundene, benannte Orte im
-  nahen Umkreis (Standardradius 50 m) ebenfalls nur als **Vorschlag zur
+  serverseitig an eine von mehreren bekannten, freien
+  OpenStreetMap-Overpass-Instanzen (u. a. `overpass-api.de` und –
+  seit dieser Erweiterung – automatische Ausweichziele wie
+  `overpass.osm.ch`, falls die Haupt-Instanz überlastet oder nicht
+  erreichbar ist; ausschliesslich freie, kostenlose, kontofreie
+  OpenStreetMap-Community-Dienste, kein kommerzieller Cloud-Dienst
+  und kein LLM) und schlägt gefundene, benannte Orte im nahen
+  Umkreis (Standardradius 50 m) ebenfalls nur als **Vorschlag zur
   Überprüfung** vor – auch hier wird nichts automatisch gespeichert.
   Anders als bei den rein clientseitig geladenen Kartenkacheln werden
   dabei tatsächlich hofladenspezifische Standortdaten (die konkreten

@@ -27,16 +27,55 @@ SECURITY.md für die ausführliche Begründung dieser Ausnahme).
 ## Kein SSRF-Schutz über ``url_sicherheit.py`` nötig
 
 Anders als bei ``webseite_info.py`` (dort bestimmt die Benutzerin/der
-Benutzer die abgerufene URL selbst - klassisches SSRF-Risiko) ist das
-Anfrageziel hier **fest im Code hinterlegt** (``OVERPASS_URL``) und wird
-nie durch Benutzereingaben beeinflusst - nur Koordinaten und Radius
-fliessen (als reine Zahlenwerte, nicht als Freitext) in den Anfragetext
-ein. Eine SSRF-Prüfung à la ``url_sicherheit.py`` (Schema-/Host-Prüfung
-einer benutzergesteuerten Ziel-URL) ist daher nicht anwendbar. Es gelten
-stattdessen dieselben allgemeinen Abwehrmassnahmen gegen eine
-möglicherweise übergrosse oder fehlerhafte Antwort wie in
-``webseite_info.py``: ein Antwortgrössen-Limit (``MAX_ANTWORT_BYTES``)
-sowie eine Zeitüberschreitung (``ABRUF_TIMEOUT_SEKUNDEN``).
+Benutzer die abgerufene URL selbst - klassisches SSRF-Risiko) sind die
+Anfrageziele hier **fest im Code hinterlegt** (``OVERPASS_URLS``, siehe
+unten) und werden nie durch Benutzereingaben beeinflusst - nur
+Koordinaten und Radius fliessen (als reine Zahlenwerte, nicht als
+Freitext) in den Anfragetext ein. Eine SSRF-Prüfung à la
+``url_sicherheit.py`` (Schema-/Host-Prüfung einer benutzergesteuerten
+Ziel-URL) ist daher nicht anwendbar. Es gelten stattdessen dieselben
+allgemeinen Abwehrmassnahmen gegen eine möglicherweise übergrosse oder
+fehlerhafte Antwort wie in ``webseite_info.py``: ein Antwortgrössen-Limit
+(``MAX_ANTWORT_BYTES``) sowie eine Zeitüberschreitung
+(``ABRUF_TIMEOUT_SEKUNDEN``).
+
+## Zuverlässigkeit: mehrere Instanzen statt eines Einzelpunkts
+
+Recherche in der offiziellen Dokumentation (OSM-Wiki „Overpass API“,
+``overpass-api.de``, ``github.com/drolbr/Overpass-API``) ergab zwei für
+die Zuverlässigkeit dieser Funktion direkt relevante, dort ausdrücklich
+dokumentierte Punkte:
+
+1. Die Haupt-Instanz ``overpass-api.de`` wird von den Betreibern selbst
+   als **häufig überlastet** beschrieben („Nowadays this server is
+   overloaded [...] do not expect high reliability. Use alternatives if
+   possible.“) - ein einzelner, fest verdrahteter Endpunkt ist damit ein
+   unnötiger Single Point of Failure für eine Funktion, die ohnehin nur
+   auf ausdrücklichen Klick läuft und keine hohe Anfragefrequenz braucht.
+2. Die Nutzungsrichtlinien verlangen ausdrücklich einen erkennbaren
+   ``User-Agent``- oder ``Referer``-Header („Be sure to check that your
+   app or website adds User-Agent or Referer headers“) - ein Client ohne
+   erkennbaren Absender riskiert, von der Instanz als anonymer/
+   Massen-Client eingestuft und stärker gedrosselt oder abgelehnt zu
+   werden.
+
+Dieses Modul begegnet Punkt 1 mit einer kurzen, statisch im Code
+hinterlegten Liste bekannter, öffentlicher Overpass-Instanzen
+(``OVERPASS_URLS``) - bei einem Verbindungsfehler, einer Zeitüberschreitung
+oder einem serverseitigen Fehler-/Drosselungs-Status (u. a. HTTP 429, wie
+in den Nutzungsrichtlinien als Drosselungs-Antwort dokumentiert) wird
+automatisch die nächste Instanz derselben Liste versucht, bevor die
+Suche endgültig als nicht erreichbar gilt; jeder einzelne Fehlversuch
+wird protokolliert (siehe ``_rufe_overpass_ab``). Neben der Haupt-Instanz
+enthält die Liste bewusst ``overpass.private.coffee`` (im OSM-Wiki als
+Alternative genannt) sowie die für Schweizer Nutzung naheliegende
+Regional-Instanz ``overpass.osm.ch`` - alle drei sind, wie die
+Haupt-Instanz, freie, kostenlose, kontofreie OpenStreetMap-
+Community-Dienste und fallen damit unter dieselbe, oben begründete
+Ausnahme vom Grundsatz „kein externer Dienst“; es wird keine neue,
+andersartige Kategorie externer Dienste eingeführt. Punkt 2 wird durch
+einen expliziten, identifizierenden ``User-Agent``-Header
+(``_USER_AGENT``) bei jeder Anfrage berücksichtigt.
 
 ## Tag-Auswahl
 
@@ -50,6 +89,13 @@ getaggt; für landwirtschaftliche Hofläden ergänzend über
 nachvollziehbare, auf den Anwendungsfall "Hofladen" zugeschnittene
 Annäherung - lieber eine sinnvolle Teilmenge als eine überhastete
 Rundum-Suche mit vielen irrelevanten Treffern.
+
+Die Anfrage selbst nutzt den kombinierten ``nwr``-Selektor (Overpass-QL-
+Kurzform für „nodes, ways or relations“, siehe OSM-Wiki, „Overpass
+API/Overpass QL“) statt separater ``node``-/``way``-Anweisungen je Filter
+- das deckt zusätzlich auch als **Relation** (z. B. Gebäude-Multipolygon)
+gemappte Läden ab, die zuvor durch die auf Node/Way begrenzte Anfrage
+übersehen worden wären, und hält die Anfrage kürzer.
 
 ## ``opening_hours``: begrenzter, dokumentierter Parser statt Freitext-Raten
 
@@ -96,9 +142,35 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER = logging.getLogger(__name__)
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"  # Haupt-Instanz (primärer, zuerst versuchter Endpunkt)
+# Bekannte, öffentliche Overpass-API-Instanzen in Versuchsreihenfolge
+# (siehe Moduldoc, "Zuverlässigkeit: mehrere Instanzen statt eines
+# Einzelpunkts") - schlägt eine Instanz fehl (Verbindungsfehler,
+# Zeitüberschreitung, Fehler-/Drosselungs-Status), wird automatisch die
+# nächste versucht, bevor die Suche als nicht erreichbar gilt.
+OVERPASS_URLS: tuple[str, ...] = (
+    OVERPASS_URL,
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.osm.ch/api/interpreter",
+)
+# HTTP-Statuscodes, bei denen ein Fehlversuch auf dieser Instanz nicht
+# zwingend ein grundsätzliches Problem der Anfrage bedeutet (z. B. 429 -
+# von den Overpass-Nutzungsrichtlinien selbst als Drosselungs-Antwort
+# dokumentiert), sondern ebenfalls einen Versuch der nächsten Instanz
+# rechtfertigt.
+_OVERPASS_DROSSELUNGS_STATUS = {429, 502, 503, 504}
+# Von den Overpass-Nutzungsrichtlinien ausdrücklich verlangt ("Be sure to
+# check that your app or website adds User-Agent or Referer headers").
+_USER_AGENT = "HofKarte/HomeAssistant (+https://github.com/rest-be/HofKarte)"
 STANDARD_RADIUS_METER = 50
-ABRUF_TIMEOUT_SEKUNDEN = 15
+# Innerhalb der Overpass-Anfrage selbst gesetztes Zeitlimit (siehe
+# _baue_overpass_query, "[out:json][timeout:...]"); das HTTP-Zeitlimit
+# (ABRUF_TIMEOUT_SEKUNDEN) liegt bewusst etwas darüber, damit ein von der
+# Overpass API selbst sauber beendetes, langsames Query noch als reguläre
+# (wenn auch ggf. leere) Antwort ankommt, statt durch den HTTP-Client
+# vorher abgebrochen zu werden.
+_OVERPASS_QUERY_TIMEOUT_SEKUNDEN = 20
+ABRUF_TIMEOUT_SEKUNDEN = 25
 # Overpass-Antworten für einen kleinen Umkreis sind normalerweise winzig;
 # 1 MB ist grosszügig genug für viele Treffer und begrenzt gleichzeitig
 # den Ressourcenverbrauch durch eine übergrosse Antwort (siehe Moduldoc).
@@ -306,50 +378,109 @@ def _extrahiere_oeffnungszeiten_osm(opening_hours: Any) -> tuple[dict[str, Any],
 
 
 def _baue_overpass_query(latitude: float, longitude: float, radius_meter: int) -> str:
+    """Baut die Overpass-QL-Anfrage. Nutzt den kombinierten ``nwr``-
+    Selektor (siehe Moduldoc, "Tag-Auswahl") statt separater ``node``-/
+    ``way``-Anweisungen - deckt damit auch als Relation gemappte Läden ab.
+    Das interne Zeitlimit (``[timeout:...]``) ist bewusst kleiner als das
+    äussere HTTP-Zeitlimit (``ABRUF_TIMEOUT_SEKUNDEN``), damit die
+    Overpass API selbst sauber mit einer regulären (ggf. leeren) Antwort
+    abschliessen kann, statt vom HTTP-Client vorher abgebrochen zu
+    werden."""
     umkreis = f"around:{int(radius_meter)},{latitude},{longitude}"
-    zeilen = []
-    for filt in _OVERPASS_FILTER:
-        zeilen.append(f"  node({umkreis}){filt};")
-        zeilen.append(f"  way({umkreis}){filt};")
-    return "[out:json][timeout:10];\n(\n" + "\n".join(zeilen) + "\n);\nout center tags;"
+    zeilen = [f"  nwr({umkreis}){filt};" for filt in _OVERPASS_FILTER]
+    return (
+        f"[out:json][timeout:{_OVERPASS_QUERY_TIMEOUT_SEKUNDEN}];\n(\n"
+        + "\n".join(zeilen)
+        + "\n);\nout center tags;"
+    )
 
 
-async def _rufe_overpass_ab(session: aiohttp.ClientSession, query: str) -> dict[str, Any]:
-    """Ruft die Overpass API mit ``query`` auf und liefert die (begrenzt
-    gelesene) JSON-Antwort. Das Anfrageziel ist fest (``OVERPASS_URL``),
-    keine Weiterleitungsauflösung/SSRF-Prüfung nötig (siehe Moduldoc)."""
+class _OsmInstanzFehlgeschlagen(Exception):
+    """Interne Markierungs-Exception (nicht Teil der öffentlichen
+    Modul-API): EINE Overpass-Instanz aus ``OVERPASS_URLS`` war nicht
+    erreichbar oder lieferte keine brauchbare Antwort.
+    ``_rufe_overpass_ab`` fängt sie ab und versucht die nächste
+    konfigurierte Instanz, bevor endgültig ``OsmNichtErreichbarError``
+    geworfen wird (siehe Moduldoc, "Zuverlässigkeit")."""
+
+
+async def _rufe_overpass_instanz_ab(
+    session: aiohttp.ClientSession, url: str, query: str
+) -> dict[str, Any]:
+    """Ruft EINE einzelne Overpass-Instanz (``url``) mit ``query`` auf und
+    liefert die (begrenzt gelesene) JSON-Antwort, oder wirft
+    ``_OsmInstanzFehlgeschlagen`` mit einer aussagekräftigen, für die
+    Protokollierung in ``_rufe_overpass_ab`` bestimmten Fehlermeldung."""
     timeout = aiohttp.ClientTimeout(total=ABRUF_TIMEOUT_SEKUNDEN)
+    headers = {"User-Agent": _USER_AGENT}
     try:
         async with session.post(
-            OVERPASS_URL, data={"data": query}, timeout=timeout
+            url, data={"data": query}, timeout=timeout, headers=headers
         ) as antwort:
             if antwort.status >= 400:
-                raise OsmNichtErreichbarError(
-                    "Die Overpass API hat einen Fehler zurückgegeben "
-                    f"(Status {antwort.status})."
+                fehlertext = (await antwort.text())[:500]
+                art = (
+                    "Drosselung/temporärer Serverfehler"
+                    if antwort.status in _OVERPASS_DROSSELUNGS_STATUS
+                    else "Fehler"
+                )
+                raise _OsmInstanzFehlgeschlagen(
+                    f"HTTP-Status {antwort.status} ({art}): {fehlertext}"
                 )
 
             rohdaten = bytearray()
             async for chunk in antwort.content.iter_chunked(_LESE_CHUNK_BYTES):
                 rohdaten.extend(chunk)
                 if len(rohdaten) > MAX_ANTWORT_BYTES:
-                    raise OsmNichtErreichbarError(
-                        "Die Antwort der Overpass API ist zu gross, um "
-                        "verarbeitet zu werden."
+                    raise _OsmInstanzFehlgeschlagen(
+                        f"Antwort überschreitet das Grössenlimit von "
+                        f"{MAX_ANTWORT_BYTES} Bytes."
                     )
 
             try:
                 return json.loads(bytes(rohdaten).decode("utf-8", errors="replace"))
             except json.JSONDecodeError as err:
-                raise OsmNichtErreichbarError(
-                    "Die Antwort der Overpass API konnte nicht gelesen werden."
+                raise _OsmInstanzFehlgeschlagen(
+                    f"Antwort ist kein gültiges JSON: {err}"
                 ) from err
-    except OsmNichtErreichbarError:
+    except _OsmInstanzFehlgeschlagen:
         raise
     except (aiohttp.ClientError, TimeoutError) as err:
-        raise OsmNichtErreichbarError(
-            "Die Overpass API konnte nicht erreicht werden."
-        ) from err
+        raise _OsmInstanzFehlgeschlagen(f"{type(err).__name__}: {err}") from err
+
+
+async def _rufe_overpass_ab(session: aiohttp.ClientSession, query: str) -> dict[str, Any]:
+    """Ruft ``query`` nacheinander gegen jede in ``OVERPASS_URLS``
+    konfigurierte Instanz ab und liefert die JSON-Antwort der ersten
+    erfolgreichen Instanz. Die Anfrageziele sind fest im Code hinterlegt
+    (keine Weiterleitungsauflösung/SSRF-Prüfung nötig, siehe Moduldoc).
+
+    Jeder einzelne Fehlversuch sowie das endgültige Scheitern aller
+    Instanzen werden über ``_LOGGER`` protokolliert (Level ``warning``,
+    sichtbar in den Home-Assistant-Protokollen auch ohne aktiviertes
+    Debug-Logging) - inklusive der jeweiligen Instanz-URL, des HTTP-Status
+    bzw. Exception-Typs und (bei einem Fehlerstatus) eines Ausschnitts des
+    Antworttexts. Die an die Verwaltungsoberfläche zurückgegebene
+    Fehlermeldung bleibt bewusst allgemein (siehe ``management.
+    ws_osm_info``) - die Details lassen sich bei Bedarf nur über diese
+    Protokollierung nachvollziehen."""
+    letzter_fehler: Exception | None = None
+    for url in OVERPASS_URLS:
+        try:
+            return await _rufe_overpass_instanz_ab(session, url, query)
+        except _OsmInstanzFehlgeschlagen as err:
+            _LOGGER.warning("Overpass-Instanz %s nicht erreichbar: %s", url, err)
+            letzter_fehler = err
+
+    _LOGGER.warning(
+        "Alle %s konfigurierten Overpass-Instanzen sind fehlgeschlagen: %s",
+        len(OVERPASS_URLS),
+        ", ".join(OVERPASS_URLS),
+    )
+    raise OsmNichtErreichbarError(
+        "Die Overpass API (OpenStreetMap) konnte über keine der "
+        f"{len(OVERPASS_URLS)} bekannten Instanzen erreicht werden."
+    ) from letzter_fehler
 
 
 def _koordinaten_aus_element(element: dict[str, Any]) -> tuple[float, float] | None:

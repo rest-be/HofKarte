@@ -19,11 +19,13 @@ import pytest
 
 from custom_components.hofkarte.osm_info import (
     MAX_ANTWORT_BYTES,
+    OVERPASS_URLS,
     OsmKeineOrteGefundenError,
     OsmNichtErreichbarError,
     OsmOrt,
     OsmUngueltigeKoordinatenError,
     _adresse_aus_tags,
+    _baue_overpass_query,
     _entfernung_meter,
     _extrahiere_oeffnungszeiten_osm,
     _sind_gueltige_koordinaten,
@@ -232,6 +234,10 @@ class _FakeResponse:
     def __init__(self, *, status: int = 200, body: bytes = b"") -> None:
         self.status = status
         self.content = _FakeContent(body)
+        self._body = body
+
+    async def text(self) -> str:
+        return self._body.decode("utf-8", errors="replace")
 
     async def __aenter__(self) -> "_FakeResponse":
         return self
@@ -249,13 +255,30 @@ class _RaisingPost:
 
 
 class _FakeSession:
+    """Bildet, wie viele Overpass-Instanzen (``OVERPASS_URLS``) tatsächlich
+    versucht werden, über eine Liste von Antworten nach - eine pro
+    erwartetem Aufruf, in Reihenfolge. Ein Test, der ALLE Instanzen
+    fehlschlagen lassen will, muss also ``len(OVERPASS_URLS)`` Antworten
+    liefern (siehe ``_alle_instanzen_fehlschlagen``); ein Test, der nur den
+    ersten (erfolgreichen) Versuch braucht, genügt mit einer einzigen."""
+
     def __init__(self, antworten: list[_FakeResponse]) -> None:
         self._antworten = list(antworten)
         self.aufrufe: list[dict[str, Any]] = []
 
-    def post(self, url: str, *, data: Any = None, timeout: Any = None):
-        self.aufrufe.append({"url": url, "data": data})
+    def post(
+        self, url: str, *, data: Any = None, timeout: Any = None, headers: Any = None
+    ):
+        self.aufrufe.append({"url": url, "data": data, "headers": headers})
         return self._antworten.pop(0)
+
+
+def _alle_instanzen_fehlschlagen(fabrik) -> "_FakeSession":
+    """Baut eine _FakeSession, bei der JEDE konfigurierte Overpass-Instanz
+    (``OVERPASS_URLS``) mit derselben, über ``fabrik()`` erzeugten Antwort
+    fehlschlägt - für Tests, die das endgültige Scheitern aller Instanzen
+    prüfen wollen (siehe Moduldoc, "Zuverlässigkeit")."""
+    return _FakeSession([fabrik() for _ in OVERPASS_URLS])
 
 
 def _patch_session(monkeypatch: pytest.MonkeyPatch, session: Any) -> None:
@@ -291,6 +314,49 @@ async def test_erfolgreicher_abruf_liefert_sortierte_orte(
     assert orte[0].name == "Naher Hofladen"
     assert orte[1].name == "Ferner Hofladen"
     assert orte[0].entfernung_meter < orte[1].entfernung_meter
+
+
+async def test_anfrage_sendet_identifizierenden_user_agent_header(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Von den Overpass-Nutzungsrichtlinien ausdrücklich verlangt: ein
+    erkennbarer User-Agent- oder Referer-Header (siehe Moduldoc,
+    "Zuverlässigkeit")."""
+    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "Hofladen"}}
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+
+    headers = session.aufrufe[0]["headers"]
+    assert headers is not None
+    assert "User-Agent" in headers
+    assert "HofKarte" in headers["User-Agent"]
+
+
+async def test_anfrage_nutzt_ersten_konfigurierten_endpunkt_zuerst(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "Hofladen"}}
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+
+    assert session.aufrufe[0]["url"] == OVERPASS_URLS[0]
+
+
+def test_baue_overpass_query_nutzt_nwr_selektor_und_beide_filter() -> None:
+    """Der kombinierte nwr-Selektor (statt separater node-/way-Anweisungen,
+    siehe Moduldoc, "Tag-Auswahl") deckt zusätzlich als Relation gemappte
+    Läden ab."""
+    query = _baue_overpass_query(46.948, 7.4474, 50)
+    assert "nwr(around:50,46.948,7.4474)[\"shop\"];" in query
+    assert 'nwr(around:50,46.948,7.4474)["craft"="agricultural"];' in query
+    assert "node(" not in query
+    assert "way(" not in query
+    assert query.startswith("[out:json][timeout:")
+    assert query.rstrip().endswith("out center tags;")
 
 
 async def test_way_element_nutzt_center_koordinate(
@@ -391,18 +457,57 @@ async def test_keine_treffer_wirft_not_found(
 async def test_http_fehlerstatus_wirft_nicht_erreichbar_error(
     hass: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    session = _FakeSession([_FakeResponse(status=500)])
+    """Ein Fehlerstatus auf EINER Instanz führt zum Versuch der nächsten
+    (siehe Moduldoc, "Zuverlässigkeit") - erst wenn ALLE konfigurierten
+    Instanzen fehlschlagen, wird 'nicht erreichbar' geworfen."""
+    session = _alle_instanzen_fehlschlagen(lambda: _FakeResponse(status=500))
     _patch_session(monkeypatch, session)
 
     with pytest.raises(OsmNichtErreichbarError):
         await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+    assert len(session.aufrufe) == len(OVERPASS_URLS)
+
+
+async def test_429_drosselung_fuehrt_ebenfalls_zur_naechsten_instanz(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HTTP 429 (von den Overpass-Nutzungsrichtlinien als Drosselungs-
+    Antwort dokumentiert) wird wie ein sonstiger Fehlerstatus behandelt -
+    ebenfalls ein Grund, die nächste Instanz zu versuchen."""
+    session = _alle_instanzen_fehlschlagen(lambda: _FakeResponse(status=429))
+    _patch_session(monkeypatch, session)
+
+    with pytest.raises(OsmNichtErreichbarError):
+        await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+    assert len(session.aufrufe) == len(OVERPASS_URLS)
+
+
+async def test_erste_instanz_schlaegt_fehl_zweite_liefert_ergebnis(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Kernverhalten des Fallbacks: Schlägt die erste konfigurierte
+    Instanz fehl, wird automatisch die zweite versucht - der Aufruf
+    liefert trotzdem ein Ergebnis, kein Fehler."""
+    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "Hofladen"}}
+    session = _FakeSession(
+        [_FakeResponse(status=503), _FakeResponse(body=_overpass_antwort([element]))]
+    )
+    _patch_session(monkeypatch, session)
+
+    orte = await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+
+    assert len(orte) == 1
+    assert orte[0].name == "Hofladen"
+    assert len(session.aufrufe) == 2
+    assert session.aufrufe[0]["url"] == OVERPASS_URLS[0]
+    assert session.aufrufe[1]["url"] == OVERPASS_URLS[1]
 
 
 async def test_zu_grosse_antwort_wirft_nicht_erreichbar_error(
     hass: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     zu_gross = b'{"elements": []}' + b" " * (MAX_ANTWORT_BYTES + 1)
-    session = _FakeSession([_FakeResponse(body=zu_gross)])
+    session = _alle_instanzen_fehlschlagen(lambda: _FakeResponse(body=zu_gross))
     _patch_session(monkeypatch, session)
 
     with pytest.raises(OsmNichtErreichbarError):
@@ -412,7 +517,7 @@ async def test_zu_grosse_antwort_wirft_nicht_erreichbar_error(
 async def test_ungueltiges_json_wirft_nicht_erreichbar_error(
     hass: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    session = _FakeSession([_FakeResponse(body=b"das ist kein JSON")])
+    session = _alle_instanzen_fehlschlagen(lambda: _FakeResponse(body=b"das ist kein JSON"))
     _patch_session(monkeypatch, session)
 
     with pytest.raises(OsmNichtErreichbarError):

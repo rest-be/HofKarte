@@ -135,16 +135,15 @@ Sicherheitsmassnahmen:
 
 Diese Funktion führt die **zweite eigene ausgehende Netzwerkanfrage im
 Backend-Code von HofKarte** ein – diesmal an die OpenStreetMap-Overpass-
-API (`overpass-api.de`), einen von HofKarte nicht kontrollierten, aber
-freien, kostenlosen, kontofreien OpenStreetMap-Community-Dienst (kein
-kommerzieller Cloud-Dienst, kein LLM/KI-Dienst, kein
-„Scraping-as-a-Service“). Anders als die rein clientseitig vom Browser
-geladenen Leaflet/OpenStreetMap-Kartenkacheln (Issue #2) überträgt diese
-Funktion **serverseitig konkrete Koordinaten eines bestimmten
-Hofladens** an den externen Dienst – ausschliesslich auf ausdrücklichen
-Klick auf „📍 Ort in der Nähe suchen“, nie automatisch oder im
-Hintergrund. Getroffene Sicherheitsmassnahmen bzw. bewusste
-Abgrenzungen:
+API, einen von HofKarte nicht kontrollierten, aber freien, kostenlosen,
+kontofreien OpenStreetMap-Community-Dienst (kein kommerzieller
+Cloud-Dienst, kein LLM/KI-Dienst, kein „Scraping-as-a-Service“). Anders
+als die rein clientseitig vom Browser geladenen Leaflet/OpenStreetMap-
+Kartenkacheln (Issue #2) überträgt diese Funktion **serverseitig
+konkrete Koordinaten eines bestimmten Hofladens** an den externen Dienst
+– ausschliesslich auf ausdrücklichen Klick auf „📍 Ort in der Nähe
+suchen“, nie automatisch oder im Hintergrund. Getroffene
+Sicherheitsmassnahmen bzw. bewusste Abgrenzungen:
 
 - **Kein externer/Cloud-/KI-Dienst im Sinne des Kernprinzips:** Die
   Overpass API ist ein reiner OpenStreetMap-Datenabruf (strukturierte
@@ -153,15 +152,29 @@ Abgrenzungen:
   ausschliesslich lokal und deterministisch ausgewertet (siehe
   `osm_info.py`, Moduldoc, für die genaue Einordnung dieser bewusst
   begrenzten, zweiten Ausnahme).
+- **Mehrere feste Anfrageziele statt eines Einzelpunkts:** Die
+  Haupt-Instanz `overpass-api.de` wird von ihren eigenen Betreibern als
+  häufig überlastet beschrieben. Statt eines einzelnen, fest verdrahteten
+  Endpunkts hinterlegt `osm_info.py` deshalb eine kurze, statische Liste
+  bekannter, öffentlicher Overpass-Instanzen (`OVERPASS_URLS`, alle drei
+  ebenfalls freie, kostenlose, kontofreie OpenStreetMap-Community-Dienste
+  – keine neue Kategorie externer Dienste); schlägt eine Instanz fehl
+  (Verbindungsfehler, Zeitüberschreitung, Fehler- oder
+  Drosselungs-Status wie HTTP 429), wird automatisch die nächste
+  versucht, jeder Fehlversuch wird protokolliert.
+- **Erkennbarer `User-Agent`-Header:** Die Overpass-Nutzungsrichtlinien
+  verlangen ausdrücklich einen identifizierenden `User-Agent`- oder
+  `Referer`-Header; jede Anfrage sendet daher einen festen,
+  HofKarte-identifizierenden `User-Agent` mit.
 - **Kein SSRF-Schutz à la `url_sicherheit.py` nötig, dafür andere
-  Limits:** Anders als bei `webseite_info.py` ist das Anfrageziel hier
-  **fest im Code hinterlegt** (`OVERPASS_URL`) und wird nie durch
+  Limits:** Anders als bei `webseite_info.py` sind die Anfrageziele hier
+  **fest im Code hinterlegt** (`OVERPASS_URLS`) und werden nie durch
   Benutzereingaben beeinflusst – nur Koordinaten und Radius (reine
   Zahlenwerte) fliessen in den Anfragetext ein, eine Prüfung einer
   benutzergesteuerten Ziel-URL entfällt damit. Es gelten dieselben
   allgemeinen Abwehrmassnahmen wie in `webseite_info.py`: ein
   Antwortgrössen-Limit (1 MB) sowie eine Zeitüberschreitung
-  (15 Sekunden).
+  (25 Sekunden je Instanz).
 - **Home Assistants verwaltete Client-Session:** Wie
   `webseite_info.py` verwendet auch dieser Abruf
   `homeassistant.helpers.aiohttp_client.async_get_clientsession`, keine

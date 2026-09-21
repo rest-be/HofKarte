@@ -13,6 +13,98 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.2-dev.5] - Entwicklungsversion (develop)
+
+Kein produktiver Release. Behebung der weiterhin gemeldeten Meldung
+„Die Overpass API (OpenStreetMap) konnte nicht erreicht werden.“ für
+„Ort in der Nähe suchen“ (Issue #10), auf ausdrücklichen Wunsch
+anhand einer Analyse der Overpass-API-Dokumentation
+([Overpass-API auf GitHub](https://github.com/drolbr/Overpass-API),
+[OSM-Wiki „Overpass API“](https://wiki.openstreetmap.org/wiki/Overpass_API),
+[overpass-api.de](https://overpass-api.de)) durchgeführt.
+
+### Geändert
+
+- **Mehrere Overpass-Instanzen statt eines Einzelpunkts
+  (`OVERPASS_URLS`):** Die im OSM-Wiki dokumentierte, offizielle
+  Selbstauskunft der bisher allein verwendeten Haupt-Instanz
+  (`overpass-api.de`) beschreibt diese ausdrücklich als „overloaded …
+  do not expect high reliability. Use alternatives if possible.“ Das
+  erklärt die gemeldete Nichterreichbarkeit, ohne dass dabei auf
+  Seiten von HofKarte ein Fehler vorlag. `osm_info.py` versucht jetzt
+  der Reihe nach mehrere bekannte, freie, kostenlose, kontofreie
+  OpenStreetMap-Community-Instanzen (`overpass-api.de`,
+  `overpass.private.coffee`, das Schweiz-regionale `overpass.osm.ch`)
+  und meldet erst dann „nicht erreichbar“, wenn **alle** Instanzen
+  fehlschlagen. Jeder einzelne Fehlversuch sowie eine
+  Gesamtzusammenfassung werden über `_LOGGER.warning(...)`
+  protokolliert, sodass sich anhand der Home-Assistant-Protokolle
+  (Einstellungen → System → Protokolle) genau nachvollziehen lässt,
+  welche Instanz(en) aus welchem Grund fehlgeschlagen sind. Dies
+  bleibt innerhalb der bereits dokumentierten, eng begrenzten
+  Ausnahme vom Grundsatz „kein externer/Cloud-/KI-Dienst“ (alle drei
+  Instanzen sind freie, kostenlose, kontofreie OSM-Community-Dienste –
+  keine neue Kategorie externer Abhängigkeit). Siehe
+  [`SECURITY.md`](SECURITY.md) und
+  [`docs/architecture.md`](docs/architecture.md) für die ausführliche
+  Einordnung.
+- **Erkennbarer `User-Agent`-Header ergänzt:** Die Overpass-API-Nutzungsrichtlinien
+  verlangen ausdrücklich einen identifizierenden `User-Agent`- oder
+  `Referer`-Header; bisher wurde keiner gesendet, was ebenfalls zu
+  Ablehnungen führen kann. HofKarte sendet jetzt bei jeder Anfrage
+  `User-Agent: HofKarte/HomeAssistant (+https://github.com/rest-be/HofKarte)`.
+- **Abfrage auf den `nwr`-Selektor umgestellt:** Die Overpass-QL-Abfrage
+  verwendet jetzt den kombinierten `nwr(around:…)[…];`-Selektor
+  (Node/Way/Relation in einer Zeile) statt getrennter `node(…)`- und
+  `way(…)`-Zeilen – laut OSM-Wiki die empfohlene, kompaktere Schreibweise
+  für „alle Objekttypen im Umkreis“.
+- **Timeouts angepasst:** Der HTTP-Abruf-Timeout je Instanz wurde von 15
+  auf 25 Sekunden angehoben; zusätzlich begrenzt ein neuer, kürzerer
+  interner Overpass-Abfrage-Timeout (`[timeout:20]` in der Abfrage
+  selbst, 20 Sekunden) die serverseitige Bearbeitungszeit bei Overpass,
+  sodass Overpass selbst sauber abbrechen kann, bevor der HTTP-Client
+  abbricht.
+- Konnte auch in dieser Entwicklungsrunde nicht in der
+  Entwicklungsumgebung reproduziert werden (kein Netzwerkzugriff auf
+  `overpass-api.de` oder die weiteren Instanzen von hier aus) – die
+  Behebung stützt sich auf die dokumentierten Ursachen (Überlastung
+  der Haupt-Instanz, fehlender `User-Agent`-Header) statt auf eine
+  direkte Reproduktion. Bitte nach dem Update erneut testen und bei
+  weiterhin auftretenden Problemen die Home-Assistant-Protokolle
+  prüfen – diese zeigen jetzt für jede versuchte Instanz den genauen
+  Fehlergrund.
+
+## [2026.9.2-dev.4] - Entwicklungsversion (develop)
+
+Kein produktiver Release. Diagnose-Verbesserung für „Ort in der Nähe
+suchen“ (Issue #10), ausgelöst durch eine gemeldete Meldung „Die
+Overpass API (OpenStreetMap) konnte nicht erreicht werden.“ beim
+tatsächlichen Testen.
+
+### Geändert
+
+- **Protokollierung in `osm_info.py` ergänzt:** Bisher wurde bei jedem
+  der drei möglichen Fehlerfälle des Overpass-Abrufs (HTTP-Fehlerstatus,
+  Verbindungsfehler/Timeout, unlesbare Antwort) zwar der bereits
+  bestehende, bewusst allgemein gehaltene Fehlertext an die
+  Verwaltungsoberfläche zurückgegeben, aber **nirgends protokolliert,
+  was die tatsächliche Ursache war** – weder der genaue Exception-Typ
+  bei einem Verbindungsfehler (DNS, TLS, Timeout, Firewall, …) noch der
+  von der Overpass API zurückgegebene Antworttext bei einem
+  Fehlerstatus. Dadurch liess sich ein gemeldetes „nicht erreichbar“
+  bisher nicht in den Home-Assistant-Protokollen nachvollziehen. Alle
+  drei Fehlerfälle protokollieren jetzt über `_LOGGER.warning(...)` die
+  jeweilige Ursache (sichtbar in den Protokollen auch ohne aktiviertes
+  Debug-Logging).
+- Konnte in dieser Entwicklungsrunde nicht reproduziert werden (die
+  Entwicklungsumgebung, in der dieser Fix erstellt wurde, hat aus
+  eigenen, unabhängigen Netzwerkgründen keinen Zugriff auf
+  `overpass-api.de`) – die genaue Ursache (z. B. fehlender
+  Internetzugriff des Home-Assistant-Hosts, DNS-/TLS-Problem, temporäre
+  Nichterreichbarkeit von `overpass-api.de`) lässt sich erst anhand der
+  neu protokollierten Meldung in den Home-Assistant-Protokollen
+  (**Einstellungen → System → Protokolle**) bestimmen.
+
 ## [2026.9.2-dev.3] - Entwicklungsversion (develop)
 
 Kein produktiver Release. Erweiterung des „Infos ermitteln“-Workflows

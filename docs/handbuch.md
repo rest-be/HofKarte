@@ -274,10 +274,13 @@ einem Hofladen automatisch vorzubelegen:
 
 1. Zunächst gültige Koordinaten (Latitude/Longitude) eintragen – ohne
    gültige Koordinaten ist der Button deaktiviert.
-2. Auf „📍 Ort in der Nähe suchen“ klicken. HofKarte fragt die freie,
-   kostenlose OpenStreetMap-Overpass-API nach benannten Orten (z. B.
-   Läden) im nahen Umkreis der eingetragenen Koordinaten ab. **Dabei
-   werden die Koordinaten dieses Hofladens an diesen externen Dienst
+2. Auf „📍 Ort in der Nähe suchen“ klicken. HofKarte fragt eine freie,
+   kostenlose OpenStreetMap-Overpass-Instanz nach benannten Orten
+   (z. B. Läden) im nahen Umkreis der eingetragenen Koordinaten ab.
+   Ist die zuerst versuchte Instanz überlastet oder nicht erreichbar,
+   probiert HofKarte automatisch der Reihe nach weitere bekannte,
+   freie Instanzen (siehe Kapitel 14, „Datenschutz“). **Dabei werden
+   die Koordinaten dieses Hofladens an diesen externen Dienst
    übermittelt** (siehe Kapitel 14, „Datenschutz“).
 3. Findet sich **genau ein** Treffer, öffnet sich direkt dasselbe
    Bestätigungs-Popup wie bei „Infos ermitteln“ (siehe oben). Finden
@@ -295,8 +298,11 @@ Mögliche Rückmeldungen:
 - **„Bitte zuerst gültige Latitude-/Longitude-Werte eintragen.“** – es
   sind keine gültigen Koordinaten im Formular eingetragen.
 - **„Die Overpass API (OpenStreetMap) konnte nicht erreicht werden.“** –
-  der Dienst war zum Zeitpunkt der Suche nicht erreichbar (z. B.
-  Zeitüberschreitung oder Fehlerstatus).
+  keine der der Reihe nach versuchten Overpass-Instanzen war zum
+  Zeitpunkt der Suche erreichbar (z. B. Zeitüberschreitung oder
+  Fehlerstatus bei allen Instanzen). Details zu den einzelnen
+  Fehlversuchen stehen im Home-Assistant-Protokoll (Einstellungen →
+  System → Protokolle).
 - **„Im Umkreis wurden keine Orte gefunden.“** – im Suchradius sind auf
   OpenStreetMap keine benannten, passenden Orte hinterlegt.
 
@@ -733,12 +739,14 @@ unverändert (siehe Kapitel 14).
   stattdessen auf „📍 Ort in der Nähe suchen“ (Kapitel 4, „Ort in der
   Nähe suchen (OpenStreetMap)“), übermittelt HofKarte **nur auf diesen
   ausdrücklichen Klick hin** die im Formular eingetragenen Koordinaten
-  dieses Hofladens an die freie, kostenlose OpenStreetMap-Overpass-API
-  – anders als bei den Kartenkacheln werden hier also tatsächlich
-  hofladenspezifische Standortdaten an einen externen Dienst übertragen
-  (weiterhin kein kommerzieller Cloud- oder KI-Dienst). Ausserhalb
-  dieser vier Fälle findet keine Telemetrie und keine Datenübertragung
-  an Dritte statt.
+  dieses Hofladens an eine von mehreren bekannten, freien,
+  kostenlosen OpenStreetMap-Overpass-Instanzen (probiert der Reihe
+  nach mehrere Instanzen, falls die erste überlastet oder nicht
+  erreichbar ist) – anders als bei den Kartenkacheln werden hier also
+  tatsächlich hofladenspezifische Standortdaten an einen externen
+  Dienst übertragen (weiterhin kein kommerzieller Cloud- oder
+  KI-Dienst). Ausserhalb dieser vier Fälle findet keine Telemetrie und
+  keine Datenübertragung an Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor
   (Kapitel 7) liest ausschliesslich die statische, in Home Assistant
   konfigurierte Position – kein `device_tracker`, keine Personen- oder
