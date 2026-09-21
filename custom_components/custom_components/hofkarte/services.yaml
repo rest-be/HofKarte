@@ -1,0 +1,18 @@
+hoflaeden_suchen:
+  fields:
+    suchbegriff:
+      example: "Käse"
+      selector:
+        text:
+    angebot:
+      example: "Kartoffeln"
+      selector:
+        text:
+    zahlungsart:
+      example: "TWINT"
+      selector:
+        text:
+    nur_geoeffnet:
+      example: true
+      selector:
+        boolean:

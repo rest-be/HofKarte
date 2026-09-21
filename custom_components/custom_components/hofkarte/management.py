@@ -1,0 +1,531 @@
+"""Backend support for the HofKarte management panel.
+
+Alle Schreibzugriffe laufen ausschliesslich über die öffentlichen
+``HofKarteUpdateCoordinator``-Methoden (``async_save_hofladen``,
+``async_delete_hofladen``) – nicht direkt über den zugrunde liegenden
+``HofladenDataProvider``. Das hält die in ``coordinator.py``
+implementierte Fail-Fast-Validierung und Refresh-Logik an einer
+einzigen Stelle, statt sie hier zu duplizieren.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime, time
+from typing import Any
+from uuid import uuid4
+
+import voluptuous as vol
+from homeassistant.components import websocket_api
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.util import dt as dt_util
+
+from .const import DOMAIN
+from .coordinator import HofKarteUpdateCoordinator
+from .data_provider import HofladenNotFoundError
+from .images import get_main_image_url
+from .models import Hofladen
+from .opening_hours import is_open
+from .osm_info import (
+    OsmKeineOrteGefundenError,
+    OsmNichtErreichbarError,
+    OsmUngueltigeKoordinatenError,
+    async_ermittle_osm_orte,
+)
+from .parsing import HofladenValidationError, parse_hofladen
+from .webseite_info import (
+    WebseiteInformationenNichtGefundenError,
+    WebseiteNichtErreichbarError,
+    WebseiteUngueltigeUrlError,
+    async_ermittle_webseite_info,
+)
+
+WS_LIST = "hofkarte/management/list"
+WS_SAVE = "hofkarte/management/save"
+WS_DELETE = "hofkarte/management/delete"
+WS_IMPORT_PREVIEW = "hofkarte/management/import_preview"
+WS_IMPORT_COMMIT = "hofkarte/management/import_commit"
+WS_WEBSEITE_INFO = "hofkarte/management/webseite_info"
+WS_OSM_INFO = "hofkarte/management/osm_info"
+
+# Gültige Werte für "aktion" in einem einzelnen Eintrag von
+# WS_IMPORT_COMMIT (siehe ws_import_commit()).
+_IMPORT_AKTION_NEU = "neu"
+_IMPORT_AKTION_AKTUALISIEREN = "aktualisieren"
+_IMPORT_AKTION_UEBERSPRINGEN = "ueberspringen"
+_IMPORT_AKTIONEN = {
+    _IMPORT_AKTION_NEU,
+    _IMPORT_AKTION_AKTUALISIEREN,
+    _IMPORT_AKTION_UEBERSPRINGEN,
+}
+
+
+def _json_value(value: Any) -> Any:
+    if isinstance(value, time):
+        # time.isoformat() liefert standardmässig Sekunden ("08:00:00").
+        # Öffnungszeiten werden ausschliesslich über type="time"-Felder
+        # ohne Sekundenauflösung erfasst (siehe hofkarte-panel.js) – die
+        # Darstellung soll das widerspiegeln (hh:mm statt hh:mm:ss).
+        return value.isoformat(timespec="minutes")
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, (tuple, list)):
+        return [_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _json_value(item) for key, item in value.items()}
+    if hasattr(value, "__dataclass_fields__"):
+        return {
+            field: _json_value(getattr(value, field))
+            for field in value.__dataclass_fields__
+        }
+    return value
+
+
+def _serialize_hofladen(hofladen: Any, *, now: datetime) -> dict[str, Any]:
+    """Rohdaten eines Hofladens für die Verwaltungsoberfläche serialisieren.
+
+    Ergänzt zusätzlich zu den gespeicherten Feldern zwei serverseitig
+    berechnete Werte, damit die Verwaltungsoberfläche (Kacheln-/
+    Listenansicht, siehe Issue #1) bestehende, teils sicherheitsrelevante
+    Fachlogik nicht ein zweites Mal, möglicherweise abweichend, in
+    JavaScript nachbauen muss:
+
+    - ``geoeffnet`` (``True``/``False``/``None`` für „unbekannt“) über
+      ``opening_hours.is_open`` – exakt dieselbe Funktion, die auch der
+      Binary Sensor „Geöffnet“ verwendet (siehe ``binary_sensor.py``).
+    - ``hauptbild_url`` (``str | None``) über ``images.get_main_image_url``
+      – exakt dieselbe Funktion (inkl. Sicherheitsprüfung gegen
+      private/interne IP-Literale), die auch das ``image``-Entity für
+      das tatsächliche Hauptbild verwendet (siehe ``image.py``).
+
+    ``now`` wird bewusst von den Aufrufern übergeben (nicht hier selbst
+    über ``dt_util.now()`` ermittelt), damit alle Hofläden einer
+    einzelnen Anfrage konsistent gegen denselben Zeitpunkt bewertet
+    werden.
+    """
+    daten = _json_value(hofladen)
+    daten["geoeffnet"] = is_open(hofladen, now)
+    daten["hauptbild_url"] = get_main_image_url(hofladen.bilder)
+    return daten
+
+
+def _normalisiert(text: str | None) -> str:
+    """Text für einen tolerant vergleichenden Duplikat-Abgleich
+    normalisieren (Gross-/Kleinschreibung sowie führende/nachfolgende
+    Leerzeichen werden ignoriert, siehe Issue #5)."""
+    return (text or "").strip().casefold()
+
+
+def _finde_duplikat(
+    hofladen: Hofladen, bestehende: list[Hofladen]
+) -> Hofladen | None:
+    """Ein bestehendes Duplikat für einen zu importierenden Hofladen
+    finden (Issue #5).
+
+    Zwei Hofläden gelten als Duplikat, wenn ihr Name übereinstimmt
+    (normalisiert, siehe ``_normalisiert``) und - sofern **beide**
+    Datensätze eine Adresse besitzen - zusätzlich die Adresse
+    übereinstimmt. Fehlt einem der beiden Datensätze die Adresse,
+    entscheidet allein der Name. Es wird bewusst keine Fuzzy-Logik
+    (z. B. Tippfehlertoleranz) verwendet - das Risiko falscher
+    Zusammenführungen (Datenverlust) wiegt schwerer als der
+    Komfortgewinn.
+    """
+    ziel_name = _normalisiert(hofladen.name)
+    for kandidat in bestehende:
+        if _normalisiert(kandidat.name) != ziel_name:
+            continue
+        if hofladen.adresse and kandidat.adresse:
+            if _normalisiert(hofladen.adresse) != _normalisiert(kandidat.adresse):
+                continue
+        return kandidat
+    return None
+
+
+def _get_coordinator(hass: HomeAssistant) -> HofKarteUpdateCoordinator:
+    """Den (einzigen) HofKarte-Coordinator ermitteln.
+
+    Wirft ``ValueError``, falls HofKarte nicht (oder mehrfach) geladen
+    ist. Aufrufer müssen dies abfangen und als sauberen WebSocket-Fehler
+    zurückmelden statt die Exception unbehandelt durchzureichen.
+    """
+    entries = hass.data.get(DOMAIN, {})
+    if len(entries) != 1:
+        raise ValueError(
+            "HofKarte ist nicht eingerichtet oder nicht eindeutig geladen."
+        )
+    return next(iter(entries.values()))
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_LIST})
+@websocket_api.require_admin
+@callback
+def ws_list(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Return all current Hofläden."""
+    try:
+        coordinator = _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    jetzt = dt_util.now()
+    connection.send_result(
+        msg["id"],
+        {
+            "hoflaeden": [
+                _serialize_hofladen(v, now=jetzt)
+                for v in coordinator.data.values()
+            ]
+        },
+    )
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_SAVE, vol.Required("hofladen"): dict}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_save(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Create or update a Hofladen (delegiert vollständig an den Coordinator)."""
+    try:
+        coordinator = _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    raw = dict(msg["hofladen"])
+    if not raw.get("id"):
+        raw["id"] = f"hofladen-{uuid4().hex}"
+
+    try:
+        parsed = await coordinator.async_save_hofladen(raw)
+    except HofladenValidationError as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    except NotImplementedError as err:
+        connection.send_error(msg["id"], "not_supported", str(err))
+        return
+
+    connection.send_result(
+        msg["id"], {"hofladen": _serialize_hofladen(parsed, now=dt_util.now())}
+    )
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_DELETE, vol.Required("hofladen_id"): str}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_delete(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Delete a Hofladen from persistent storage (delegiert an den Coordinator)."""
+    try:
+        coordinator = _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    try:
+        await coordinator.async_delete_hofladen(msg["hofladen_id"])
+    except NotImplementedError as err:
+        connection.send_error(msg["id"], "not_supported", str(err))
+        return
+    except HofladenNotFoundError as err:
+        connection.send_error(msg["id"], "not_found", str(err))
+        return
+
+    connection.send_result(msg["id"], {})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_IMPORT_PREVIEW, vol.Required("hoflaeden"): [dict]}
+)
+@websocket_api.require_admin
+@callback
+def ws_import_preview(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Eine zu importierende Liste von Hofläden validieren und mögliche
+    Duplikate gegen den aktuellen Bestand ermitteln (Issue #5).
+
+    Rein lesend - es wird noch nichts gespeichert (siehe ws_import_commit
+    für den eigentlichen Import). Fail-Fast: Enthält die Liste auch nur
+    einen strukturell ungültigen Datensatz, wird die gesamte Vorschau mit
+    einem Fehler abgelehnt (kein Teil-Ergebnis), damit die Nutzeroberfläche
+    gar nicht erst mit einer unvollständigen Grundlage weiterarbeitet.
+    """
+    try:
+        coordinator = _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    rohdaten = msg["hoflaeden"]
+    if not rohdaten:
+        connection.send_error(
+            msg["id"], "invalid_data", "Die Import-Datei enthält keine Hofläden."
+        )
+        return
+
+    geparste: list[Hofladen] = []
+    for index, raw in enumerate(rohdaten):
+        try:
+            geparste.append(parse_hofladen(raw))
+        except HofladenValidationError as err:
+            connection.send_error(
+                msg["id"], "invalid_data", f"Datensatz #{index + 1}: {err}"
+            )
+            return
+
+    bestehende = list((coordinator.data or {}).values())
+    eintraege = []
+    for hofladen in geparste:
+        duplikat = _finde_duplikat(hofladen, bestehende)
+        eintraege.append(
+            {
+                "hofladen": _json_value(hofladen),
+                "duplikat_von": duplikat.id if duplikat else None,
+                "bestehend": _json_value(duplikat) if duplikat else None,
+            }
+        )
+
+    connection.send_result(msg["id"], {"eintraege": eintraege})
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_IMPORT_COMMIT, vol.Required("eintraege"): [dict]}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_import_commit(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Einen zuvor über ws_import_preview vorbereiteten Import tatsächlich
+    durchführen (Issue #5).
+
+    Jeder Eintrag benennt eine Aktion: ``"neu"`` (als neuer Hofladen mit
+    frisch vergebener ID anlegen - eine im Importdatensatz enthaltene
+    ``id`` einer fremden Installation wird dabei bewusst verworfen),
+    ``"aktualisieren"`` (bestehenden Hofladen mit der Kennung
+    ``bestehende_id`` mit den importierten Daten überschreiben) oder
+    ``"ueberspringen"`` (Datensatz unverändert beibehalten, keine
+    Schreibaktion).
+
+    Fail-Fast über zwei Phasen, um „kein Datenverlust“/„kein
+    Teil-Import“ zu gewährleisten: Zunächst werden **alle** Einträge
+    validiert (gültige Aktion, bei „aktualisieren“ eine tatsächlich
+    noch vorhandene ``bestehende_id``, sowie die Hofladen-Rohdaten
+    selbst über ``parsing.parse_hofladen``); erst wenn diese Prüfung für
+    sämtliche Einträge erfolgreich war, werden die Schreibzugriffe
+    durchgeführt. Ein zwischenzeitlich (z. B. durch eine andere,
+    parallele Sitzung) bereits gelöschter Datensatz führt daher zu einem
+    Fehler für den gesamten Import, statt einen Teil davon unbemerkt zu
+    verwerfen.
+    """
+    try:
+        coordinator = _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    eintraege = msg["eintraege"]
+    if not eintraege:
+        connection.send_error(
+            msg["id"], "invalid_data", "Es wurden keine Einträge zum Import übergeben."
+        )
+        return
+
+    bestehende_ids = set((coordinator.data or {}).keys())
+    vorbereitet: list[tuple[str, dict[str, Any]]] = []
+
+    for index, eintrag in enumerate(eintraege):
+        context = f"Eintrag #{index + 1}"
+        aktion = eintrag.get("aktion")
+        if aktion not in _IMPORT_AKTIONEN:
+            connection.send_error(
+                msg["id"], "invalid_data", f"{context}: unbekannte Aktion '{aktion}'."
+            )
+            return
+
+        if aktion == _IMPORT_AKTION_UEBERSPRINGEN:
+            continue
+
+        raw = dict(eintrag.get("hofladen") or {})
+        if aktion == _IMPORT_AKTION_AKTUALISIEREN:
+            bestehende_id = eintrag.get("bestehende_id")
+            if not bestehende_id or bestehende_id not in bestehende_ids:
+                connection.send_error(
+                    msg["id"],
+                    "invalid_data",
+                    f"{context}: 'bestehende_id' verweist auf keinen (mehr) "
+                    "vorhandenen Hofladen.",
+                )
+                return
+            raw["id"] = bestehende_id
+        else:  # _IMPORT_AKTION_NEU
+            raw["id"] = f"hofladen-{uuid4().hex}"
+
+        try:
+            parse_hofladen(raw)
+        except HofladenValidationError as err:
+            connection.send_error(
+                msg["id"], "invalid_data", f"{context}: {err}"
+            )
+            return
+
+        vorbereitet.append((aktion, raw))
+
+    importiert = 0
+    aktualisiert = 0
+    uebersprungen = len(eintraege) - len(vorbereitet)
+
+    for aktion, raw in vorbereitet:
+        try:
+            await coordinator.async_save_hofladen(raw)
+        except NotImplementedError as err:
+            connection.send_error(msg["id"], "not_supported", str(err))
+            return
+        if aktion == _IMPORT_AKTION_AKTUALISIEREN:
+            aktualisiert += 1
+        else:
+            importiert += 1
+
+    connection.send_result(
+        msg["id"],
+        {
+            "importiert": importiert,
+            "aktualisiert": aktualisiert,
+            "uebersprungen": uebersprungen,
+        },
+    )
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_WEBSEITE_INFO, vol.Required("website"): str}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_webseite_info(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Informationen von einer vom Benutzer angegebenen Website ermitteln
+    (Issue #8, "Informationen aus Homepage").
+
+    Liefert ausschliesslich **Vorschlagsdaten zur Überprüfung** – es wird
+    dabei nichts gespeichert; das Speichern erfolgt unverändert über
+    ``ws_save``, nachdem die Benutzerin/der Benutzer die vorgeschlagenen
+    Werte im Formular geprüft und ggf. angepasst hat.
+
+    Bildet die drei im Issue geforderten Fehlerfälle jeweils auf einen
+    eigenen, unterscheidbaren Fehlercode ab (siehe ``webseite_info.py``
+    für die jeweilige Bedeutung):
+
+    - ``invalid_url`` - keine oder syntaktisch ungültige/unsichere
+      Website-Adresse (Fehlerfall 1).
+    - ``unreachable`` - Website nicht erreichbar oder nicht lesbar
+      (Fehlerfall 2).
+    - ``not_found`` - keine verwertbaren Informationen gefunden
+      (Fehlerfall 3).
+
+    Prüft (wie die übrigen Verwaltungsbefehle) zunächst, ob HofKarte
+    eindeutig eingerichtet ist – der eigentliche Abruf verwendet den
+    Coordinator zwar nicht, die Prüfung verhindert aber, dass die
+    Verwaltungsoberfläche diesen Befehl in einem nicht betriebsbereiten
+    Zustand aufrufen kann, konsistent mit ``ws_list``/``ws_save``/etc.
+    """
+    try:
+        _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    try:
+        info = await async_ermittle_webseite_info(hass, msg["website"])
+    except WebseiteUngueltigeUrlError as err:
+        connection.send_error(msg["id"], "invalid_url", str(err))
+        return
+    except WebseiteNichtErreichbarError as err:
+        connection.send_error(msg["id"], "unreachable", str(err))
+        return
+    except WebseiteInformationenNichtGefundenError as err:
+        connection.send_error(msg["id"], "not_found", str(err))
+        return
+
+    connection.send_result(msg["id"], {"info": _json_value(info)})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_OSM_INFO,
+        vol.Required("latitude"): vol.Coerce(float),
+        vol.Required("longitude"): vol.Coerce(float),
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_osm_info(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """In der Nähe der angegebenen Koordinaten nach Orten (OpenStreetMap /
+    Overpass API) suchen (Issue #10, "Ort in der Nähe suchen").
+
+    Liefert ausschliesslich **Vorschlagsdaten zur Überprüfung** – es wird
+    dabei nichts gespeichert; das Speichern erfolgt unverändert über
+    ``ws_save``, nachdem die Benutzerin/der Benutzer einen der
+    vorgeschlagenen Treffer geprüft und ggf. angepasst hat.
+
+    Bildet die drei möglichen Fehlerfälle jeweils auf einen eigenen,
+    unterscheidbaren Fehlercode ab (siehe ``osm_info.py`` für die
+    jeweilige Bedeutung):
+
+    - ``invalid_coordinates`` - Koordinaten fehlen oder sind ausserhalb
+      des gültigen Wertebereichs.
+    - ``unreachable`` - Overpass API nicht erreichbar oder Antwort nicht
+      auswertbar.
+    - ``not_found`` - keine (benannten) Orte im Suchradius gefunden.
+
+    Prüft (wie die übrigen Verwaltungsbefehle) zunächst, ob HofKarte
+    eindeutig eingerichtet ist – der eigentliche Abruf verwendet den
+    Coordinator zwar nicht, die Prüfung verhindert aber, dass die
+    Verwaltungsoberfläche diesen Befehl in einem nicht betriebsbereiten
+    Zustand aufrufen kann, konsistent mit ``ws_list``/``ws_save``/
+    ``ws_webseite_info``.
+    """
+    try:
+        _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    try:
+        orte = await async_ermittle_osm_orte(
+            hass, msg["latitude"], msg["longitude"]
+        )
+    except OsmUngueltigeKoordinatenError as err:
+        connection.send_error(msg["id"], "invalid_coordinates", str(err))
+        return
+    except OsmNichtErreichbarError as err:
+        connection.send_error(msg["id"], "unreachable", str(err))
+        return
+    except OsmKeineOrteGefundenError as err:
+        connection.send_error(msg["id"], "not_found", str(err))
+        return
+
+    connection.send_result(
+        msg["id"], {"orte": [_json_value(ort) for ort in orte]}
+    )
+
+
+def async_register_websocket_commands(hass: HomeAssistant) -> None:
+    """HofKarte-WebSocket-Befehle registrieren (einmalig, Domain-Ebene)."""
+    websocket_api.async_register_command(hass, ws_list)
+    websocket_api.async_register_command(hass, ws_save)
+    websocket_api.async_register_command(hass, ws_delete)
+    websocket_api.async_register_command(hass, ws_import_preview)
+    websocket_api.async_register_command(hass, ws_import_commit)
+    websocket_api.async_register_command(hass, ws_webseite_info)
+    websocket_api.async_register_command(hass, ws_osm_info)
