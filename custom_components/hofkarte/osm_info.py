@@ -97,6 +97,37 @@ API/Overpass QL“) statt separater ``node``-/``way``-Anweisungen je Filter
 gemappte Läden ab, die zuvor durch die auf Node/Way begrenzte Anfrage
 übersehen worden wären, und hält die Anfrage kürzer.
 
+### Erweiterung (Issue #11): ``amenity=marketplace`` und Namens-Heuristik
+
+Eine Analyse im Rahmen von Issue #11 ergab: ``["shop"]`` ist ein reiner
+**Schlüssel**-Filter (kein Wertevergleich) und matcht daher bereits **jeden**
+``shop=*``-Wert, einschliesslich ``shop=farm`` (dediziertes, im OSM-Wiki
+als "de facto" etabliertes Tag für Hofläden) und ``shop=greengrocer`` -
+eine Erweiterung um konkrete ``shop``-Werte wäre also wirkungslos
+(bereits abgedeckt). Tatsächlich fehlend war bislang ``amenity=marketplace``
+(laut OSM-Wiki "a public marketplace where goods and services are traded
+daily or weekly") - dafür existiert **kein** dokumentiertes Untertag wie
+``marketplace=farmers`` (im OSM-Wiki ausdrücklich nicht als Untertag-System
+geführt), weshalb ``amenity=marketplace`` undifferenziert nach Wert ergänzt
+wurde, analog zu ``["shop"]``.
+
+Zusätzlich deckt eine zweite, unabhängige Anfragegruppe
+(``_OVERPASS_NAME_HEURISTIK_FILTER``) Hofläden ab, die auf OpenStreetMap
+**kein** ``shop``-/``craft``-/``amenity``-Tag tragen, sondern nur als
+Hofgebäude bzw. Hofstelle erfasst sind (``building=farm`` - "the main
+building of a farm", bzw. ``landuse=farmyard`` - "an area of land with
+farm buildings"; beide laut OSM-Wiki üblicherweise mit ``name=*``
+versehen). Treffer aus dieser zweiten Gruppe werden nur dann
+vorgeschlagen, wenn ihr Name zusätzlich einen der Begriffe
+"Hof"/"Bauernhof"/"Hofladen"/"Laden" enthält (``_NAME_HEURISTIK_BEGRIFFE``,
+Teilstring-Vergleich, gross-/kleinschreibungsunabhängig) - eine reine
+Hofstelle ohne einen solchen Hinweis im Namen wird **nicht** vorgeschlagen,
+da sie allein noch keinen Laden erkennen lässt. Diese Heuristik ist
+bewusst als solche im Ergebnis gekennzeichnet (``OsmOrt.via_namen_heuristik``)
+statt gleichwertig zu echten Tag-Treffern behandelt zu werden ("lieber
+nichts als falsch"): Ein Teilstring-Treffer ist kein Beleg, nur ein
+Hinweis zur Überprüfung durch die Benutzerin/den Benutzer.
+
 ## ``opening_hours``: begrenzter, dokumentierter Parser statt Freitext-Raten
 
 OpenStreetMaps ``opening_hours``-Tag folgt einer eigenen, formal
@@ -163,6 +194,15 @@ _OVERPASS_DROSSELUNGS_STATUS = {429, 502, 503, 504}
 # check that your app or website adds User-Agent or Referer headers").
 _USER_AGENT = "HofKarte/HomeAssistant (+https://github.com/rest-be/HofKarte)"
 STANDARD_RADIUS_METER = 50
+# Sinnvolle Grenzen für den seit Issue #11 im Formular einstellbaren
+# Suchradius - ein zu kleiner Radius liefert praktisch nie Treffer (GPS-
+# Ungenauigkeit), ein zu grosser erzeugt unnötig viele, meist irrelevante
+# Treffer und eine unnötig grosse Overpass-Antwort. Werte ausserhalb dieses
+# Bereichs werden von ``async_ermittle_osm_orte`` auf die jeweilige Grenze
+# begrenzt (nicht als Fehler behandelt), da eine geringfügig falsche
+# Eingabe hier keinen Sicherheits- oder Korrektheitsschaden anrichtet.
+MIN_RADIUS_METER = 10
+MAX_RADIUS_METER = 500
 # Innerhalb der Overpass-Anfrage selbst gesetztes Zeitlimit (siehe
 # _baue_overpass_query, "[out:json][timeout:...]"); das HTTP-Zeitlimit
 # (ABRUF_TIMEOUT_SEKUNDEN) liegt bewusst etwas darüber, damit ein von der
@@ -180,7 +220,17 @@ _LESE_CHUNK_BYTES = 65536
 _ERDRADIUS_METER = 6_371_000.0
 
 # Für Hofläden relevante OpenStreetMap-Tags (siehe Moduldoc, "Tag-Auswahl").
-_OVERPASS_FILTER = ('["shop"]', '["craft"="agricultural"]')
+_OVERPASS_FILTER = ('["shop"]', '["craft"="agricultural"]', '["amenity"="marketplace"]')
+
+# Zusätzliche Anfragegruppe für Hofstellen ohne eigenes Laden-Tag (siehe
+# Moduldoc, "Erweiterung (Issue #11)") - Treffer hieraus werden nur bei
+# einem zusätzlichen Namenstreffer vorgeschlagen (_NAME_HEURISTIK_BEGRIFFE).
+_OVERPASS_NAME_HEURISTIK_FILTER = ('["landuse"="farmyard"]', '["building"="farm"]')
+
+# Begriffe der Namens-Heuristik (Issue #11) - Teilstring-Vergleich,
+# gross-/kleinschreibungsunabhängig, bewusst einfach gehalten (siehe
+# Moduldoc für die damit verbundene, akzeptierte Unschärfe).
+_NAME_HEURISTIK_BEGRIFFE = ("hof", "bauernhof", "hofladen", "laden")
 
 _OSM_WOCHENTAG = {
     "Mo": 1, "Tu": 2, "We": 3, "Th": 4, "Fr": 5, "Sa": 6, "Su": 7,
@@ -225,6 +275,12 @@ class OsmOrt:
     website: str | None = None
     oeffnungszeiten: tuple[dict[str, Any], ...] = ()
     entfernung_meter: float | None = None
+    # Issue #11: True, wenn dieser Treffer NICHT über ein Hofladen-Tag
+    # (shop/craft/amenity), sondern nur über die Namens-Heuristik auf einer
+    # Hofstelle (landuse=farmyard/building=farm) gefunden wurde - siehe
+    # Moduldoc, "Erweiterung (Issue #11)". Dient der Kennzeichnung im
+    # Trefferauswahl-Popup, nicht der Filterung selbst.
+    via_namen_heuristik: bool = False
 
 
 def _str_or_none(value: Any) -> str | None:
@@ -385,14 +441,47 @@ def _baue_overpass_query(latitude: float, longitude: float, radius_meter: int) -
     äussere HTTP-Zeitlimit (``ABRUF_TIMEOUT_SEKUNDEN``), damit die
     Overpass API selbst sauber mit einer regulären (ggf. leeren) Antwort
     abschliessen kann, statt vom HTTP-Client vorher abgebrochen zu
-    werden."""
+    werden.
+
+    Enthält seit Issue #11 sowohl die Tag-Filter
+    (``_OVERPASS_FILTER``) als auch die Filter für die Namens-Heuristik
+    (``_OVERPASS_NAME_HEURISTIK_FILTER``) in derselben Anfrage (eine
+    einzelne Overpass-Anfrage statt zwei separaten HTTP-Roundtrips) - die
+    Unterscheidung, über welche Filtergruppe ein Treffer gefunden wurde,
+    erfolgt anschliessend anhand seiner tatsächlichen Tags
+    (``_klassifiziere_herkunft``), nicht anhand der Anfrage selbst."""
     umkreis = f"around:{int(radius_meter)},{latitude},{longitude}"
-    zeilen = [f"  nwr({umkreis}){filt};" for filt in _OVERPASS_FILTER]
+    alle_filter = _OVERPASS_FILTER + _OVERPASS_NAME_HEURISTIK_FILTER
+    zeilen = [f"  nwr({umkreis}){filt};" for filt in alle_filter]
     return (
         f"[out:json][timeout:{_OVERPASS_QUERY_TIMEOUT_SEKUNDEN}];\n(\n"
         + "\n".join(zeilen)
         + "\n);\nout center tags;"
     )
+
+
+def _klassifiziere_herkunft(tags: dict[str, Any], name: str) -> str | None:
+    """Ordnet einen gefundenen Treffer seiner Herkunft zu (Issue #11):
+    ``"tag"`` bei einem echten Hofladen-Tag (``shop``/``craft=agricultural``/
+    ``amenity=marketplace``), ``"name"`` bei einer Hofstelle
+    (``landuse=farmyard``/``building=farm``) mit zusätzlichem
+    Namenstreffer (siehe Moduldoc), sonst ``None`` (Treffer wird verworfen -
+    z. B. eine Hofstelle ohne passenden Namen, "lieber nichts als
+    falsch")."""
+    if (
+        "shop" in tags
+        or tags.get("craft") == "agricultural"
+        or tags.get("amenity") == "marketplace"
+    ):
+        return "tag"
+
+    ist_hofstelle = tags.get("landuse") == "farmyard" or tags.get("building") == "farm"
+    if ist_hofstelle:
+        name_klein = name.lower()
+        if any(begriff in name_klein for begriff in _NAME_HEURISTIK_BEGRIFFE):
+            return "name"
+
+    return None
 
 
 class _OsmInstanzFehlgeschlagen(Exception):
@@ -519,14 +608,26 @@ async def async_ermittle_osm_orte(
 
     Das Ergebnis ist ausschliesslich eine Liste von Vorschlägen zur
     Überprüfung - siehe ``management.py``, ``ws_osm_info``.
+
+    ``radius_meter`` wird seit Issue #11 serverseitig auf den Bereich
+    ``MIN_RADIUS_METER``-``MAX_RADIUS_METER`` begrenzt (nicht als Fehler
+    behandelt, siehe Moduldoc bei den Konstanten) - ein zu kleiner oder zu
+    grosser Wert aus dem Formular führt so nicht zu einem Fehlerfall,
+    sondern zu einer sinnvoll begrenzten Suche.
     """
     if not _sind_gueltige_koordinaten(latitude, longitude):
         raise OsmUngueltigeKoordinatenError(
             "Es sind keine gültigen Latitude-/Longitude-Werte vorhanden."
         )
 
+    try:
+        radius = int(radius_meter)
+    except (TypeError, ValueError):
+        radius = STANDARD_RADIUS_METER
+    radius = max(MIN_RADIUS_METER, min(MAX_RADIUS_METER, radius))
+
     lat, lon = float(latitude), float(longitude)
-    query = _baue_overpass_query(lat, lon, radius_meter)
+    query = _baue_overpass_query(lat, lon, radius)
     session = async_get_clientsession(hass)
     daten = await _rufe_overpass_ab(session, query)
 
@@ -548,6 +649,10 @@ async def async_ermittle_osm_orte(
         if name is None:
             continue  # kein sinnvoller Auswahleintrag ohne Namen (siehe Moduldoc)
 
+        herkunft = _klassifiziere_herkunft(tags, name)
+        if herkunft is None:
+            continue  # z. B. Hofstelle ohne passenden Namenstreffer (Issue #11)
+
         koordinate = _koordinaten_aus_element(element)
         entfernung = (
             _entfernung_meter(lat, lon, koordinate[0], koordinate[1])
@@ -567,6 +672,7 @@ async def async_ermittle_osm_orte(
                 ),
                 oeffnungszeiten=_extrahiere_oeffnungszeiten_osm(tags.get("opening_hours")),
                 entfernung_meter=round(entfernung, 1) if entfernung is not None else None,
+                via_namen_heuristik=(herkunft == "name"),
             )
         )
 

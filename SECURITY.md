@@ -85,16 +85,18 @@ offenen Sicherheitslücken:
   durch diese Komponente.
 - Die Verwaltungsoberfläche (`frontend.py`, `management.py`) erfordert
   Home-Assistant-Administratorrechte (`require_admin`) – auch für die
-  Funktionen „Infos ermitteln“ (`ws_webseite_info`) und „Ort in der Nähe
-  suchen“ (`ws_osm_info`, siehe unten).
+  Funktion „🔍 Angaben automatisch ermitteln“, die seit Issue #11 beide
+  WebSocket-Befehle `ws_webseite_info` und `ws_osm_info` (siehe unten)
+  gemeinsam auslösen kann.
 - Es findet keine Kommunikation mit externen Diensten durch HofKarte
   selbst statt (siehe README, Abschnitt „Datenschutz- und
   Standort-Hinweise“) – Ausnahmen: das Laden von Hofladen-Bildern über
   die vom Benutzer hinterlegten externen Bild-Adressen, (seit
   Issue #8) der Abruf einer vom Benutzer im Verwaltungs-Panel
-  eingegebenen Website-Adresse über die Funktion „Infos ermitteln“,
-  sowie (seit Issue #10) die Suche über die OpenStreetMap-Overpass-API
-  über die Funktion „Ort in der Nähe suchen“.
+  eingegebenen Website-Adresse, sowie (seit Issue #10, erweitert in
+  Issue #11) die Suche über die OpenStreetMap-Overpass-API – beide
+  seit Issue #11 gemeinsam über die eine Funktion „🔍 Angaben
+  automatisch ermitteln“ auslösbar.
 
 ### Funktion „Infos ermitteln“ (`webseite_info.py`, Issue #8)
 
@@ -131,7 +133,7 @@ Sicherheitsmassnahmen:
   beim tatsächlichen Verbindungsaufbau auf eine private Adresse
   auflöst (DNS-Rebinding), wird nicht erkannt.
 
-### Funktion „Ort in der Nähe suchen“ (`osm_info.py`, Issue #10)
+### Funktion „Ort in der Nähe suchen“ (`osm_info.py`, Issue #10, erweitert in Issue #11)
 
 Diese Funktion führt die **zweite eigene ausgehende Netzwerkanfrage im
 Backend-Code von HofKarte** ein – diesmal an die OpenStreetMap-Overpass-
@@ -175,6 +177,19 @@ Sicherheitsmassnahmen bzw. bewusste Abgrenzungen:
   allgemeinen Abwehrmassnahmen wie in `webseite_info.py`: ein
   Antwortgrössen-Limit (1 MB) sowie eine Zeitüberschreitung
   (25 Sekunden je Instanz).
+- **Seit Issue #11 im Formular einstellbarer Radius, zweifach
+  begrenzt:** Der Suchradius ist nicht mehr fest auf
+  `STANDARD_RADIUS_METER` (50 m) verdrahtet, sondern im Formular
+  einstellbar – bewusst über **zwei unabhängige Schichten** begrenzt,
+  damit ein zu grosser oder ungültiger Wert weder eine überdimensionierte
+  Anfrage an den externen Dienst erzeugt noch die Anwendung mit einem
+  Fehler abbricht: Das WebSocket-Schema von `ws_osm_info` weist einen
+  Wert ausserhalb von `MIN_RADIUS_METER`–`MAX_RADIUS_METER` (10–500 m)
+  bereits vor der Verarbeitung mit einem Schema-Fehler zurück; zusätzlich
+  klammert `async_ermittle_osm_orte()` selbst jeden übergebenen Radius
+  defensiv auf denselben Bereich, unabhängig davon, ob er über den
+  regulären WebSocket-Pfad oder – etwa in Tests – direkt an die Funktion
+  übergeben wurde.
 - **Home Assistants verwaltete Client-Session:** Wie
   `webseite_info.py` verwendet auch dieser Abruf
   `homeassistant.helpers.aiohttp_client.async_get_clientsession`, keine

@@ -19,7 +19,10 @@ import pytest
 
 from custom_components.hofkarte.osm_info import (
     MAX_ANTWORT_BYTES,
+    MAX_RADIUS_METER,
+    MIN_RADIUS_METER,
     OVERPASS_URLS,
+    STANDARD_RADIUS_METER,
     OsmKeineOrteGefundenError,
     OsmNichtErreichbarError,
     OsmOrt,
@@ -28,6 +31,7 @@ from custom_components.hofkarte.osm_info import (
     _baue_overpass_query,
     _entfernung_meter,
     _extrahiere_oeffnungszeiten_osm,
+    _klassifiziere_herkunft,
     _sind_gueltige_koordinaten,
     async_ermittle_osm_orte,
 )
@@ -322,7 +326,7 @@ async def test_anfrage_sendet_identifizierenden_user_agent_header(
     """Von den Overpass-Nutzungsrichtlinien ausdrücklich verlangt: ein
     erkennbarer User-Agent- oder Referer-Header (siehe Moduldoc,
     "Zuverlässigkeit")."""
-    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "Hofladen"}}
+    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "Hofladen", "shop": "farm"}}
     session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
     _patch_session(monkeypatch, session)
 
@@ -337,7 +341,7 @@ async def test_anfrage_sendet_identifizierenden_user_agent_header(
 async def test_anfrage_nutzt_ersten_konfigurierten_endpunkt_zuerst(
     hass: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "Hofladen"}}
+    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "Hofladen", "shop": "farm"}}
     session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
     _patch_session(monkeypatch, session)
 
@@ -357,6 +361,17 @@ def test_baue_overpass_query_nutzt_nwr_selektor_und_beide_filter() -> None:
     assert "way(" not in query
     assert query.startswith("[out:json][timeout:")
     assert query.rstrip().endswith("out center tags;")
+
+
+def test_baue_overpass_query_enthaelt_marketplace_und_namens_heuristik_filter() -> None:
+    """Issue #11: amenity=marketplace sowie die beiden Filter für die
+    Namens-Heuristik (landuse=farmyard/building=farm) gehören zur selben
+    Anfrage wie die bestehenden Tag-Filter (siehe Moduldoc, "Erweiterung
+    (Issue #11)")."""
+    query = _baue_overpass_query(46.948, 7.4474, 50)
+    assert 'nwr(around:50,46.948,7.4474)["amenity"="marketplace"];' in query
+    assert 'nwr(around:50,46.948,7.4474)["landuse"="farmyard"];' in query
+    assert 'nwr(around:50,46.948,7.4474)["building"="farm"];' in query
 
 
 async def test_way_element_nutzt_center_koordinate(
@@ -419,7 +434,7 @@ async def test_contact_website_fallback(
 ) -> None:
     element = {
         "type": "node", "lat": 46.949, "lon": 7.448,
-        "tags": {"name": "Hofladen", "contact:website": "https://beispiel.example"},
+        "tags": {"name": "Hofladen", "shop": "farm", "contact:website": "https://beispiel.example"},
     }
     session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
     _patch_session(monkeypatch, session)
@@ -488,7 +503,7 @@ async def test_erste_instanz_schlaegt_fehl_zweite_liefert_ergebnis(
     """Kernverhalten des Fallbacks: Schlägt die erste konfigurierte
     Instanz fehl, wird automatisch die zweite versucht - der Aufruf
     liefert trotzdem ein Ergebnis, kein Fehler."""
-    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "Hofladen"}}
+    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "Hofladen", "shop": "farm"}}
     session = _FakeSession(
         [_FakeResponse(status=503), _FakeResponse(body=_overpass_antwort([element]))]
     )
@@ -554,3 +569,173 @@ async def test_timeout_wirft_nicht_erreichbar_error(
 
     with pytest.raises(OsmNichtErreichbarError):
         await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+
+
+# ---------------------------------------------------------------------------
+# _klassifiziere_herkunft / Namens-Heuristik / amenity=marketplace (Issue #11)
+# ---------------------------------------------------------------------------
+
+
+def test_klassifiziere_herkunft_shop_tag_ist_tag_treffer() -> None:
+    assert _klassifiziere_herkunft({"shop": "farm", "name": "X"}, "X") == "tag"
+
+
+def test_klassifiziere_herkunft_craft_agricultural_ist_tag_treffer() -> None:
+    assert _klassifiziere_herkunft({"craft": "agricultural", "name": "X"}, "X") == "tag"
+
+
+def test_klassifiziere_herkunft_marketplace_ist_tag_treffer() -> None:
+    assert _klassifiziere_herkunft({"amenity": "marketplace", "name": "X"}, "X") == "tag"
+
+
+def test_klassifiziere_herkunft_anderer_amenity_wert_ist_kein_treffer() -> None:
+    # amenity=cafe o. Ä. darf NICHT als Tag-Treffer durchgehen - nur der
+    # explizit dokumentierte Wert "marketplace" (siehe Moduldoc).
+    assert _klassifiziere_herkunft({"amenity": "cafe", "name": "X"}, "X") is None
+
+
+def test_klassifiziere_herkunft_farmyard_mit_passendem_namen_ist_namens_treffer() -> None:
+    assert (
+        _klassifiziere_herkunft({"landuse": "farmyard", "name": "Bauernhof Muster"}, "Bauernhof Muster")
+        == "name"
+    )
+
+
+def test_klassifiziere_herkunft_building_farm_mit_passendem_namen_ist_namens_treffer() -> None:
+    assert (
+        _klassifiziere_herkunft({"building": "farm", "name": "Hofladen Muster"}, "Hofladen Muster")
+        == "name"
+    )
+
+
+def test_klassifiziere_herkunft_farmyard_ohne_passenden_namen_ist_kein_treffer() -> None:
+    # Eine Hofstelle allein (ohne Hinweis im Namen) ist noch kein
+    # erkennbarer Laden - "lieber nichts als falsch" (siehe Moduldoc).
+    assert _klassifiziere_herkunft({"landuse": "farmyard", "name": "Familie Muster"}, "Familie Muster") is None
+
+
+def test_klassifiziere_herkunft_namensheuristik_ist_gross_kleinschreibungsunabhaengig() -> None:
+    assert (
+        _klassifiziere_herkunft({"building": "farm", "name": "HOFLADEN MUSTER"}, "HOFLADEN MUSTER")
+        == "name"
+    )
+
+
+def test_klassifiziere_herkunft_weder_tag_noch_hofstelle_ist_kein_treffer() -> None:
+    assert _klassifiziere_herkunft({"amenity": "bench", "name": "X"}, "X") is None
+
+
+async def test_marketplace_treffer_wird_vorgeschlagen(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {
+        "type": "node", "lat": 46.949, "lon": 7.448,
+        "tags": {"name": "Wochenmarkt", "amenity": "marketplace"},
+    }
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    orte = await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+    assert orte[0].name == "Wochenmarkt"
+    assert orte[0].via_namen_heuristik is False
+
+
+async def test_namensheuristik_treffer_wird_als_solcher_gekennzeichnet(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {
+        "type": "node", "lat": 46.949, "lon": 7.448,
+        "tags": {"name": "Hofladen Bergmatte", "landuse": "farmyard"},
+    }
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    orte = await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+    assert len(orte) == 1
+    assert orte[0].name == "Hofladen Bergmatte"
+    assert orte[0].via_namen_heuristik is True
+
+
+async def test_hofstelle_ohne_namenstreffer_wird_nicht_vorgeschlagen(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {
+        "type": "node", "lat": 46.949, "lon": 7.448,
+        "tags": {"name": "Familie Muster", "building": "farm"},
+    }
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    with pytest.raises(OsmKeineOrteGefundenError):
+        await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+
+
+async def test_echter_tag_treffer_hat_via_namen_heuristik_false(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {
+        "type": "node", "lat": 46.949, "lon": 7.448,
+        "tags": {"name": "Hofladen X", "shop": "farm"},
+    }
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    orte = await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+    assert orte[0].via_namen_heuristik is False
+
+
+# ---------------------------------------------------------------------------
+# Suchradius (Issue #11): Clamping in async_ermittle_osm_orte
+# ---------------------------------------------------------------------------
+
+
+async def test_radius_wird_in_die_anfrage_uebernommen(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "X", "shop": "farm"}}
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    await async_ermittle_osm_orte(hass, 46.948, 7.4474, radius_meter=123)
+
+    gesendete_query = session.aufrufe[0]["data"]["data"]
+    assert "around:123," in gesendete_query
+
+
+async def test_radius_zu_klein_wird_auf_minimum_begrenzt(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "X", "shop": "farm"}}
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    await async_ermittle_osm_orte(hass, 46.948, 7.4474, radius_meter=1)
+
+    gesendete_query = session.aufrufe[0]["data"]["data"]
+    assert f"around:{MIN_RADIUS_METER}," in gesendete_query
+
+
+async def test_radius_zu_gross_wird_auf_maximum_begrenzt(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "X", "shop": "farm"}}
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    await async_ermittle_osm_orte(hass, 46.948, 7.4474, radius_meter=10_000)
+
+    gesendete_query = session.aufrufe[0]["data"]["data"]
+    assert f"around:{MAX_RADIUS_METER}," in gesendete_query
+
+
+async def test_radius_default_ist_standard_radius(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {"type": "node", "lat": 46.949, "lon": 7.448, "tags": {"name": "X", "shop": "farm"}}
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+
+    gesendete_query = session.aufrufe[0]["data"]["data"]
+    assert f"around:{STANDARD_RADIUS_METER}," in gesendete_query

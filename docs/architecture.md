@@ -592,38 +592,46 @@ Modul **serverseitig konkrete Koordinaten eines bestimmten Hofladens**
 `osm_info.py`, Moduldoc, sowie `SECURITY.md`, Abschnitt „Funktion ‚Ort
 in der Nähe suchen‘“, für die ausführliche Begründung.
 
-**Datenfluss:**
+**Datenfluss (Stand nach Issue #11, siehe eigener Abschnitt unten für
+die Änderungen im Detail):**
 
-1. Verwaltungsoberfläche (`hofkarte-panel.js`): Klick auf „📍 Ort in der
-   Nähe suchen“ im Bearbeitungsformular (Abschnitt „Standort /
-   Koordinaten“, nur aktiv bei gültigen WGS84-Koordinaten, siehe
-   `isValidWgs84()`) ruft `ermittleOsmInfo()` auf, das den
-   WebSocket-Befehl `hofkarte/management/osm_info` mit den aktuell im
-   Formular eingetragenen Koordinaten sendet.
+1. Verwaltungsoberfläche (`hofkarte-panel.js`): Klick auf „🔍 Angaben
+   automatisch ermitteln“ im Bearbeitungsformular (Abschnitt
+   „Automatisch ausfüllen“) ruft `ermittleAutomatisch()` auf; ist ein
+   gültiges WGS84-Koordinatenpaar eingetragen (siehe `isValidWgs84()`),
+   ruft diese Funktion u. a. `holeOsmOrte(latitude, longitude,
+   this.osmRadius)` auf, das den WebSocket-Befehl
+   `hofkarte/management/osm_info` mit den aktuell im Formular
+   eingetragenen Koordinaten und dem einstellbaren Suchradius sendet.
 2. `management.ws_osm_info` (administratorpflichtig, wie alle
    Verwaltungsbefehle) delegiert an
-   `osm_info.async_ermittle_osm_orte(hass, latitude, longitude)`.
-3. `osm_info.py` validiert die Koordinaten, baut eine Overpass-QL-Anfrage
-   (gefiltert auf die Tags `shop=*` und `craft=agricultural`, siehe
-   Moduldoc „Tag-Auswahl“), ruft sie über Home Assistants verwaltete
-   Client-Session ab, verwirft unbenannte Treffer und liefert eine nach
-   Entfernung sortierte Liste von `OsmOrt`-Objekten (oder wirft einen der
-   drei Fehler) zurück.
+   `osm_info.async_ermittle_osm_orte(hass, latitude, longitude,
+   radius_meter=...)`.
+3. `osm_info.py` validiert die Koordinaten, klammert den Radius serverseitig
+   auf `MIN_RADIUS_METER`–`MAX_RADIUS_METER`, baut eine Overpass-QL-Anfrage
+   (siehe Moduldoc „Tag-Auswahl“ sowie den Abschnitt „Erweiterung (Issue
+   #11)“ unten), ruft sie über Home Assistants verwaltete Client-Session
+   ab, klassifiziert jeden Treffer über `_klassifiziere_herkunft()`,
+   verwirft unbenannte oder nicht zuordenbare Treffer und liefert eine
+   nach Entfernung sortierte Liste von `OsmOrt`-Objekten (oder wirft
+   einen der drei Fehler) zurück.
 4. `ws_osm_info` bildet die Fehlerfälle auf eigene WebSocket-Fehlercodes
    ab (`invalid_coordinates`/`unreachable`/`not_found`) bzw. serialisiert
    das Ergebnis (`_json_value`, derselbe generische Serialisierer wie für
    `Hofladen`- und `WebseiteInfo`-Objekte).
-5. `hofkarte-panel.js`: Bei genau einem Treffer wird die Trefferauswahl
-   übersprungen und der Treffer direkt in `this.webseiteInfoVorschlag`
-   abgelegt; bei mehreren Treffern zeigt `osmOrteAuswahlPopup()` zunächst
-   eine Auswahlliste (Name, Adresse, Entfernung), aus der `waehleOsmOrt()`
-   den gewählten Treffer ebenfalls in `this.webseiteInfoVorschlag`
-   überträgt. Ab hier läuft der Ablauf **identisch zu „Infos ermitteln“**
-   weiter: dasselbe Bestätigungs-Popup (`webseiteInfoPopup()`, ergänzt um
-   eine „Webseite“-Zeile), dieselbe Übernahme-Funktion
-   (`uebernehmeWebseiteInfo()`, ergänzt um das Feld `website`) – bewusst
-   wiederverwendet statt für die zweite Datenquelle dupliziert. Wie bei
-   „Infos ermitteln“ wird nie automatisch gespeichert.
+5. `hofkarte-panel.js`: Bei genau einem Treffer (bzw. keinem parallel
+   laufenden Website-Ergebnis, das noch auf eine Auswahl wartet) wird die
+   Trefferauswahl übersprungen; bei mehreren Treffern zeigt
+   `osmOrteAuswahlPopup()` zunächst eine Auswahlliste (Name, Adresse,
+   Entfernung, inkl. Kennzeichnung von Namens-Heuristik-Treffern), aus
+   der `waehleOsmOrt()` den gewählten Treffer übernimmt. Anschliessend
+   führt `mischeAutoVorschlaege()` das OSM-Ergebnis mit einem eventuell
+   parallel ermittelten Website-Ergebnis zusammen und `zeigeAutoErgebnis()`
+   öffnet dasselbe Bestätigungs-Popup wie bei einer reinen Website-Suche
+   (`webseiteInfoPopup()`, inkl. Quellen-Kennzeichnung je Feld), dieselbe
+   Übernahme-Funktion (`uebernehmeWebseiteInfo()`) – bewusst wiederverwendet
+   statt für die zweite Datenquelle dupliziert. Es wird nie automatisch
+   gespeichert.
 
 **`opening_hours`-Parser:** OpenStreetMaps `opening_hours`-Tag folgt
 einer eigenen, formal spezifizierten Syntax
@@ -643,6 +651,77 @@ Tag (z. B. eine Mittagspause) sind dagegen kein Widerspruch.
 keine Freitext-/Adresssuche – eine solche würde einen dritten externen
 Dienst (z. B. Nominatim-Geocoding) erfordern und wurde bewusst nicht
 eingeführt, um den Umfang dieser Erweiterung nicht unnötig auszuweiten.
+
+## Vereinfachung der automatischen Ermittlung (Issue #11)
+
+Ausgangspunkt war ein Vorschlag, den bisherigen Tag-Filter um konkrete
+`shop`-Werte wie `shop=farm`/`shop=greengrocer` zu „erweitern“. Eine
+Prüfung der Overpass-QL-Semantik (siehe Moduldoc in `osm_info.py`,
+Abschnitt „Erweiterung (Issue #11)“) ergab: `["shop"]` ist in Overpass
+QL ein reiner **Schlüssel-Existenz-Filter**, kein Wertevergleich – er
+matcht bereits jeden `shop=*`-Wert, `shop=farm` und `shop=greengrocer`
+eingeschlossen. Eine solche „Erweiterung“ wäre ein No-Op gewesen. Statt
+der wörtlichen Vorgabe zu folgen, wurde die tatsächliche Absicht des
+Issues – mehr, aber weiterhin korrekte Treffer für untertaggte
+Hofläden – mit zwei echten, wiki-verifizierten Ergänzungen umgesetzt:
+
+- **`amenity=marketplace`** als zusätzlicher, dokumentierter Tag (ein
+  von Issue-Seite vorgeschlagener Subtag `marketplace=farmers`
+  existiert auf OpenStreetMap nicht und wurde deshalb nicht übernommen).
+- Eine zweite, unabhängige Filtergruppe für Hofgelände ohne
+  Laden-/Markt-Tag (`landuse=farmyard`, `building=farm`), kombiniert
+  mit einer **Namens-Heuristik**: Nur wenn der Name eines solchen
+  Objekts einen der Begriffe „hof“, „bauernhof“, „hofladen“ oder „laden“
+  enthält (case-insensitiv), wird es überhaupt vorgeschlagen –
+  ungetaggte Hofgelände ohne passenden Namen werden weiterhin verworfen
+  („lieber nichts als falsch“).
+
+`_klassifiziere_herkunft(tags, name)` trennt beide Fälle serverseitig
+scharf und liefert `"tag"`, `"name"` oder `None` (verwerfen); `OsmOrt`
+trägt das Ergebnis als `via_namen_heuristik: bool` weiter bis in die
+Trefferauswahl der Oberfläche, wo Namens-Treffer ausdrücklich als
+solche gekennzeichnet werden – nie stillschweigend mit echten
+Tag-Treffern gleichgesetzt.
+
+**Einstellbarer Suchradius:** Der bisher fest verdrahtete
+`STANDARD_RADIUS_METER` (50 m) ist weiterhin der Vorgabewert, aber neu
+im Formular überschreibbar. Zwei unabhängige Schichten sichern das ab:
+clientseitig/schemaseitig über `vol.Range(min=MIN_RADIUS_METER,
+max=MAX_RADIUS_METER)` in `ws_osm_info`s WebSocket-Schema (weist einen
+Wert ausserhalb des Bereichs mit einem Schema-Fehler zurück), und
+zusätzlich, unabhängig davon, ein defensiver serverseitiger Clamp
+direkt in `async_ermittle_osm_orte()` (`max(MIN_RADIUS_METER,
+min(MAX_RADIUS_METER, radius))`), der nie einen Fehler wirft, sondern
+einen ausserhalb des Bereichs liegenden Wert stillschweigend
+begrenzt. Diese Redundanz ist bewusst: Tests, die `ws_osm_info` direkt
+mit einem rohen `dict` aufrufen (ohne Durchlauf durch die
+`vol`-Schema-Anwendung), sollen sich weiterhin auf einen sicheren
+Wertebereich verlassen können, ohne von der Schema-Validierung
+abhängig zu sein.
+
+**Zusammenlegung der Oberfläche:** Die beiden bisher unabhängigen
+Aktionen „🔎 Infos ermitteln“ (Website) und „📍 Ort in der Nähe suchen“
+(OpenStreetMap) wurden zu einer einzigen Aktion „🔍 Angaben automatisch
+ermitteln“ (`ermittleAutomatisch()`) zusammengelegt. Statt zwei
+unabhängiger `async`-Methoden mit eigener Status-/Popup-Steuerung gibt
+es nun zwei reine, seiteneffektfreie Abruf-Helfer
+(`holeWebseiteVorschlag()`/`holeOsmOrte()`, jeweils `{ ok, ... }` bzw.
+`{ ok: false, meldung }` zurückgebend) sowie einen Orchestrator, der
+beide **parallel** über `Promise.all` abfragt – je nachdem, ob eine
+Website-Adresse bzw. gültige Koordinaten überhaupt eingetragen sind –
+und eine Merge-Funktion (`mischeAutoVorschlaege()`), die die Ergebnisse
+feldweise zusammenführt. Bei einem Konflikt (beide Quellen liefern
+unterschiedliche Werte für dasselbe Feld) gewinnt die Website als in
+der Regel vom Betreiber selbst gepflegte, autoritativere Quelle – der
+abweichende OSM-Wert wird dabei aber **nicht verworfen**, sondern über
+die Quellen-Kennzeichnung `"website+osm"` im Bestätigungs-Popup
+nachvollziehbar gehalten (wieder „lieber nichts als falsch“, hier auf
+Datenverlust beim automatischen Zusammenführen angewendet). Liefert die
+Koordinatensuche mehrere Treffer, muss die Auswahl abgewartet werden,
+ohne ein bereits vorliegendes Website-Ergebnis zu verwerfen – gelöst
+über ein Zwischenspeicherfeld (`_wartendesWebseiteErgebnis`), das sowohl
+bei Auswahl eines Treffers als auch bei Abbruch der Auswahl wieder mit
+eingemischt wird.
 
 ## Suche/Filter
 

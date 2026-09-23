@@ -219,44 +219,70 @@ erzeugten Entities bleiben als „nicht verfügbar“ in der Entity-Liste
 bestehen (stabile Entity-ID), statt automatisch entfernt zu werden –
 das ist eine bekannte, bewusste Einschränkung.
 
-### Informationen von der Website übernehmen
+### Angaben automatisch ermitteln
 
-Im Bearbeitungsformular steht im Bereich „Kontakt & Webseite“ neben
-dem Eingabefeld für die Webseite der Button „🔎 Infos ermitteln“ zur
-Verfügung:
+Im Bearbeitungsformular steht im Bereich „Automatisch ausfüllen“ der
+Button „🔍 Angaben automatisch ermitteln“ zur Verfügung. Diese eine
+Aktion fasst seit Issue #11 zwei zuvor getrennte Funktionen zusammen
+und fragt – je nachdem, was im Formular bereits eingetragen ist –
+wahlweise beide Quellen **parallel** ab:
 
-1. Zunächst die Website-Adresse des Hofladens in das Feld „Webseite“
-   eintragen.
-2. Auf „🔎 Infos ermitteln“ klicken. HofKarte ruft die Seite ab und
-   wertet – rein lokal, ohne einen externen Cloud- oder KI-Dienst –
-   strukturierte, von der Seite selbst veröffentlichte Informationen
-   aus (sofern vorhanden): Name, Adresse, Beschreibung, Öffnungszeiten,
-   Angebote und Zahlungsarten. Fehlen strukturierte Daten für Adresse
-   oder Öffnungszeiten, versucht HofKarte zusätzlich, diese anhand
-   gängiger deutschsprachiger Formulierungen im sichtbaren Seitentext zu
+1. Ist im Feld „Webseite“ (Abschnitt „Kontakt & Webseite“) eine
+   Adresse eingetragen, ruft HofKarte diese Seite ab und wertet – rein
+   lokal, ohne einen externen Cloud- oder KI-Dienst – strukturierte,
+   von der Seite selbst veröffentlichte Informationen aus (sofern
+   vorhanden): Name, Adresse, Beschreibung, Öffnungszeiten, Angebote
+   und Zahlungsarten. Fehlen strukturierte Daten für Adresse oder
+   Öffnungszeiten, versucht HofKarte zusätzlich, diese anhand gängiger
+   deutschsprachiger Formulierungen im sichtbaren Seitentext zu
    erkennen (z. B. „Musterweg 1, 3000 Bern“ oder „Mo–Fr 08:00–18:00
-   Uhr“) – weiterhin ohne externen Dienst und weiterhin: im Zweifel kein
-   Vorschlag statt eines unsicheren.
-3. Die gefundenen Angaben werden in einem **Popup zur Prüfung**
-   angezeigt – nicht gefundene Felder sind dort klar als solche
-   gekennzeichnet. Erst ein Klick auf **„Übernehmen“** trägt die
-   angezeigten Vorschläge in die entsprechenden Formularfelder ein;
-   **„Abbrechen“** verwirft sie vollständig, das Formular bleibt dabei
-   unverändert (auch das Popup lässt sich per Escape-Taste schliessen,
-   was wie „Abbrechen“ wirkt). In beiden Fällen wird **nichts
-   automatisch gespeichert** – auch nach „Übernehmen“ bitte die
-   übernommenen Werte vor dem Speichern prüfen und bei Bedarf anpassen,
-   bevor regulär auf „Speichern“ geklickt wird.
-4. Je nach Website werden dabei nicht alle Felder befüllt: Fehlt eine
-   Information auf der Seite, oder lässt sie sich nicht zuverlässig
-   auslesen (z. B. mehrdeutige oder widersprüchliche Angaben zu Adresse
-   oder Öffnungszeiten), bleibt das jeweilige Feld bewusst leer, statt
-   einen möglicherweise falschen Wert vorzuschlagen.
+   Uhr“) – weiterhin ohne externen Dienst und weiterhin: im Zweifel
+   kein Vorschlag statt eines unsicheren.
+2. Sind gültige Koordinaten (Latitude/Longitude) eingetragen, fragt
+   HofKarte eine freie, kostenlose OpenStreetMap-Overpass-Instanz nach
+   benannten Orten im nahen Umkreis der eingetragenen Koordinaten ab –
+   im einstellbaren Suchradius direkt unterhalb des Buttons (10–500 m,
+   voreingestellt 50 m). Ist die zuerst versuchte Instanz überlastet
+   oder nicht erreichbar, probiert HofKarte automatisch der Reihe nach
+   weitere bekannte, freie Instanzen (siehe Kapitel 14, „Datenschutz“).
+   **Dabei werden die Koordinaten dieses Hofladens an diesen externen
+   Dienst übermittelt** (siehe Kapitel 14, „Datenschutz“). Gesucht wird
+   sowohl nach Orten, die auf OpenStreetMap direkt als Laden/Hof/
+   Marktplatz getaggt sind, als auch – seit Issue #11 – nach
+   Hofgeländen ohne passenden Tag, deren Name auf einen Hofladen
+   hindeutet (z. B. „Hof“, „Bauernhof“, „Hofladen“, „Laden“ im Namen).
+3. Ist **weder** eine Website-Adresse **noch** ein gültiges
+   Koordinatenpaar eingetragen, meldet HofKarte dies und ruft keine der
+   beiden Quellen ab.
+4. Liefert die Koordinatensuche **genau einen** Treffer (oder liefert
+   nur die Website ein Ergebnis), öffnet sich direkt das gemeinsame
+   Bestätigungs-Popup. Liefert die Koordinatensuche **mehrere**
+   Treffer, wird zunächst eine Liste zur Auswahl angezeigt (Name,
+   Adresse, Entfernung) – Treffer, die nur anhand ihres Namens gefunden
+   wurden (kein Hofladen-Tag), sind dort ausdrücklich als „anhand des
+   Namens gefunden, kein Hofladen-Tag auf OpenStreetMap“ gekennzeichnet.
+   Ein bereits vorliegendes Website-Ergebnis bleibt dabei erhalten und
+   wird nach der Auswahl mit dem gewählten Ort zusammengeführt.
+5. Im Bestätigungs-Popup sind alle Vorschläge zusätzlich mit ihrer
+   Herkunft markiert (Website und/oder OpenStreetMap) – liefern beide
+   Quellen für dasselbe Feld unterschiedliche Werte, wird der
+   Website-Wert vorgeschlagen, der abweichende OpenStreetMap-Wert aber
+   nicht verworfen, sondern in der Kennzeichnung sichtbar gehalten.
+   Nicht gefundene Felder sind klar als solche gekennzeichnet. Erst ein
+   Klick auf **„Übernehmen“** trägt die angezeigten Vorschläge in die
+   entsprechenden Formularfelder ein; **„Abbrechen“** verwirft sie
+   vollständig, das Formular bleibt dabei unverändert (auch das Popup
+   lässt sich per Escape-Taste schliessen, was wie „Abbrechen“ wirkt).
+   In beiden Fällen wird **nichts automatisch gespeichert** – auch nach
+   „Übernehmen“ bitte die übernommenen Werte vor dem Speichern prüfen
+   und bei Bedarf anpassen, bevor regulär auf „Speichern“ geklickt
+   wird.
 
 Mögliche Rückmeldungen:
 
-- **„Bitte zuerst eine Website-Adresse eingeben.“** – das Feld
-  „Webseite“ ist leer oder enthält keine gültige, erreichbare Adresse.
+- **„Bitte zuerst eine Website-Adresse oder gültige Latitude-/
+  Longitude-Werte eintragen.“** – weder das Feld „Webseite“ noch die
+  Koordinatenfelder enthalten verwertbare Angaben.
 - **„Die Website konnte nicht erreicht oder nicht gelesen werden.“** –
   die Seite war zum Zeitpunkt des Abrufs nicht erreichbar (z. B.
   Zeitüberschreitung oder Fehlerstatus) oder ihre Antwort liess sich
@@ -264,47 +290,19 @@ Mögliche Rückmeldungen:
 - **„Auf der Website wurden keine verwertbaren Informationen
   gefunden.“** – die Seite war erreichbar, enthielt aber keine der
   gesuchten Angaben in auswertbarer Form.
-
-### Ort in der Nähe suchen (OpenStreetMap)
-
-Im Bearbeitungsformular steht im Bereich „Standort / Koordinaten“ der
-Button „📍 Ort in der Nähe suchen“ zur Verfügung – eine zweite, auf
-Koordinaten statt auf einer Website basierende Möglichkeit, Angaben zu
-einem Hofladen automatisch vorzubelegen:
-
-1. Zunächst gültige Koordinaten (Latitude/Longitude) eintragen – ohne
-   gültige Koordinaten ist der Button deaktiviert.
-2. Auf „📍 Ort in der Nähe suchen“ klicken. HofKarte fragt eine freie,
-   kostenlose OpenStreetMap-Overpass-Instanz nach benannten Orten
-   (z. B. Läden) im nahen Umkreis der eingetragenen Koordinaten ab.
-   Ist die zuerst versuchte Instanz überlastet oder nicht erreichbar,
-   probiert HofKarte automatisch der Reihe nach weitere bekannte,
-   freie Instanzen (siehe Kapitel 14, „Datenschutz“). **Dabei werden
-   die Koordinaten dieses Hofladens an diesen externen Dienst
-   übermittelt** (siehe Kapitel 14, „Datenschutz“).
-3. Findet sich **genau ein** Treffer, öffnet sich direkt dasselbe
-   Bestätigungs-Popup wie bei „Infos ermitteln“ (siehe oben). Finden
-   sich **mehrere** Treffer, wird zunächst eine Liste zur Auswahl
-   angezeigt (Name, Adresse, Entfernung); nach Auswahl eines Eintrags
-   öffnet sich ebenfalls dieses Popup.
-4. Wie bei „Infos ermitteln“ trägt erst ein Klick auf **„Übernehmen“**
-   die angezeigten Vorschläge in die Formularfelder ein; **„Abbrechen“**
-   (auch per Escape-Taste) verwirft sie vollständig. Es wird dabei
-   **nichts automatisch gespeichert** – die übernommenen Werte vor dem
-   Speichern prüfen und bei Bedarf anpassen.
-
-Mögliche Rückmeldungen:
-
-- **„Bitte zuerst gültige Latitude-/Longitude-Werte eintragen.“** – es
-  sind keine gültigen Koordinaten im Formular eingetragen.
-- **„Die Overpass API (OpenStreetMap) konnte nicht erreicht werden.“** –
-  keine der der Reihe nach versuchten Overpass-Instanzen war zum
-  Zeitpunkt der Suche erreichbar (z. B. Zeitüberschreitung oder
-  Fehlerstatus bei allen Instanzen). Details zu den einzelnen
+- **„Die Overpass API (OpenStreetMap) konnte nicht erreicht
+  werden.“** – keine der der Reihe nach versuchten Overpass-Instanzen
+  war zum Zeitpunkt der Suche erreichbar (z. B. Zeitüberschreitung
+  oder Fehlerstatus bei allen Instanzen). Details zu den einzelnen
   Fehlversuchen stehen im Home-Assistant-Protokoll (Einstellungen →
   System → Protokolle).
 - **„Im Umkreis wurden keine Orte gefunden.“** – im Suchradius sind auf
   OpenStreetMap keine benannten, passenden Orte hinterlegt.
+
+Schlagen beide Quellen gleichzeitig fehl, werden beide Meldungen
+gemeinsam in der Statusanzeige ausgewiesen; liefert nur eine der
+beiden Quellen ein Ergebnis, öffnet sich trotzdem das
+Bestätigungs-Popup mit den Angaben der erfolgreichen Quelle.
 
 ## 5. Entities
 
@@ -731,22 +729,21 @@ unverändert (siehe Kapitel 14).
   nicht beim Start des Panels. Dabei werden ausschliesslich die für die
   Kartendarstellung nötigen Ausschnitts-/Kachelkoordinaten übertragen,
   keine Hofladen- oder Standortdaten im Klartext an OpenStreetMap.
-  Klickt man im Bearbeitungsformular auf „🔎 Infos ermitteln“
-  (Kapitel 4, „Informationen von der Website übernehmen“), ruft
-  HofKarte die dort eingetragene Website-Adresse **nur auf diesen
-  ausdrücklichen Klick hin** ab und wertet sie rein lokal aus – ohne
-  einen externen Cloud- oder KI-Dienst einzubinden. Klickt man
-  stattdessen auf „📍 Ort in der Nähe suchen“ (Kapitel 4, „Ort in der
-  Nähe suchen (OpenStreetMap)“), übermittelt HofKarte **nur auf diesen
-  ausdrücklichen Klick hin** die im Formular eingetragenen Koordinaten
-  dieses Hofladens an eine von mehreren bekannten, freien,
-  kostenlosen OpenStreetMap-Overpass-Instanzen (probiert der Reihe
-  nach mehrere Instanzen, falls die erste überlastet oder nicht
-  erreichbar ist) – anders als bei den Kartenkacheln werden hier also
-  tatsächlich hofladenspezifische Standortdaten an einen externen
-  Dienst übertragen (weiterhin kein kommerzieller Cloud- oder
-  KI-Dienst). Ausserhalb dieser vier Fälle findet keine Telemetrie und
-  keine Datenübertragung an Dritte statt.
+  Klickt man im Bearbeitungsformular auf „🔍 Angaben automatisch
+  ermitteln“ (Kapitel 4, „Angaben automatisch ermitteln“), ruft
+  HofKarte **nur auf diesen ausdrücklichen Klick hin** – je nachdem,
+  was im Formular eingetragen ist – die dort eingetragene
+  Website-Adresse ab und wertet sie rein lokal aus, und/oder
+  übermittelt die im Formular eingetragenen Koordinaten dieses
+  Hofladens an eine von mehreren bekannten, freien, kostenlosen
+  OpenStreetMap-Overpass-Instanzen (probiert der Reihe nach mehrere
+  Instanzen, falls die erste überlastet oder nicht erreichbar ist) –
+  ohne einen externen Cloud- oder KI-Dienst einzubinden. Anders als
+  bei den Kartenkacheln werden bei der Koordinatensuche tatsächlich
+  hofladenspezifische Standortdaten an einen externen Dienst
+  übertragen (weiterhin kein kommerzieller Cloud- oder KI-Dienst).
+  Ausserhalb dieser vier Fälle findet keine Telemetrie und keine
+  Datenübertragung an Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor
   (Kapitel 7) liest ausschliesslich die statische, in Home Assistant
   konfigurierte Position – kein `device_tracker`, keine Personen- oder

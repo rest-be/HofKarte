@@ -1199,7 +1199,7 @@ async def test_ws_osm_info_liefert_ermittelte_orte(hass: HomeAssistant) -> None:
         )
         await hass.async_block_till_done()
 
-    fake.assert_called_once_with(hass, 46.948, 7.4474)
+    fake.assert_called_once_with(hass, 46.948, 7.4474, radius_meter=50)
     assert len(connection.errors) == 0
     msg_id, ergebnis = connection.results[0]
     assert msg_id == 50
@@ -1340,4 +1340,88 @@ async def test_ws_osm_info_ohne_eingerichtete_integration_sendet_fehler(
     msg_id, code, _message = connection.errors[0]
     assert msg_id == 55
     assert code == "not_ready"
+
+
+# ---------------------------------------------------------------------------
+# Optionaler radius-Parameter (Issue #11)
+# ---------------------------------------------------------------------------
+
+
+def test_ws_osm_info_schema_setzt_standard_radius_ohne_angabe() -> None:
+    """Ohne explizite Angabe wird der Standardradius aus osm_info.py
+    verwendet (siehe Nachrichtenschema von ws_osm_info)."""
+    ergebnis = ws_osm_info._ws_schema(
+        {"type": "hofkarte/management/osm_info", "latitude": 46.9, "longitude": 7.4, "id": 1}
+    )
+    assert ergebnis["radius"] == 50
+
+
+def test_ws_osm_info_schema_akzeptiert_gueltigen_radius() -> None:
+    ergebnis = ws_osm_info._ws_schema(
+        {
+            "type": "hofkarte/management/osm_info",
+            "latitude": 46.9,
+            "longitude": 7.4,
+            "radius": 200,
+            "id": 1,
+        }
+    )
+    assert ergebnis["radius"] == 200
+
+
+def test_ws_osm_info_schema_lehnt_zu_kleinen_radius_ab() -> None:
+    with pytest.raises(Exception):
+        ws_osm_info._ws_schema(
+            {
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.9,
+                "longitude": 7.4,
+                "radius": 5,
+                "id": 1,
+            }
+        )
+
+
+def test_ws_osm_info_schema_lehnt_zu_grossen_radius_ab() -> None:
+    with pytest.raises(Exception):
+        ws_osm_info._ws_schema(
+            {
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.9,
+                "longitude": 7.4,
+                "radius": 5000,
+                "id": 1,
+            }
+        )
+
+
+async def test_ws_osm_info_gibt_radius_an_async_ermittle_osm_orte_weiter(
+    hass: HomeAssistant,
+) -> None:
+    """Bei direktem Handler-Aufruf (ohne Schema-Anwendung, siehe übrige
+    Tests dieser Datei) muss ein fehlender ``radius``-Schlüssel dennoch
+    zum Standardradius führen (defensiver ``.get()`` statt ``[...]``,
+    siehe management.ws_osm_info)."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_osm_orte"
+    ) as fake:
+        fake.return_value = (OsmOrt(name="Hofladen X"),)
+
+        connection = _FakeConnection()
+        ws_osm_info(
+            hass,
+            connection,
+            {
+                "id": 60,
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.948,
+                "longitude": 7.4474,
+                "radius": 200,
+            },
+        )
+        await hass.async_block_till_done()
+
+    fake.assert_called_once_with(hass, 46.948, 7.4474, radius_meter=200)
 

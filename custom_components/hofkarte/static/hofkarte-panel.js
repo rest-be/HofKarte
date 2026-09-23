@@ -16,6 +16,16 @@ function isValidWgs84(lat, lon) {
   return Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
 }
 
+// Suchradius für die automatische Ermittlung über OpenStreetMap (Issue
+// #11) - Werte müssen mit osm_info.py (STANDARD_RADIUS_METER,
+// MIN_RADIUS_METER, MAX_RADIUS_METER) übereinstimmen; das Backend
+// begrenzt den tatsächlich verwendeten Wert ohnehin serverseitig noch
+// einmal (siehe management.ws_osm_info), diese Konstanten steuern nur
+// die Eingabegrenzen im Formular.
+const OSM_STANDARD_RADIUS_METER = 50;
+const OSM_MIN_RADIUS_METER = 10;
+const OSM_MAX_RADIUS_METER = 500;
+
 /** Google-Maps-Link für eine WGS84-Koordinate (offizielles URL-Schema,
  * siehe https://developers.google.com/maps/documentation/urls/get-started).
  * Zeigt den Standort nur als Suchergebnis/Pin an (keine Route) – wird
@@ -172,12 +182,13 @@ class HofkartePanel extends HTMLElement {
     this._leafletResizeHandler = null;
     this.auswahl = new Set(); // ausgewählte Hofladen-IDs für den Export (Issue #5)
     this.importDialog = null; // { eintraege, entscheidungen: Map<bestehende_id, "aktualisieren"|"ueberspringen"> } - nicht null während der Duplikat-Konfliktlösung eines Imports (Issue #5)
-    this.webseiteInfoVorschlag = null; // vom Server ermittelte Vorschlagsdaten, bis sie im Bestätigungs-Popup übernommen/verworfen werden (Issue #9). Wird seit Issue #10 auch für OSM-Treffer (ein einzelner Treffer oder ein aus der Trefferauswahl gewählter Treffer) genutzt - dasselbe Bestätigungs-Popup, unabhängig von der Datenquelle.
-    this.webseiteInfoStatusText = ""; // Statusmeldung neben "Infos ermitteln" - in this.* gehalten statt nur im DOM, da render() (u. a. beim Öffnen/Schliessen des Popups) das Formular sonst aus this.editing neu aufbaut und eine rein im DOM gesetzte Meldung dabei verloren ginge (Issue #9)
-    this.webseiteInfoStatusKind = ""; // "" | "success" | "error", passend zu webseiteInfoStatusText
+    this.webseiteInfoVorschlag = null; // vom Server ermittelte, ggf. aus beiden Quellen zusammengeführte Vorschlagsdaten, bis sie im Bestätigungs-Popup übernommen/verworfen werden (Issue #9/#10). Seit Issue #11 immer das Ergebnis von ermittleAutomatisch() - unabhängig davon, ob es aus der Website, aus OpenStreetMap oder aus beiden Quellen zusammengeführt stammt (siehe mischeAutoVorschlaege()).
+    this.autoErmittlungStatusText = ""; // Statusmeldung neben "🔍 Angaben automatisch ermitteln" (Issue #11, ersetzt die bisher getrennten webseiteInfoStatusText/osmInfoStatusText) - in this.* gehalten statt nur im DOM, da render() (u. a. beim Öffnen/Schliessen des Popups) das Formular sonst aus this.editing neu aufbaut und eine rein im DOM gesetzte Meldung dabei verloren ginge (Issue #9)
+    this.autoErmittlungStatusKind = ""; // "" | "success" | "error", passend zu autoErmittlungStatusText
+    this.autoErmittlungQuellen = null; // { feldname: "website"|"osm"|"beide" } für die im Bestätigungs-Popup angezeigte Quellenkennzeichnung (Issue #11, 5.1), solange this.webseiteInfoVorschlag aus mehr als einer Quelle stammt - sonst null (keine Kennzeichnung nötig).
     this.osmOrteAuswahl = null; // Liste der von der Overpass API gefundenen Treffer, solange mehr als einer gefunden wurde und noch keiner ausgewählt ist (Issue #10, "Ort in der Nähe suchen"); bei genau einem Treffer wird die Auswahlliste übersprungen und direkt this.webseiteInfoVorschlag gesetzt.
-    this.osmInfoStatusText = ""; // Statusmeldung neben "Ort in der Nähe suchen" - analog zu webseiteInfoStatusText (Issue #10)
-    this.osmInfoStatusKind = ""; // "" | "success" | "error", passend zu osmInfoStatusText
+    this.osmRadius = OSM_STANDARD_RADIUS_METER; // Im Formular eingestellter Suchradius für OpenStreetMap (Issue #11) - wird wie alle übrigen Formularfelder über erfasseFormularZustand() vor jedem Re-Render gesichert, damit ein bereits geänderter Wert nicht verloren geht.
+    this._wartendesWebseiteErgebnis = null; // Zwischengespeichertes Website-Ergebnis, während die OSM-Trefferauswahl (mehrere Treffer) noch offen ist (Issue #11, siehe ermittleAutomatisch()/waehleOsmOrt()).
     this.attachShadow({ mode: "open" });
   }
 
@@ -411,84 +422,37 @@ class HofkartePanel extends HTMLElement {
     this.render();
   }
 
-  /** Setzt die Statusmeldung neben "Infos ermitteln". Wird bewusst sowohl
-   * im Zustand (this.webseiteInfoStatusText/-Kind) als auch – für
-   * sofortiges Feedback ohne einen vollständigen Re-Render auszulösen –
-   * direkt im bereits vorhandenen DOM-Element gehalten (Issue #9): render()
-   * baut editor() komplett neu auf und übernimmt die Meldung dabei aus dem
+  /** Setzt die Statusmeldung neben "🔍 Angaben automatisch ermitteln"
+   * (Issue #11, ersetzt die bisher getrennten setWebseiteInfoStatus()/
+   * setOsmInfoStatus()). Wird bewusst sowohl im Zustand
+   * (this.autoErmittlungStatusText/-Kind) als auch – für sofortiges
+   * Feedback ohne einen vollständigen Re-Render auszulösen – direkt im
+   * bereits vorhandenen DOM-Element gehalten (Issue #9): render() baut
+   * editor() komplett neu auf und übernimmt die Meldung dabei aus dem
    * Zustand (siehe editor()), eine rein im DOM gesetzte Meldung würde vom
    * nächsten Render sonst überschrieben, bevor die Benutzerin/der Benutzer
    * sie überhaupt lesen konnte. */
-  setWebseiteInfoStatus(text, kind = "") {
-    this.webseiteInfoStatusText = text;
-    this.webseiteInfoStatusKind = kind;
-    const el = this.shadowRoot.querySelector("[data-webseite-info-status]");
+  setAutoErmittlungStatus(text, kind = "") {
+    this.autoErmittlungStatusText = text;
+    this.autoErmittlungStatusKind = kind;
+    const el = this.shadowRoot.querySelector("[data-auto-info-status]");
     if (!el) return;
     el.textContent = text;
     el.className = `webseite-info-status muted${kind ? " " + kind : ""}`;
   }
 
-  /** Fehlermeldungen für die drei in Issue #8 geforderten Fehlerfälle,
-   * passend zu den Fehlercodes aus management.ws_webseite_info. */
+  /** Fehlermeldungen für die drei in Issue #8 geforderten Fehlerfälle der
+   * Website-Quelle, passend zu den Fehlercodes aus
+   * management.ws_webseite_info. */
   static WEBSEITE_INFO_FEHLERMELDUNGEN = {
     invalid_url: "Bitte eine gültige, erreichbare Website-Adresse eingeben.",
     unreachable: "Die Website konnte nicht erreicht oder nicht gelesen werden.",
     not_found: "Auf der Website wurden keine verwertbaren Informationen gefunden.",
   };
 
-  async ermittleWebseiteInfo() {
-    // Issue #9, Korrektur 5.1: Vor JEDEM Re-Render im Zusammenhang mit
-    // "Infos ermitteln" müssen sämtliche live im Formular stehenden, noch
-    // ungespeicherten Werte zuerst gesichert werden – nicht nur die
-    // Website-Adresse. Deshalb hier als allererste Aktion, noch bevor der
-    // Server überhaupt angefragt wird (siehe erfasseFormularZustand()).
-    this.erfasseFormularZustand();
-
-    const website = (this.editing?.website || "").trim();
-    if (!website) {
-      this.setWebseiteInfoStatus("Bitte zuerst eine Website-Adresse eingeben.", "error");
-      return;
-    }
-
-    const btn = this.shadowRoot.querySelector("[data-webseite-info-btn]");
-    if (btn) btn.disabled = true;
-    this.setWebseiteInfoStatus("Informationen werden ermittelt …");
-
-    try {
-      const result = await this.call("hofkarte/management/webseite_info", { website });
-      // Issue #9, Erweiterung 5.2: nicht mehr direkt in die Formularfelder
-      // schreiben – stattdessen als Vorschlag zwischenspeichern und im
-      // Bestätigungs-Popup zur Prüfung anzeigen (siehe webseiteInfoPopup()/
-      // uebernehmeWebseiteInfoVorschlag()/abbrechenWebseiteInfo()).
-      this.webseiteInfoVorschlag = result.info || {};
-      this.setWebseiteInfoStatus("Informationen gefunden – bitte im Popup prüfen.", "success");
-      this.render();
-    } catch (err) {
-      const meldung = HofkartePanel.WEBSEITE_INFO_FEHLERMELDUNGEN[err?.code]
-        || err?.message || "Informationen konnten nicht ermittelt werden.";
-      this.setWebseiteInfoStatus(meldung, "error");
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  /** Setzt die Statusmeldung neben "Ort in der Nähe suchen" - analog zu
-   * setWebseiteInfoStatus() (Issue #10). Eigener Zustand/eigenes
-   * DOM-Element, da der Button in einem anderen Formularabschnitt
-   * ("Standort / Koordinaten") sitzt als der "Infos ermitteln"-Button
-   * ("Kontakt & Webseite") und beide Meldungen unabhängig voneinander
-   * sichtbar bleiben sollen. */
-  setOsmInfoStatus(text, kind = "") {
-    this.osmInfoStatusText = text;
-    this.osmInfoStatusKind = kind;
-    const el = this.shadowRoot.querySelector("[data-osm-info-status]");
-    if (!el) return;
-    el.textContent = text;
-    el.className = `webseite-info-status muted${kind ? " " + kind : ""}`;
-  }
-
-  /** Fehlermeldungen für die drei Fehlerfälle aus management.ws_osm_info
-   * (Issue #10, siehe osm_info.py für die jeweilige Bedeutung). */
+  /** Fehlermeldungen für die drei Fehlerfälle der OSM-Quelle aus
+   * management.ws_osm_info (Issue #10, siehe osm_info.py für die
+   * jeweilige Bedeutung). */
   static OSM_INFO_FEHLERMELDUNGEN = {
     invalid_coordinates: "Bitte zuerst gültige Latitude-/Longitude-Werte eintragen.",
     unreachable: "Die Overpass API (OpenStreetMap) konnte nicht erreicht werden.",
@@ -512,79 +476,208 @@ class HofkartePanel extends HTMLElement {
     };
   }
 
-  /** Sucht per Overpass API (osm_info.py) nach Orten in der Nähe der
-   * aktuell im Formular eingetragenen Koordinaten (Issue #10, "Ort in der
-   * Nähe suchen"). Wie ermittleWebseiteInfo() (Issue #9, Korrektur 5.1)
-   * muss der vollständige Formularzustand VOR dem ersten this.render()
-   * gesichert werden - sonst gingen bereits eingetippte, aber noch nicht
-   * gespeicherte Werte beim Neuaufbau des Formulars verloren. */
-  async ermittleOsmInfo() {
-    this.erfasseFormularZustand();
-
-    const { latitude, longitude } = this.editing || {};
-    if (!isValidWgs84(latitude, longitude)) {
-      this.setOsmInfoStatus("Bitte zuerst gültige Latitude-/Longitude-Werte eintragen.", "error");
-      return;
-    }
-
-    const btn = this.shadowRoot.querySelector("[data-osm-info-btn]");
-    if (btn) btn.disabled = true;
-    this.setOsmInfoStatus("Orte werden gesucht …");
-
+  /** Fragt die Website-Quelle ab (Issue #8/#9) und liefert ein
+   * einheitliches Ergebnisobjekt statt selbst Status/Popup zu setzen -
+   * wird seit Issue #11 ausschliesslich von ermittleAutomatisch()
+   * aufgerufen, das beide Quellen zusammenführt. */
+  async holeWebseiteVorschlag(website) {
     try {
-      const result = await this.call("hofkarte/management/osm_info", { latitude, longitude });
-      const orte = result.orte || [];
-      if (orte.length === 0) {
-        // Sollte durch den not_found-Fehlerfall des Backends normalerweise
-        // nicht vorkommen - defensiv dennoch abgedeckt.
-        this.setOsmInfoStatus(HofkartePanel.OSM_INFO_FEHLERMELDUNGEN.not_found, "error");
-      } else if (orte.length === 1) {
-        // Genau ein Treffer -> Auswahlliste überspringen, direkt ins
-        // bereits bestehende Bestätigungs-Popup (Issue #9/#10, 5.3).
-        this.webseiteInfoVorschlag = this.osmOrtZuVorschlag(orte[0]);
-        this.setOsmInfoStatus("Ein Ort gefunden – bitte im Popup prüfen.", "success");
-        this.render();
-      } else {
-        // Mehrere Treffer -> zunächst Auswahlliste anzeigen (Issue #10, 5.2).
-        this.osmOrteAuswahl = orte;
-        this.setOsmInfoStatus(`${orte.length} Orte gefunden – bitte auswählen.`, "success");
-        this.render();
-      }
+      const result = await this.call("hofkarte/management/webseite_info", { website });
+      return { ok: true, vorschlag: result.info || {} };
     } catch (err) {
-      const meldung = HofkartePanel.OSM_INFO_FEHLERMELDUNGEN[err?.code]
-        || err?.message || "Es konnten keine Orte ermittelt werden.";
-      this.setOsmInfoStatus(meldung, "error");
-    } finally {
-      if (btn) btn.disabled = false;
+      const meldung = HofkartePanel.WEBSEITE_INFO_FEHLERMELDUNGEN[err?.code]
+        || err?.message || "Informationen konnten nicht ermittelt werden.";
+      return { ok: false, meldung };
     }
   }
 
+  /** Fragt die OSM-Quelle ab (Issue #10) und liefert ein einheitliches
+   * Ergebnisobjekt (ggf. mit mehreren Treffern zur Auswahl) - analog zu
+   * holeWebseiteVorschlag(), ebenfalls seit Issue #11 nur noch von
+   * ermittleAutomatisch() aufgerufen. */
+  async holeOsmOrte(latitude, longitude, radius) {
+    try {
+      const result = await this.call("hofkarte/management/osm_info", { latitude, longitude, radius });
+      return { ok: true, orte: result.orte || [] };
+    } catch (err) {
+      const meldung = HofkartePanel.OSM_INFO_FEHLERMELDUNGEN[err?.code]
+        || err?.message || "Es konnten keine Orte ermittelt werden.";
+      return { ok: false, meldung };
+    }
+  }
+
+  /** Führt Website- und OSM-Vorschlag zu einem gemeinsamen Vorschlag
+   * zusammen (Issue #11, 5.1 - ersetzt zwei getrennte Aktionen durch
+   * eine). Bei einem Konflikt (beide Quellen liefern einen Wert für
+   * dasselbe Feld, aber unterschiedlich) hat die Website-Quelle Vorrang
+   * (i. d. R. die vom Betreiber selbst gepflegte, genauere Angabe); der
+   * abweichende OSM-Wert wird dabei NICHT stillschweigend verworfen,
+   * sondern bleibt im zurückgegebenen "quellen"-Objekt nachvollziehbar
+   * (aktuell nur zur Kennzeichnung im Popup genutzt, siehe
+   * webseiteInfoPopup()) - "lieber nichts als falsch" gilt auch für das
+   * Verwerfen abweichender Angaben. */
+  mischeAutoVorschlaege(websiteVorschlag, osmVorschlag) {
+    const ziel = {};
+    const quellen = {};
+
+    for (const feld of ["name", "beschreibung", "adresse", "plz", "ort", "land", "website"]) {
+      const w = websiteVorschlag?.[feld];
+      const o = osmVorschlag?.[feld];
+      if (w) {
+        ziel[feld] = w;
+        quellen[feld] = (o && o !== w) ? "website+osm" : "website";
+      } else if (o) {
+        ziel[feld] = o;
+        quellen[feld] = "osm";
+      }
+    }
+
+    if (Array.isArray(websiteVorschlag?.oeffnungszeiten) && websiteVorschlag.oeffnungszeiten.length) {
+      ziel.oeffnungszeiten = websiteVorschlag.oeffnungszeiten;
+      quellen.oeffnungszeiten = "website";
+    } else if (Array.isArray(osmVorschlag?.oeffnungszeiten) && osmVorschlag.oeffnungszeiten.length) {
+      ziel.oeffnungszeiten = osmVorschlag.oeffnungszeiten;
+      quellen.oeffnungszeiten = "osm";
+    }
+
+    for (const feld of ["angebote", "zahlungsarten"]) {
+      const wListe = Array.isArray(websiteVorschlag?.[feld]) ? websiteVorschlag[feld] : [];
+      const oListe = Array.isArray(osmVorschlag?.[feld]) ? osmVorschlag[feld] : [];
+      const kombiniert = [...wListe, ...oListe];
+      if (kombiniert.length) {
+        ziel[feld] = kombiniert;
+        quellen[feld] = (wListe.length && oListe.length) ? "website+osm" : (wListe.length ? "website" : "osm");
+      }
+    }
+
+    return { vorschlag: ziel, quellen };
+  }
+
+  /** Führt die Ergebnisse beider Quellen zusammen: öffnet bei mindestens
+   * einem Treffer das gemeinsame Bestätigungs-Popup (mit Quellen-
+   * Kennzeichnung, falls beide Quellen etwas beigetragen haben), setzt
+   * andernfalls eine kombinierte Fehlermeldung, die beide fehlgeschlagenen
+   * Quellen benennt statt nur die zuletzt geprüfte (Issue #11, 5.1). */
+  zeigeAutoErgebnis(websiteErgebnis, osmErgebnis, osmVorschlag) {
+    const websiteVorschlag = websiteErgebnis?.ok ? websiteErgebnis.vorschlag : null;
+
+    if (!websiteVorschlag && !osmVorschlag) {
+      const teile = [];
+      if (websiteErgebnis && !websiteErgebnis.ok) teile.push(`Website: ${websiteErgebnis.meldung}`);
+      if (osmErgebnis && !osmErgebnis.ok) teile.push(`OpenStreetMap: ${osmErgebnis.meldung}`);
+      this.setAutoErmittlungStatus(teile.join(" ") || "Es wurden keine Angaben gefunden.", "error");
+      this.render();
+      return;
+    }
+
+    const { vorschlag, quellen } = this.mischeAutoVorschlaege(websiteVorschlag, osmVorschlag);
+    this.webseiteInfoVorschlag = vorschlag;
+    this.autoErmittlungQuellen = quellen;
+
+    const hinweise = [];
+    if (websiteErgebnis && !websiteErgebnis.ok) hinweise.push(`Website: ${websiteErgebnis.meldung}`);
+    if (osmErgebnis && !osmErgebnis.ok) hinweise.push(`OpenStreetMap: ${osmErgebnis.meldung}`);
+    this.setAutoErmittlungStatus(
+      hinweise.length
+        ? `Angaben gefunden – bitte im Popup prüfen (${hinweise.join(" ")})`
+        : "Angaben gefunden – bitte im Popup prüfen.",
+      "success",
+    );
+    this.render();
+  }
+
+  /** Ermittelt Angaben automatisch anhand der Website und/oder der
+   * Koordinaten (Issue #11, 5.1 - ersetzt die bisher getrennten
+   * ermittleWebseiteInfo()/ermittleOsmInfo()). Fragt beide Quellen
+   * parallel ab, soweit deren jeweilige Voraussetzung erfüllt ist
+   * (Website-Adresse bzw. gültige Koordinaten), und führt die Ergebnisse
+   * anschliessend zu einem einzigen Bestätigungs-Popup zusammen (siehe
+   * zeigeAutoErgebnis()). Liefert die OSM-Quelle mehrere Treffer, wird
+   * zunächst die bestehende Trefferauswahl gezeigt (siehe waehleOsmOrt())
+   * - ein bereits vorliegendes Website-Ergebnis geht dabei nicht
+   * verloren (this._wartendesWebseiteErgebnis). Wie die bisherigen
+   * Einzelfunktionen (Issue #9, Korrektur 5.1) muss der vollständige
+   * Formularzustand VOR dem ersten this.render() gesichert werden - sonst
+   * gingen bereits eingetippte, aber noch nicht gespeicherte Werte beim
+   * Neuaufbau des Formulars verloren. */
+  async ermittleAutomatisch() {
+    this.erfasseFormularZustand();
+
+    const website = (this.editing?.website || "").trim();
+    const { latitude, longitude } = this.editing || {};
+    const hatKoordinaten = isValidWgs84(latitude, longitude);
+
+    if (!website && !hatKoordinaten) {
+      this.setAutoErmittlungStatus(
+        "Bitte zuerst eine Website-Adresse oder gültige Latitude-/Longitude-Werte eintragen.",
+        "error",
+      );
+      return;
+    }
+
+    const btn = this.shadowRoot.querySelector("[data-auto-info-btn]");
+    if (btn) btn.disabled = true;
+    this.setAutoErmittlungStatus("Angaben werden ermittelt …");
+
+    const [websiteErgebnis, osmErgebnis] = await Promise.all([
+      website ? this.holeWebseiteVorschlag(website) : Promise.resolve(null),
+      hatKoordinaten ? this.holeOsmOrte(latitude, longitude, this.osmRadius) : Promise.resolve(null),
+    ]);
+
+    if (btn) btn.disabled = false;
+
+    if (osmErgebnis?.ok && osmErgebnis.orte.length > 1) {
+      // Mehrere OSM-Treffer -> zunächst Auswahlliste anzeigen (Issue #10,
+      // 5.2); ein ggf. bereits vorliegendes Website-Ergebnis wird bis zur
+      // Auswahl zwischengespeichert, statt es zu verwerfen.
+      this._wartendesWebseiteErgebnis = websiteErgebnis;
+      this.osmOrteAuswahl = osmErgebnis.orte;
+      this.setAutoErmittlungStatus(`${osmErgebnis.orte.length} Orte gefunden – bitte auswählen.`, "success");
+      this.render();
+      return;
+    }
+
+    const osmVorschlag = (osmErgebnis?.ok && osmErgebnis.orte.length === 1)
+      ? this.osmOrtZuVorschlag(osmErgebnis.orte[0])
+      : null;
+    this.zeigeAutoErgebnis(websiteErgebnis, osmErgebnis, osmVorschlag);
+  }
+
   /** Wählt einen Treffer aus der OSM-Trefferauswahl (Issue #10, 5.2) und
-   * öffnet dafür das bestehende Bestätigungs-Popup (Issue #9/#10, 5.3). */
+   * führt ihn mit einem ggf. zwischengespeicherten Website-Ergebnis
+   * zusammen, bevor das gemeinsame Bestätigungs-Popup geöffnet wird
+   * (Issue #11, 5.1). */
   waehleOsmOrt(index) {
     const ort = (this.osmOrteAuswahl || [])[index];
     this.osmOrteAuswahl = null;
-    if (!ort) { this.render(); return; }
-    this.webseiteInfoVorschlag = this.osmOrtZuVorschlag(ort);
-    this.render();
+    const websiteErgebnis = this._wartendesWebseiteErgebnis;
+    this._wartendesWebseiteErgebnis = null;
+    const osmVorschlag = ort ? this.osmOrtZuVorschlag(ort) : null;
+    this.zeigeAutoErgebnis(websiteErgebnis, ort ? { ok: true, orte: [ort] } : null, osmVorschlag);
   }
 
   /** Bricht die OSM-Trefferauswahl ab, ohne einen Treffer zu übernehmen
    * (Issue #10, 5.2) - this.editing wurde bereits vor dem Öffnen der Liste
-   * über erfasseFormularZustand() gesichert (siehe ermittleOsmInfo()). */
+   * über erfasseFormularZustand() gesichert (siehe ermittleAutomatisch()).
+   * Ein ggf. bereits erfolgreich ermitteltes Website-Ergebnis wird trotz
+   * abgebrochener OSM-Auswahl weiterhin im Bestätigungs-Popup angezeigt
+   * (Issue #11) statt verworfen zu werden. */
   abbrechenOsmAuswahl() {
     this.osmOrteAuswahl = null;
-    this.render();
+    const websiteErgebnis = this._wartendesWebseiteErgebnis;
+    this._wartendesWebseiteErgebnis = null;
+    this.zeigeAutoErgebnis(websiteErgebnis, null, null);
   }
 
   /** Verwirft die im Popup gezeigten Vorschläge vollständig (Issue #9,
    * "Abbrechen"). this.editing wurde bereits vor dem Öffnen des Popups
-   * über erfasseFormularZustand() gesichert (siehe ermittleWebseiteInfo())
+   * über erfasseFormularZustand() gesichert (siehe ermittleAutomatisch())
    * – das Formular bleibt dadurch exakt im Zustand vor dem Klick auf
-   * "Infos ermitteln", inklusive aller zwischenzeitlich eingegebenen, noch
-   * ungespeicherten Werte. */
+   * "Angaben automatisch ermitteln", inklusive aller zwischenzeitlich
+   * eingegebenen, noch ungespeicherten Werte. */
   abbrechenWebseiteInfo() {
     this.webseiteInfoVorschlag = null;
+    this.autoErmittlungQuellen = null;
     this.render();
   }
 
@@ -593,7 +686,8 @@ class HofkartePanel extends HTMLElement {
   uebernehmeWebseiteInfoVorschlag() {
     const uebernommen = this.uebernehmeWebseiteInfo(this.webseiteInfoVorschlag || {});
     this.webseiteInfoVorschlag = null;
-    this.setWebseiteInfoStatus(
+    this.autoErmittlungQuellen = null;
+    this.setAutoErmittlungStatus(
       uebernommen
         ? "Informationen übernommen – bitte vor dem Speichern prüfen und bei Bedarf anpassen."
         : "Es wurden keine Angaben übernommen.",
@@ -710,16 +804,16 @@ class HofkartePanel extends HTMLElement {
 
   /** Überträgt sämtliche aktuell im Formular sichtbaren, noch nicht
    * gespeicherten Eingaben nach this.editing – **muss** vor jedem
-   * this.render()-Aufruf im Zusammenhang mit "Infos ermitteln" (Issue #9)
-   * aufgerufen werden, da render() das komplette Formular-HTML
-   * ausschliesslich aus this.editing neu aufbaut (siehe editor()). Ohne
-   * diesen Schritt ginge jeder bereits eingetippte, aber noch nicht über
-   * formData()/"Speichern" in this.editing übernommene Wert beim
-   * nächsten Render optisch "verloren" (zurückgesetzt auf den alten
-   * this.editing-Stand) – ursprünglich als "der Eintrag wird gelöscht"
-   * gemeldet (Issue #9), tatsächlich aber betraf/betrifft das
+   * this.render()-Aufruf im Zusammenhang mit "Angaben automatisch
+   * ermitteln" (Issue #9) aufgerufen werden, da render() das komplette
+   * Formular-HTML ausschliesslich aus this.editing neu aufbaut (siehe
+   * editor()). Ohne diesen Schritt ginge jeder bereits eingetippte, aber
+   * noch nicht über formData()/"Speichern" in this.editing übernommene
+   * Wert beim nächsten Render optisch "verloren" (zurückgesetzt auf den
+   * alten this.editing-Stand) – ursprünglich als "der Eintrag wird
+   * gelöscht" gemeldet (Issue #9), tatsächlich aber betraf/betrifft das
    * grundsätzlich JEDES Formularfeld, nicht nur "Webseite" (siehe
-   * ermittleWebseiteInfo()).
+   * ermittleAutomatisch()).
    *
    * Nutzt bewusst denselben Erfassungsmechanismus wie formData()/save()
    * (leseEinfacheFelder()/leseBilderBeschreibungen()) – bis auf eine
@@ -745,6 +839,16 @@ class HofkartePanel extends HTMLElement {
       // Bewusst ignoriert, siehe Funktionsdoku oben.
     }
     this.editing.bilder = this.leseBilderBeschreibungen(f, this.editing.bilder);
+
+    // Issue #11: Suchradius für OpenStreetMap ist kein Hofladen-Feld
+    // (gehört nicht zu this.editing), muss aber genau wie alle übrigen
+    // Formularfelder vor einem Re-Render gesichert werden, sonst ginge ein
+    // bereits geänderter Wert beim nächsten Aufbau des Formulars verloren
+    // (dieselbe Ursache wie in Issue #9 bereits für andere Felder behoben).
+    const radiusEingabe = Number(f.elements["osm_radius"]?.value);
+    if (Number.isFinite(radiusEingabe) && radiusEingabe > 0) {
+      this.osmRadius = radiusEingabe;
+    }
   }
 
   /** Öffnungszeiten aus den pro Wochentag gruppierten Eingabebereichen
@@ -775,14 +879,17 @@ class HofkartePanel extends HTMLElement {
 
   start(item = null) {
     this.error = ""; this.viewing = null; this.showCoordInfo = false;
-    this.webseiteInfoVorschlag = null; this.webseiteInfoStatusText = ""; this.webseiteInfoStatusKind = "";
-    this.osmOrteAuswahl = null; this.osmInfoStatusText = ""; this.osmInfoStatusKind = "";
+    this.webseiteInfoVorschlag = null; this.autoErmittlungQuellen = null;
+    this.autoErmittlungStatusText = ""; this.autoErmittlungStatusKind = "";
+    this.osmOrteAuswahl = null; this._wartendesWebseiteErgebnis = null;
+    this.osmRadius = OSM_STANDARD_RADIUS_METER;
     this.editing = item ? this.clone(item) : this.empty(); this.render();
   }
   cancel() {
     this.editing = null; this.error = "";
-    this.webseiteInfoVorschlag = null; this.webseiteInfoStatusText = ""; this.webseiteInfoStatusKind = "";
-    this.osmOrteAuswahl = null; this.osmInfoStatusText = ""; this.osmInfoStatusKind = "";
+    this.webseiteInfoVorschlag = null; this.autoErmittlungQuellen = null;
+    this.autoErmittlungStatusText = ""; this.autoErmittlungStatusKind = "";
+    this.osmOrteAuswahl = null; this._wartendesWebseiteErgebnis = null;
     this.render();
   }
   view(item) { this.error = ""; this.editing = null; this.viewing = item; this.render(); }
@@ -1530,11 +1637,6 @@ class HofkartePanel extends HTMLElement {
           </div>
           <div class="coord-actions">${this.mapButton(latValue === "" ? NaN : Number(latValue), lonValue === "" ? NaN : Number(lonValue))}</div>
           ${this.showCoordInfo ? this.coordInfoBox() : ""}
-          <div class="webseite-info-row">
-            <button type="button" class="secondary" data-osm-info-btn ${isValidWgs84(latValue === "" ? NaN : Number(latValue), lonValue === "" ? NaN : Number(lonValue)) ? "" : "disabled"} title="Ort anhand der Koordinaten in OpenStreetMap suchen" aria-label="Ort anhand der Koordinaten in OpenStreetMap suchen">📍 Ort in der Nähe suchen</button>
-            <span class="webseite-info-status muted${this.osmInfoStatusKind ? " " + this.osmInfoStatusKind : ""}" data-osm-info-status>${this.esc(this.osmInfoStatusText)}</span>
-          </div>
-          <p class="muted">Sucht über die freie OpenStreetMap-Overpass-API nach benannten Orten (z. B. Läden) im Umkreis der oben eingetragenen Koordinaten. Dabei werden die Koordinaten dieses Hofladens an einen externen, kostenlosen OpenStreetMap-Dienst übermittelt (siehe README.md, Abschnitt "Datenschutz- und Standort-Hinweise"). Gefundene Angaben werden vor jeder Übernahme in einem Popup zur Prüfung angezeigt; es wird dabei nichts automatisch gespeichert.</p>
         </section>
 
         <section class=card>
@@ -1542,11 +1644,18 @@ class HofkartePanel extends HTMLElement {
           <div class="fields">
             <div class="field-row">${this.input("Webseite", "website", d.website || "")}</div>
           </div>
+        </section>
+
+        <section class=card>
+          <h2>Automatisch ausfüllen</h2>
+          <p class="muted">Ermittelt Name, Adresse, Beschreibung, Öffnungszeiten, Angebote und Zahlungsarten automatisch – über die oben eingetragene Website und/oder über die Koordinaten (freie OpenStreetMap-Overpass-API). Gefundene Angaben werden vor jeder Übernahme in einem Popup zur Prüfung angezeigt, es wird dabei nichts automatisch gespeichert (siehe README.md, Abschnitt "Datenschutz- und Standort-Hinweise").</p>
           <div class="webseite-info-row">
-            <button type="button" class="secondary" data-webseite-info-btn title="Informationen von der Website übernehmen" aria-label="Informationen von der Website übernehmen">🔎 Infos ermitteln</button>
-            <span class="webseite-info-status muted${this.webseiteInfoStatusKind ? " " + this.webseiteInfoStatusKind : ""}" data-webseite-info-status>${this.esc(this.webseiteInfoStatusText)}</span>
+            <button type="button" class="secondary" data-auto-info-btn title="Angaben automatisch anhand der Website und/oder Koordinaten ermitteln" aria-label="Angaben automatisch anhand der Website und/oder Koordinaten ermitteln">🔍 Angaben automatisch ermitteln</button>
+            <span class="webseite-info-status muted${this.autoErmittlungStatusKind ? " " + this.autoErmittlungStatusKind : ""}" data-auto-info-status>${this.esc(this.autoErmittlungStatusText)}</span>
           </div>
-          <p class="muted">Ermittelt Name, Adresse, Beschreibung, Öffnungszeiten, Angebote und Zahlungsarten anhand strukturierter Daten sowie – falls keine strukturierten Daten vorhanden sind – anhand einer vorsichtigen Texterkennung der Website. Die gefundenen Angaben werden vor jeder Übernahme in einem Popup zur Prüfung angezeigt; es wird dabei nichts automatisch gespeichert.</p>
+          <div class="field-row" style="margin-top:8px">
+            <label>Suchradius für OpenStreetMap (Meter)<input name="osm_radius" type="number" min="${OSM_MIN_RADIUS_METER}" max="${OSM_MAX_RADIUS_METER}" step="10" value="${this.osmRadius}"></label>
+          </div>
         </section>
 
         <section class=card>
@@ -1591,19 +1700,32 @@ class HofkartePanel extends HTMLElement {
       ${this.osmOrteAuswahl ? this.osmOrteAuswahlPopup(this.osmOrteAuswahl) : ""}`;
   }
 
-  /** Bestätigungs-Popup für die von "Infos ermitteln" gefundenen
-   * Vorschlagsdaten (Issue #9, Erweiterung 5.2). Fasst die gefundenen
+  /** Bestätigungs-Popup für die von "🔍 Angaben automatisch ermitteln"
+   * gefundenen Vorschlagsdaten (Issue #9, Erweiterung 5.2; seit Issue #11
+   * gemeinsames Popup für Website- UND OSM-Ergebnisse, siehe
+   * ermittleAutomatisch()/mischeAutoVorschlaege()). Fasst die gefundenen
    * Informationen übersichtlich zusammen und blendet dabei nicht
    * gefundene Felder klar als solche ein (statt sie stillschweigend
    * wegzulassen), bevor die Benutzerin/der Benutzer sie explizit über
-   * "Übernehmen" bestätigt oder über "Abbrechen" verwirft. Als
-   * echtes modales Overlay umgesetzt (nicht wie coordInfoBox() als
-   * eingebetteter Infokasten), da es – anders als die reine
-   * Zusatzerklärung dort – eine tatsächliche Entscheidung mit zwei
-   * Handlungsoptionen darstellt, die den Blick auf das Formular
-   * dahinter bewusst kurzzeitig blockieren soll. */
+   * "Übernehmen" bestätigt oder über "Abbrechen" verwirft. Stammt ein
+   * Feld erkennbar aus nur einer Quelle (this.autoErmittlungQuellen -
+   * nur gesetzt, wenn tatsächlich beide Quellen abgefragt wurden), wird
+   * das als kleine Kennzeichnung angezeigt (Issue #11, 5.1) - bei einem
+   * Konflikt (beide Quellen liefern unterschiedliche Werte) bleibt der
+   * abweichende Wert der nicht gewählten Quelle sichtbar, statt
+   * stillschweigend verworfen zu werden. Als echtes modales Overlay
+   * umgesetzt (nicht wie coordInfoBox() als eingebetteter Infokasten), da
+   * es – anders als die reine Zusatzerklärung dort – eine tatsächliche
+   * Entscheidung mit zwei Handlungsoptionen darstellt, die den Blick auf
+   * das Formular dahinter bewusst kurzzeitig blockieren soll. */
   webseiteInfoPopup(info) {
-    const zeile = (label, wert) => `<div class="webseite-info-zeile"><span class="webseite-info-label">${this.esc(label)}</span><span>${wert ? this.esc(wert) : '<span class="muted">– nicht gefunden –</span>'}</span></div>`;
+    const quellen = this.autoErmittlungQuellen || {};
+    const quellenLabel = { website: "Website", osm: "OpenStreetMap", "website+osm": "Website, abweichend auch OpenStreetMap" };
+    const badge = (feld) => {
+      const quelle = quellen[feld];
+      return quelle ? ` <span class="muted quelle-badge">(${quellenLabel[quelle] || quelle})</span>` : "";
+    };
+    const zeile = (label, wert, feld) => `<div class="webseite-info-zeile"><span class="webseite-info-label">${this.esc(label)}</span><span>${wert ? this.esc(wert) + (feld ? badge(feld) : "") : '<span class="muted">– nicht gefunden –</span>'}</span></div>`;
     const adresse = [info.adresse, info.plz, info.ort, info.land].filter(Boolean).join(", ");
     // Bei Angeboten/Zahlungsarten reicht eine einfache Aufzählung der
     // gefundenen Namen; bei Öffnungszeiten wäre eine Aufzählung aller
@@ -1618,13 +1740,13 @@ class HofkartePanel extends HTMLElement {
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="webseite-info-titel" tabindex="-1" data-webseite-info-dialog>
         <h2 id="webseite-info-titel">Gefundene Informationen</h2>
         <p class="muted">Bitte prüfen. Erst nach "Übernehmen" werden die Vorschläge in die Formularfelder eingetragen – gespeichert wird dabei weiterhin nichts.</p>
-        ${zeile("Name", info.name)}
-        ${zeile("Beschreibung", info.beschreibung)}
-        ${zeile("Adresse", adresse)}
-        ${zeile("Webseite", info.website)}
-        ${zeile("Öffnungszeiten", oeffnungszeitenText)}
-        ${zeile("Angebote", namenListe(info.angebote))}
-        ${zeile("Zahlungsarten", namenListe(info.zahlungsarten))}
+        ${zeile("Name", info.name, "name")}
+        ${zeile("Beschreibung", info.beschreibung, "beschreibung")}
+        ${zeile("Adresse", adresse, "adresse")}
+        ${zeile("Webseite", info.website, "website")}
+        ${zeile("Öffnungszeiten", oeffnungszeitenText, "oeffnungszeiten")}
+        ${zeile("Angebote", namenListe(info.angebote), "angebote")}
+        ${zeile("Zahlungsarten", namenListe(info.zahlungsarten), "zahlungsarten")}
         <div class="actions">
           <button type="button" class="secondary" data-webseite-info-abbrechen>Abbrechen</button>
           <button type="button" data-webseite-info-uebernehmen>Übernehmen</button>
@@ -1640,7 +1762,11 @@ class HofkartePanel extends HTMLElement {
    * hier bereits etwas zu übernehmen (das erfolgt erst im nachfolgenden,
    * gemeinsam genutzten Bestätigungs-Popup, siehe waehleOsmOrt()/
    * webseiteInfoPopup()). Bei genau einem Treffer wird diese Liste
-   * übersprungen (siehe ermittleOsmInfo()). */
+   * übersprungen (siehe ermittleAutomatisch()). Treffer, die nur über die
+   * Namens-Heuristik (osm_info.py, OsmOrt.via_namen_heuristik) gefunden
+   * wurden, werden hier als solche gekennzeichnet (Issue #11, 5.2) - kein
+   * echtes Hofladen-Tag auf OpenStreetMap, nur ein Namenshinweis auf einer
+   * Hofstelle. */
   osmOrteAuswahlPopup(orte) {
     const eintraege = orte.map((ort, index) => {
       const adresse = [ort.adresse, ort.plz, ort.ort].filter(Boolean).join(", ");
@@ -1651,6 +1777,7 @@ class HofkartePanel extends HTMLElement {
         <span class="osm-orte-name">${this.esc(ort.name || "")}</span>
         ${adresse ? `<span class="muted">${this.esc(adresse)}</span>` : ""}
         ${entfernung ? `<span class="muted">${this.esc(entfernung)}</span>` : ""}
+        ${ort.via_namen_heuristik ? `<span class="muted">anhand des Namens gefunden, kein Hofladen-Tag auf OpenStreetMap</span>` : ""}
       </button>`;
     }).join("");
 
@@ -1882,28 +2009,28 @@ class HofkartePanel extends HTMLElement {
     // versteckten Datei-Felds aus (input.click()); der eigentliche
     // Upload-Ablauf (Validierung, Upload, Rückmeldung) bleibt
     // unverändert an das "change"-Ereignis dieses Felds gebunden.
-    this.shadowRoot.querySelector("[data-webseite-info-btn]")?.addEventListener("click", () => {
-      this.ermittleWebseiteInfo();
+    // "🔍 Angaben automatisch ermitteln" (Issue #11, ersetzt die bisher
+    // getrennten "Infos ermitteln"/"Ort in der Nähe suchen"-Buttons durch
+    // eine einzige Aktion, siehe ermittleAutomatisch()).
+    this.shadowRoot.querySelector("[data-auto-info-btn]")?.addEventListener("click", () => {
+      this.ermittleAutomatisch();
     });
-    // Bestätigungs-Popup (Issue #9, 5.2): "Übernehmen"/"Abbrechen" sowie
-    // Schliessen per Escape-Taste (Barrierefreiheit, siehe Anforderung
-    // 5.2) - der keydown-Listener sitzt bewusst auf dem Overlay selbst
-    // (nicht global auf window/document), damit er automatisch mit dem
-    // Popup selbst verschwindet und keine manuelle Aufräum-Logik beim
-    // Schliessen nötig ist.
+    // Bestätigungs-Popup (Issue #9, 5.2, seit Issue #11 für beide Quellen
+    // gemeinsam genutzt): "Übernehmen"/"Abbrechen" sowie Schliessen per
+    // Escape-Taste (Barrierefreiheit, siehe Anforderung 5.2) - der
+    // keydown-Listener sitzt bewusst auf dem Overlay selbst (nicht global
+    // auf window/document), damit er automatisch mit dem Popup selbst
+    // verschwindet und keine manuelle Aufräum-Logik beim Schliessen nötig
+    // ist.
     this.shadowRoot.querySelector("[data-webseite-info-uebernehmen]")?.addEventListener("click", () => this.uebernehmeWebseiteInfoVorschlag());
     this.shadowRoot.querySelector("[data-webseite-info-abbrechen]")?.addEventListener("click", () => this.abbrechenWebseiteInfo());
     this.shadowRoot.querySelector("[data-webseite-info-overlay]")?.addEventListener("keydown", (e) => {
       if (e.key === "Escape") { e.stopPropagation(); this.abbrechenWebseiteInfo(); }
     });
-    // "Ort in der Nähe suchen" (Issue #10) - Trefferauswahl-Popup (nur bei
-    // mehr als einem Treffer, siehe ermittleOsmInfo()); das nachfolgende
-    // Bestätigungs-Popup wird bereits über die obigen
-    // data-webseite-info-*-Listener abgedeckt (wiederverwendet, siehe
-    // waehleOsmOrt()).
-    this.shadowRoot.querySelector("[data-osm-info-btn]")?.addEventListener("click", () => {
-      this.ermittleOsmInfo();
-    });
+    // OSM-Trefferauswahl (Issue #10, nur bei mehr als einem Treffer, siehe
+    // ermittleAutomatisch()); das nachfolgende Bestätigungs-Popup wird
+    // bereits über die obigen data-webseite-info-*-Listener abgedeckt
+    // (wiederverwendet, siehe waehleOsmOrt()).
     this.shadowRoot.querySelectorAll("[data-osm-orte-auswahl]").forEach(b =>
       b.addEventListener("click", () => this.waehleOsmOrt(Number(b.dataset.osmOrteAuswahl)))
     );

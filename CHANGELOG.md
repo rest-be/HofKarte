@@ -13,6 +13,69 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.2-dev.6] - Entwicklungsversion (develop)
+
+Kein produktiver Release. Umsetzung von Issue #11 („Vereinfachung der
+automatischen Ermittlung“): Zusammenlegung der bisher getrennten
+Funktionen „🔎 Infos ermitteln“ und „📍 Ort in der Nähe suchen“ zu einer
+einzigen Aktion, Erweiterung der OpenStreetMap-Suche sowie ein
+einstellbarer Suchradius.
+
+### Geändert
+
+- **Eine Aktion statt zwei getrennter Buttons:** Die bisher
+  unabhängigen Funktionen „🔎 Infos ermitteln“ (Website, Issue #8) und
+  „📍 Ort in der Nähe suchen“ (OpenStreetMap, Issue #10) stehen im
+  Bearbeitungsformular jetzt als eine einzige Aktion „🔍 Angaben
+  automatisch ermitteln“ (Abschnitt „Automatisch ausfüllen“) zur
+  Verfügung. Sie fragt – je nachdem, ob eine Website-Adresse und/oder
+  gültige Koordinaten eingetragen sind – wahlweise beide Quellen
+  **parallel** ab (statt wie zuvor zwei separate Klicks zu benötigen)
+  und führt die Ergebnisse zu einem gemeinsamen Vorschlag im
+  bestehenden Bestätigungs-Popup zusammen. Jedes Feld im Popup ist mit
+  seiner Herkunft gekennzeichnet (Website und/oder OpenStreetMap);
+  liefern beide Quellen unterschiedliche Werte für dasselbe Feld,
+  gewinnt die Website (in der Regel die vom Betreiber selbst gepflegte
+  Quelle), der abweichende OpenStreetMap-Wert wird dabei aber nicht
+  verworfen, sondern über die Kennzeichnung nachvollziehbar gehalten.
+  Ein bereits vorliegendes Website-Ergebnis geht auch dann nicht
+  verloren, wenn die Koordinatensuche mehrere Treffer liefert und
+  zunächst eine Auswahl abgewartet werden muss. Nach wie vor wird dabei
+  **nichts automatisch gespeichert** – jeder Vorschlag muss weiterhin
+  ausdrücklich über „Übernehmen“ bestätigt werden.
+- **Erweiterte OpenStreetMap-Suche:** Eine Prüfung der
+  Overpass-QL-Dokumentation ergab, dass der bisherige Filter
+  `["shop"]` bereits jeden `shop=*`-Wert erfasst (Schlüssel-Existenz-,
+  kein Wertevergleich) – `shop=farm`/`shop=greengrocer` waren also
+  bereits abgedeckt, eine wörtliche „Erweiterung“ um diese Werte hätte
+  nichts verändert. Stattdessen wurden zwei tatsächlich neue,
+  wiki-verifizierte Fälle ergänzt: der dokumentierte Tag
+  `amenity=marketplace` (Marktplätze), sowie – für Hofgelände ohne
+  passenden Laden-/Markt-Tag – eine zusätzliche, unabhängige Suche nach
+  `landuse=farmyard`/`building=farm`-Objekten, die nur dann
+  vorgeschlagen werden, wenn ihr Name auf einen Hofladen hindeutet
+  (z. B. „Hof“, „Bauernhof“, „Hofladen“, „Laden“). Solche
+  namensbasierten Treffer werden in der Trefferauswahl ausdrücklich als
+  „anhand des Namens gefunden, kein Hofladen-Tag auf OpenStreetMap“
+  gekennzeichnet, statt mit tatsächlich getaggten Treffern
+  gleichgesetzt zu werden (`OsmOrt.via_namen_heuristik`).
+- **Einstellbarer Suchradius:** Der Suchradius für die
+  OpenStreetMap-Suche (bisher fest auf 50 m verdrahtet) ist im
+  Formular jetzt einstellbar (10–500 m, weiterhin 50 m voreingestellt).
+  Der Wert wird zweifach begrenzt: schemaseitig im WebSocket-Befehl
+  `ws_osm_info` (`vol.Range`) sowie zusätzlich, unabhängig davon,
+  defensiv innerhalb von `async_ermittle_osm_orte()` selbst – ein
+  Wert ausserhalb des gültigen Bereichs führt dadurch nie zu einem
+  Fehler, sondern wird stillschweigend auf den gültigen Bereich
+  begrenzt.
+
+### Dokumentation
+
+- `README.md` (Datenschutz- und Standort-Hinweise), `docs/handbuch.md`
+  (Kapitel 4 und 14) sowie `docs/architecture.md` und `SECURITY.md`
+  wurden an die zusammengelegte Aktion, die erweiterte
+  OpenStreetMap-Suche und den einstellbaren Radius angepasst.
+
 ## [2026.9.2-dev.5] - Entwicklungsversion (develop)
 
 Kein produktiver Release. Behebung der weiterhin gemeldeten Meldung

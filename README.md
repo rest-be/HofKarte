@@ -690,38 +690,54 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
   OpenStreetMap, sobald die Übersichtsansicht „🗺️ Karte“ tatsächlich
   geöffnet wird (siehe „Eingebettete Kartenansicht“ oben) – dabei werden
   nur Kachel-/Ausschnittkoordinaten übertragen, keine Hofladen- oder
-  Standortdaten im Klartext – dem Abruf einer vom Benutzer selbst
-  im Verwaltungs-Panel angegebenen Website-Adresse über die Funktion
-  „🔎 Infos ermitteln“ (Formular „Hofladen bearbeiten“, Abschnitt
-  „Kontakt & Webseite“): Auf ausdrücklichen Klick ruft HofKarte diese
-  eine, vom Benutzer selbst eingegebene Adresse ab und wertet
-  ausschliesslich strukturierte, von der Seite selbst veröffentlichte
-  Daten (schema.org-JSON-LD) sowie Titel/Meta-Beschreibung aus, um Name,
-  Adresse, Beschreibung, Öffnungszeiten, Angebote und Zahlungsarten als
-  **Vorschlag zur Überprüfung** vorzubelegen – es wird dabei nichts
-  automatisch gespeichert und kein externer/Cloud-/KI-Dienst
-  eingebunden (rein lokale, deterministische Auswertung). Die Adresse
-  wird dabei serverseitig gegen private/interne Ziele geprüft (siehe
-  [`SECURITY.md`](SECURITY.md)) – sowie, seit Issue #10, der Suche
-  über die freie OpenStreetMap-Overpass-API via „📍 Ort in der Nähe
-  suchen“ (Formular „Hofladen bearbeiten“, Abschnitt „Standort /
-  Koordinaten“): Auf ausdrücklichen Klick übermittelt HofKarte die
-  aktuell im Formular eingetragenen Koordinaten dieses Hofladens
-  serverseitig an eine von mehreren bekannten, freien
-  OpenStreetMap-Overpass-Instanzen (u. a. `overpass-api.de` und –
-  seit dieser Erweiterung – automatische Ausweichziele wie
-  `overpass.osm.ch`, falls die Haupt-Instanz überlastet oder nicht
-  erreichbar ist; ausschliesslich freie, kostenlose, kontofreie
-  OpenStreetMap-Community-Dienste, kein kommerzieller Cloud-Dienst
-  und kein LLM) und schlägt gefundene, benannte Orte im nahen
-  Umkreis (Standardradius 50 m) ebenfalls nur als **Vorschlag zur
-  Überprüfung** vor – auch hier wird nichts automatisch gespeichert.
-  Anders als bei den rein clientseitig geladenen Kartenkacheln werden
-  dabei tatsächlich hofladenspezifische Standortdaten (die konkreten
-  Koordinaten) an den externen Dienst übertragen; siehe
-  [`SECURITY.md`](SECURITY.md) für die ausführliche Einordnung dieser
-  Ausnahme. Ausserhalb dieser vier Fälle findet keine Telemetrie und
-  keine Datenübertragung an Dritte statt.
+  Standortdaten im Klartext – dem Abruf über die Funktion
+  „🔍 Angaben automatisch ermitteln“ (Formular „Hofladen bearbeiten“,
+  Abschnitt „Automatisch ausfüllen“). Diese eine Aktion fasst seit
+  Issue #11 die beiden früheren, getrennten Funktionen „Infos
+  ermitteln“ (Website) und „Ort in der Nähe suchen“ (OpenStreetMap)
+  zusammen und fragt – je nachdem, was im Formular bereits eingetragen
+  ist – wahlweise beide Quellen parallel ab:
+  - Ist eine Website-Adresse eingetragen, ruft HofKarte auf
+    ausdrücklichen Klick genau diese eine, vom Benutzer selbst
+    eingegebene Adresse ab und wertet ausschliesslich strukturierte,
+    von der Seite selbst veröffentlichte Daten (schema.org-JSON-LD)
+    sowie Titel/Meta-Beschreibung aus. Die Adresse wird dabei
+    serverseitig gegen private/interne Ziele geprüft (siehe
+    [`SECURITY.md`](SECURITY.md)).
+  - Sind gültige Koordinaten eingetragen, übermittelt HofKarte diese
+    serverseitig an eine von mehreren bekannten, freien
+    OpenStreetMap-Overpass-Instanzen (u. a. `overpass-api.de` und
+    automatische Ausweichziele wie `overpass.osm.ch`, falls die
+    Haupt-Instanz überlastet oder nicht erreichbar ist;
+    ausschliesslich freie, kostenlose, kontofreie
+    OpenStreetMap-Community-Dienste, kein kommerzieller Cloud-Dienst
+    und kein LLM) und sucht dort im Formular einstellbar (10–500 m,
+    voreingestellt 50 m) nach benannten Orten, die entweder direkt
+    als Laden/Hof/Marktplatz getaggt sind (`shop`-, `craft=agricultural`-
+    oder `amenity=marketplace`-Tag) oder – seit Issue #11 – anhand
+    ihres Namens auf ein untertagt gebliebenes Hofgelände hindeuten
+    (`landuse=farmyard`/`building=farm` mit einem Namen wie „Hof“,
+    „Bauernhof“, „Hofladen“ oder „Laden“); solche namensbasierten
+    Treffer werden in der Trefferauswahl ausdrücklich als „anhand des
+    Namens gefunden, kein Hofladen-Tag auf OpenStreetMap“
+    gekennzeichnet, statt mit tatsächlich getaggten Treffern
+    gleichgesetzt zu werden. Anders als bei den rein clientseitig
+    geladenen Kartenkacheln werden dabei tatsächlich
+    hofladenspezifische Standortdaten (die konkreten Koordinaten) an
+    den externen Dienst übertragen; siehe [`SECURITY.md`](SECURITY.md)
+    für die ausführliche Einordnung dieser Ausnahme.
+
+  In beiden Fällen werden die gefundenen Angaben (Name, Adresse,
+  Beschreibung, Öffnungszeiten, Angebote, Zahlungsarten) zusammengeführt
+  und ausschliesslich als **ein gemeinsamer Vorschlag zur Überprüfung**
+  angezeigt, je Feld mit seiner Herkunft (Website und/oder
+  OpenStreetMap) gekennzeichnet – es wird dabei nichts automatisch
+  gespeichert und kein externer/Cloud-/KI-Dienst eingebunden
+  (rein lokale, deterministische Auswertung bzw. freie
+  OpenStreetMap-Community-Dienste). Liefert eine Quelle keine Angaben
+  oder schlägt fehl, wird dies in der Statusmeldung offen ausgewiesen.
+  Ausserhalb dieser vier Fälle findet keine Telemetrie und keine
+  Datenübertragung an Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor liest
   ausschliesslich die statische, in Home Assistant konfigurierte
   Position (`hass.config.latitude`/`longitude`) – kein `device_tracker`,

@@ -26,6 +26,9 @@ from .images import get_main_image_url
 from .models import Hofladen
 from .opening_hours import is_open
 from .osm_info import (
+    MAX_RADIUS_METER,
+    MIN_RADIUS_METER,
+    STANDARD_RADIUS_METER,
     OsmKeineOrteGefundenError,
     OsmNichtErreichbarError,
     OsmUngueltigeKoordinatenError,
@@ -463,6 +466,9 @@ async def ws_webseite_info(
         vol.Required("type"): WS_OSM_INFO,
         vol.Required("latitude"): vol.Coerce(float),
         vol.Required("longitude"): vol.Coerce(float),
+        vol.Optional("radius", default=STANDARD_RADIUS_METER): vol.All(
+            vol.Coerce(int), vol.Range(min=MIN_RADIUS_METER, max=MAX_RADIUS_METER)
+        ),
     }
 )
 @websocket_api.require_admin
@@ -494,6 +500,14 @@ async def ws_osm_info(
     Verwaltungsoberfläche diesen Befehl in einem nicht betriebsbereiten
     Zustand aufrufen kann, konsistent mit ``ws_list``/``ws_save``/
     ``ws_webseite_info``.
+
+    ``radius`` ist seit Issue #11 optional (Standardwert
+    ``STANDARD_RADIUS_METER``) und wird bereits über das
+    Nachrichtenschema auf ``MIN_RADIUS_METER``-``MAX_RADIUS_METER``
+    begrenzt (ein Wert ausserhalb dieses Bereichs führt zu einem
+    regulären Schema-Validierungsfehler der Verwaltungsoberfläche); die
+    zusätzliche Begrenzung in ``async_ermittle_osm_orte`` selbst bleibt
+    als zweite, unabhängige Absicherung bestehen (siehe ``osm_info.py``).
     """
     try:
         _get_coordinator(hass)
@@ -503,7 +517,10 @@ async def ws_osm_info(
 
     try:
         orte = await async_ermittle_osm_orte(
-            hass, msg["latitude"], msg["longitude"]
+            hass,
+            msg["latitude"],
+            msg["longitude"],
+            radius_meter=msg.get("radius", STANDARD_RADIUS_METER),
         )
     except OsmUngueltigeKoordinatenError as err:
         connection.send_error(msg["id"], "invalid_coordinates", str(err))

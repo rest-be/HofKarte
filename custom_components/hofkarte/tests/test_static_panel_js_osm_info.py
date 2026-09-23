@@ -1,5 +1,9 @@
-"""Strukturelle Regressionstests für den "Ort in der Nähe suchen"-Workflow
-(Issue #10, "Erweiterung OpenStreetMap zu #8").
+"""Strukturelle Regressionstests für die OSM-Quelle des "🔍 Angaben
+automatisch ermitteln"-Workflows (ursprünglich Issue #10, "Erweiterung
+OpenStreetMap zu #8"; seit Issue #11 mit der Website-Quelle zu einer
+einzigen Aktion zusammengelegt - siehe
+``test_static_panel_js_auto_ermittlung.py`` für die Tests der
+Zusammenlegung selbst sowie ``holeOsmOrte()``/``ermittleAutomatisch()``).
 
 Wie schon für frühere Frontend-Änderungen (siehe insbesondere
 ``test_static_panel_js_webseite_info.py``, dessen Bestätigungs-Popup
@@ -23,48 +27,34 @@ def _lade_panel_js() -> str:
     return _PANEL_JS_PATH.read_text(encoding="utf-8")
 
 
-def test_formular_enthaelt_ort_suchen_button() -> None:
+def test_hole_osm_orte_ruft_erwarteten_websocket_befehl_auf() -> None:
+    """Issue #11: holeOsmOrte() ersetzt das frühere ermittleOsmInfo() als
+    reine Abruffunktion - Status/Popup/Trefferauswahl werden seither
+    ausschliesslich von ermittleAutomatisch()/zeigeAutoErgebnis()
+    gesteuert (siehe test_static_panel_js_auto_ermittlung.py)."""
     quelltext = _lade_panel_js()
-    assert "data-osm-info-btn" in quelltext
-    assert "Ort in der Nähe suchen" in quelltext
-
-
-def test_button_ist_mit_ermittle_osm_info_verkabelt() -> None:
-    quelltext = _lade_panel_js()
-    treffer = re.search(
-        r'\[data-osm-info-btn\]"\)\?\.addEventListener\("click", \(\) => \{\s*'
-        r"this\.ermittleOsmInfo\(\);",
+    match = re.search(
+        r"async holeOsmOrte\(latitude, longitude, radius\) \{(.*?)\n  \}",
         quelltext,
+        re.DOTALL,
     )
-    assert treffer, "Der 'Ort in der Nähe suchen'-Button ist nicht mit ermittleOsmInfo() verkabelt."
-
-
-def test_ermittle_osm_info_ruft_erwarteten_websocket_befehl_auf() -> None:
-    quelltext = _lade_panel_js()
-    match = re.search(r"async ermittleOsmInfo\(\) \{(.*?)\n  \}", quelltext, re.DOTALL)
-    assert match, "ermittleOsmInfo() nicht gefunden."
+    assert match, "holeOsmOrte(latitude, longitude, radius) nicht gefunden."
     body = match.group(1)
     assert '"hofkarte/management/osm_info"' in body
-    # Fehlerfall 1 (Issue #10): keine gültigen Koordinaten -> kein
-    # Backend-Aufruf.
-    assert "if (!isValidWgs84(latitude, longitude))" in body
-    assert "this.setOsmInfoStatus(" in body
+    assert "{ ok: true, orte: result.orte || [] }" in body
 
 
-def test_kein_backend_aufruf_ohne_gueltige_koordinaten() -> None:
-    """Fehlerfall 1 aus Issue #10: Ohne gültige Latitude-/Longitude-Werte
-    darf kein WebSocket-Aufruf ausgelöst werden - die Prüfung muss vor
-    dem this.call(...) liegen und dabei aus der Funktion zurückkehren."""
+def test_hole_osm_orte_liefert_einheitliches_fehlerergebnis() -> None:
     quelltext = _lade_panel_js()
-    match = re.search(r"async ermittleOsmInfo\(\) \{(.*?)\n  \}", quelltext, re.DOTALL)
+    match = re.search(
+        r"async holeOsmOrte\(latitude, longitude, radius\) \{(.*?)\n  \}",
+        quelltext,
+        re.DOTALL,
+    )
     assert match
     body = match.group(1)
-    pruefung_index = body.index("if (!isValidWgs84(latitude, longitude))")
-    call_index = body.index('this.call("hofkarte/management/osm_info"')
-    assert pruefung_index < call_index
-
-    pruef_block = body[pruefung_index : body.index("}", pruefung_index) + 1]
-    assert "return" in pruef_block
+    assert "return { ok: false, meldung };" in body
+    assert "HofkartePanel.OSM_INFO_FEHLERMELDUNGEN[err?.code]" in body
 
 
 def test_alle_drei_fehlercodes_aus_issue_10_werden_behandelt() -> None:
@@ -74,35 +64,16 @@ def test_alle_drei_fehlercodes_aus_issue_10_werden_behandelt() -> None:
     assert "not_found" in quelltext
 
 
-def test_ermittle_osm_info_erfasst_formularzustand_vor_jedem_render() -> None:
-    """Kern des in Issue #9 behobenen Datenverlust-Bugs, hier als
-    Anti-Regressionsanforderung für den neuen OSM-Workflow (Issue #10,
-    5.2): ermittleOsmInfo() muss den vollständigen Formularzustand VOR dem
-    ersten this.render()-Aufruf sichern (siehe erfasseFormularZustand())."""
-    quelltext = _lade_panel_js()
-    match = re.search(r"async ermittleOsmInfo\(\) \{(.*?)\n  \}", quelltext, re.DOTALL)
-    assert match, "ermittleOsmInfo() nicht gefunden."
-    body = match.group(1)
-
-    erfassen_index = body.index("this.erfasseFormularZustand()")
-    call_index = body.index('this.call("hofkarte/management/osm_info"')
-    assert erfassen_index < call_index, (
-        "Der Formularzustand muss bereits vor dem Backend-Aufruf gesichert "
-        "werden, nicht erst danach."
-    )
-    assert "this.render()" not in body[:erfassen_index]
-
-
-def test_ein_treffer_ueberspringt_auswahlliste_und_oeffnet_popup_direkt() -> None:
+def test_ein_treffer_wird_direkt_zu_einem_vorschlag_uebersetzt() -> None:
     """Anforderung 5.2: Bei genau einem Treffer wird die Trefferauswahl
-    übersprungen - der Treffer landet direkt in this.webseiteInfoVorschlag
-    (dem wiederverwendeten Bestätigungs-Popup, siehe 5.3)."""
+    übersprungen - der Treffer landet direkt als Vorschlag im
+    (wiederverwendeten) Bestätigungs-Popup (siehe zeigeAutoErgebnis())."""
     quelltext = _lade_panel_js()
-    match = re.search(r"async ermittleOsmInfo\(\) \{(.*?)\n  \}", quelltext, re.DOTALL)
-    assert match
+    match = re.search(r"async ermittleAutomatisch\(\) \{(.*?)\n  \}", quelltext, re.DOTALL)
+    assert match, "ermittleAutomatisch() nicht gefunden."
     body = match.group(1)
-    assert "orte.length === 1" in body
-    assert "this.webseiteInfoVorschlag = this.osmOrtZuVorschlag(orte[0]);" in body
+    assert "osmErgebnis.orte.length === 1" in body
+    assert "this.osmOrtZuVorschlag(osmErgebnis.orte[0])" in body
 
 
 def test_mehrere_treffer_zeigen_auswahlliste() -> None:
@@ -110,10 +81,11 @@ def test_mehrere_treffer_zeigen_auswahlliste() -> None:
     Trefferauswahl gezeigt (this.osmOrteAuswahl), nicht direkt das
     Bestätigungs-Popup."""
     quelltext = _lade_panel_js()
-    match = re.search(r"async ermittleOsmInfo\(\) \{(.*?)\n  \}", quelltext, re.DOTALL)
+    match = re.search(r"async ermittleAutomatisch\(\) \{(.*?)\n  \}", quelltext, re.DOTALL)
     assert match
     body = match.group(1)
-    assert "this.osmOrteAuswahl = orte;" in body
+    assert "osmErgebnis.orte.length > 1" in body
+    assert "this.osmOrteAuswahl = osmErgebnis.orte;" in body
 
 
 def test_trefferauswahl_wird_nur_bei_vorhandenen_treffern_gerendert() -> None:
@@ -138,14 +110,16 @@ def test_trefferauswahl_eintraege_sind_mit_waehleosmort_verkabelt() -> None:
 def test_waehle_osm_ort_oeffnet_gemeinsames_bestaetigungs_popup() -> None:
     """Anforderung 5.3: die Auswahl eines Treffers aus der Liste darf
     NICHT sofort in this.editing schreiben - sie muss stattdessen (wie
-    beim einzelnen Treffer) zunächst das gemeinsame Bestätigungs-Popup
-    öffnen (this.webseiteInfoVorschlag), damit der Treffer weiterhin vor
-    der Übernahme geprüft werden kann."""
+    beim einzelnen Treffer) über zeigeAutoErgebnis() das gemeinsame
+    Bestätigungs-Popup öffnen, damit der Treffer weiterhin vor der
+    Übernahme geprüft werden kann (Issue #11: dabei wird ein ggf. bereits
+    vorliegendes Website-Ergebnis nicht verworfen, siehe
+    this._wartendesWebseiteErgebnis)."""
     quelltext = _lade_panel_js()
     match = re.search(r"waehleOsmOrt\(index\) \{(.*?)\n  \}", quelltext, re.DOTALL)
     assert match, "waehleOsmOrt(index) nicht gefunden."
     body = match.group(1)
-    assert "this.webseiteInfoVorschlag = this.osmOrtZuVorschlag(ort);" in body
+    assert "this.zeigeAutoErgebnis(" in body
     assert "this.uebernehmeWebseiteInfo(" not in body
     assert "hofkarte/management/save" not in body
 
@@ -202,22 +176,11 @@ def test_render_fokussiert_trefferauswahl_dialog_beim_oeffnen() -> None:
     assert match, "render() fokussiert den Trefferauswahl-Dialog beim Öffnen nicht."
 
 
-def test_osm_info_button_ist_ohne_gueltige_koordinaten_deaktiviert() -> None:
-    """Analog zu mapButton(): der Button darf ohne gültige WGS84-
-    Koordinaten nicht klickbar sein (siehe isValidWgs84())."""
-    quelltext = _lade_panel_js()
-    assert (
-        'data-osm-info-btn ${isValidWgs84(latValue === "" ? NaN : Number(latValue), '
-        'lonValue === "" ? NaN : Number(lonValue)) ? "" : "disabled"}'
-        in quelltext
-    ), "Der 'Ort in der Nähe suchen'-Button ist nicht an isValidWgs84() gekoppelt."
-
-
 def test_osm_zustand_wird_beim_start_und_abbrechen_zurueckgesetzt() -> None:
     """Regressionsschutz: start()/cancel() müssen den OSM-Zustand
-    (Trefferauswahl, Statusmeldung) wie den Website-Info-Zustand
-    zurücksetzen, sonst könnte eine alte Trefferauswahl/-meldung beim
-    nächsten Bearbeiten eines (ggf. anderen) Hofladens wieder auftauchen."""
+    (Trefferauswahl) wie den übrigen automatisch-ermittelten Zustand
+    zurücksetzen, sonst könnte eine alte Trefferauswahl beim nächsten
+    Bearbeiten eines (ggf. anderen) Hofladens wieder auftauchen."""
     quelltext = _lade_panel_js()
     start_match = re.search(r"start\(item = null\) \{(.*?)\n  \}", quelltext, re.DOTALL)
     cancel_match = re.search(r"  cancel\(\) \{(.*?)\n  \}", quelltext, re.DOTALL)
@@ -245,14 +208,30 @@ def test_popup_zeigt_webseite_vorschlag_an() -> None:
     match = re.search(r"webseiteInfoPopup\(info\) \{(.*?)\n  \}", quelltext, re.DOTALL)
     assert match, "webseiteInfoPopup(info) nicht gefunden."
     body = match.group(1)
-    assert 'zeile("Webseite", info.website)' in body
+    assert 'zeile("Webseite", info.website, "website")' in body
 
 
-def test_datenschutz_hinweis_zur_uebertragung_der_koordinaten() -> None:
-    """Anforderung aus dem Prompt (Architektur/Datenschutz): die
-    Benutzerin/der Benutzer muss im Formular selbst erkennen können, dass
-    beim Klick auf "Ort in der Nähe suchen" Koordinaten an einen externen
-    Dienst übermittelt werden."""
+def test_osm_ort_zu_vorschlag_liefert_gemeinsame_feldnamen() -> None:
+    """osmOrtZuVorschlag() muss dieselben Feldnamen liefern wie die
+    Website-Quelle (name/adresse/plz/ort/website/oeffnungszeiten), damit
+    mischeAutoVorschlaege() (Issue #11) beide Quellen ohne Umbenennung
+    zusammenführen kann."""
     quelltext = _lade_panel_js()
-    assert "OpenStreetMap-Overpass-API" in quelltext
-    assert "externen, kostenlosen OpenStreetMap-Dienst" in quelltext
+    match = re.search(r"osmOrtZuVorschlag\(ort\) \{(.*?)\n  \}", quelltext, re.DOTALL)
+    assert match, "osmOrtZuVorschlag(ort) nicht gefunden."
+    body = match.group(1)
+    for feld in ("name:", "adresse:", "plz:", "ort:", "website:", "oeffnungszeiten:"):
+        assert feld in body
+
+
+def test_via_namen_heuristik_treffer_werden_in_trefferauswahl_gekennzeichnet() -> None:
+    """Issue #11, 5.2: Treffer, die nur über die Namens-Heuristik
+    (osm_info.py, OsmOrt.via_namen_heuristik) gefunden wurden, müssen in
+    der Trefferauswahl erkennbar von echten Tag-Treffern unterschieden
+    werden - kein stillschweigendes Gleichbehandeln."""
+    quelltext = _lade_panel_js()
+    match = re.search(r"osmOrteAuswahlPopup\(orte\) \{(.*?)\n  \}", quelltext, re.DOTALL)
+    assert match, "osmOrteAuswahlPopup(orte) nicht gefunden."
+    body = match.group(1)
+    assert "ort.via_namen_heuristik" in body
+    assert "anhand des Namens gefunden" in body
