@@ -70,16 +70,23 @@ Instanz verwaltet zentral **alle** Hofläden.
 
 ## 3. Konfiguration
 
-**Es gibt aktuell keinen Options Flow.** Nach der Ersteinrichtung lässt
-sich über die Home-Assistant-Oberfläche nichts an der Integration selbst
-nachträglich ändern (kein „Konfigurieren“-Dialog mit weiteren
-Einstellungen). Konkret:
+Über **Einstellungen → Geräte & Dienste → HofKarte → Konfigurieren**
+steht eine „Einstellungen“-Maske (Options Flow) zur Verfügung:
 
-- **Aktualisierungsintervall:** fest auf 15 Minuten, nur auf
-  Code-Ebene änderbar (`const.DEFAULT_UPDATE_INTERVAL` im Quellcode).
-- **Abruf-Timeout:** fest auf 30 Sekunden, ebenfalls nur auf
-  Code-Ebene änderbar.
-- **Weitere Optionen:** existieren nicht.
+- **Standard-Sortierung der Übersicht:** Sortierfeld (Name, Adresse,
+  Status oder Bewertung) und -richtung, die die Listenansicht beim
+  Öffnen vorgibt.
+- **Standard-Suchradius für „🔍 Angaben automatisch ermitteln“:**
+  dauerhaft gespeicherter Vorgabewert für die OpenStreetMap-Suche
+  (20–2000 m, voreingestellt 200 m) – wird beim Öffnen des
+  Bearbeitungsformulars als Vorschlag übernommen, im Formular selbst
+  aber weiterhin pro Aufruf überschreibbar.
+
+Davon unabhängig, weiterhin nur auf Code-Ebene änderbar:
+
+- **Aktualisierungsintervall:** fest auf 15 Minuten
+  (`const.DEFAULT_UPDATE_INTERVAL` im Quellcode).
+- **Abruf-Timeout:** fest auf 30 Sekunden.
 
 Das ist eine bekannte, dokumentierte Einschränkung (siehe
 `quality_scale.yaml`, README „Bekannte Einschränkungen“) – keine
@@ -87,9 +94,9 @@ fehlende Dokumentation, sondern der tatsächliche, vollständige
 Funktionsumfang.
 
 Was sich **wohl** ändern lässt, sind die eigentlichen Hofladen-Daten
-(Name, Adresse, Öffnungszeiten, Sortiment, Bilder, ...) – das geschieht
-nicht über „Konfigurieren“, sondern über die grafische
-Verwaltungsoberfläche, siehe Kapitel 4.
+(Name, Adresse, Öffnungszeiten, Sortiment, Bilder, Kontaktdaten,
+Bewertung, ...) – das geschieht nicht über „Konfigurieren“, sondern
+über die grafische Verwaltungsoberfläche, siehe Kapitel 4.
 
 ## 4. HofKarte-Geräte
 
@@ -105,16 +112,21 @@ Oben auf der Übersichtsseite steht ein Umschalter
 - **Kacheln** (Standardansicht): eine Kachel pro Hofladen mit Hauptbild
   (oder einem neutralen Platzhalter, falls keines hinterlegt ist),
   Name, Adresse, anklickbarer Webseite (sofern hinterlegt und gültig),
-  einem Hinweis „🟢 Geöffnet“/„🔴 Geschlossen“/„Unbekannt“ sowie – bei
+  einem Hinweis „🟢 Geöffnet“/„🔴 Geschlossen“/„Unbekannt“, einer ggf.
+  vergebenen Sterne-Bewertung neben diesem Status-Hinweis sowie – bei
   hinterlegter Adresse oder gültigen Koordinaten – einer kompakten
   Routing-Auswahl (siehe unten).
-- **Liste:** eine Tabelle mit den Spalten Name, Adresse, Status und
-  Route, **jede Spalte einzeln sortierbar** (Klick auf die Kopfzeile,
-  erneuter Klick kehrt die Richtung um). Ein Freitextfeld oberhalb der
+- **Liste:** eine Tabelle mit den Spalten Name, Adresse, Status,
+  Bewertung und Route, **jede Spalte einzeln sortierbar** (Klick auf
+  die Kopfzeile, erneuter Klick kehrt die Richtung um). Welches Feld
+  beim Öffnen vorausgewählt ist, lässt sich über den Options Flow
+  dauerhaft vorgeben (siehe Kapitel 3). Ein Freitextfeld oberhalb der
   Tabelle filtert nach Name oder Adresse; jede Zeile hat ebenfalls die
   Routing-Auswahl.
 - **Karte:** eine eingebettete Karte mit einer Stecknadel je Hofladen
-  mit hinterlegten Koordinaten. Ein Klick auf eine Stecknadel öffnet
+  mit hinterlegten Koordinaten – je nach Öffnungsstatus grün
+  (geöffnet) oder grau (geschlossen) eingefärbt, sonst in der
+  bisherigen Standardfarbe. Ein Klick auf eine Stecknadel öffnet
   ein kleines Fenster mit dem Namen des Hofladens und einem Button
   „Zur Detailansicht“. Die Karte passt ihren Ausschnitt automatisch so
   an, dass alle angezeigten Stecknadeln sichtbar sind. Eine Checkbox
@@ -231,8 +243,9 @@ wahlweise beide Quellen **parallel** ab:
    Adresse eingetragen, ruft HofKarte diese Seite ab und wertet – rein
    lokal, ohne einen externen Cloud- oder KI-Dienst – strukturierte,
    von der Seite selbst veröffentlichte Informationen aus (sofern
-   vorhanden): Name, Adresse, Beschreibung, Öffnungszeiten, Angebote
-   und Zahlungsarten. Fehlen strukturierte Daten für Adresse oder
+   vorhanden): Name, Adresse, Beschreibung, Öffnungszeiten, Angebote,
+   Zahlungsarten sowie Mobilnummer und E-Mail. Fehlen strukturierte
+   Daten für Adresse oder
    Öffnungszeiten, versucht HofKarte zusätzlich, diese anhand gängiger
    deutschsprachiger Formulierungen im sichtbaren Seitentext zu
    erkennen (z. B. „Musterweg 1, 3000 Bern“ oder „Mo–Fr 08:00–18:00
@@ -241,8 +254,10 @@ wahlweise beide Quellen **parallel** ab:
 2. Sind gültige Koordinaten (Latitude/Longitude) eingetragen, fragt
    HofKarte eine freie, kostenlose OpenStreetMap-Overpass-Instanz nach
    benannten Orten im nahen Umkreis der eingetragenen Koordinaten ab –
-   im einstellbaren Suchradius direkt unterhalb des Buttons (10–500 m,
-   voreingestellt 50 m). Ist die zuerst versuchte Instanz überlastet
+   im einstellbaren Suchradius direkt unterhalb des Buttons (20–2000 m,
+   voreingestellt 200 m – der Vorgabewert lässt sich dauerhaft über
+   **Einstellungen → Geräte & Dienste → HofKarte → Konfigurieren**
+   ändern, siehe Kapitel 3). Ist die zuerst versuchte Instanz überlastet
    oder nicht erreichbar, probiert HofKarte automatisch der Reihe nach
    weitere bekannte, freie Instanzen (siehe Kapitel 14, „Datenschutz“).
    **Dabei werden die Koordinaten dieses Hofladens an diesen externen
@@ -306,8 +321,8 @@ Bestätigungs-Popup mit den Angaben der erfolgreichen Quelle.
 
 ## 5. Entities
 
-Für **jeden** Hofladen legt HofKarte automatisch folgende fünf Entities
-an:
+Für **jeden** Hofladen legt HofKarte automatisch folgende sechs
+Entities an:
 
 | Entity (Name) | Plattform | Device Class | Einheit | Bedeutung |
 |---|---|---|---|---|
@@ -315,6 +330,7 @@ an:
 | **Nächste Öffnung** | `sensor` | Zeitstempel | – | Zeitpunkt, zu dem der Hofladen als Nächstes öffnet. |
 | **Nächste Schliessung** | `sensor` | Zeitstempel | – | Zeitpunkt, zu dem der Hofladen als Nächstes schliesst. |
 | **Entfernung** | `sensor` | Entfernung | Kilometer | Luftlinien-Entfernung zur konfigurierten Home-Assistant-Position. |
+| **Bewertung** | `sensor` | – | – | Vergebene Sterne-Bewertung (0–5), siehe Kapitel 8. |
 | **Hauptbild** | `image` | – | – | Zeigt das erste hinterlegte Bild mit gültiger, sicherer URL. |
 
 Die Entity-IDs folgen dem Muster `<plattform>.<hofladen_name>_<funktion>`
@@ -496,6 +512,25 @@ unterscheiden sollen (z. B. „Nur nach telefonischer Anmeldung“). Wird
 im Bearbeitungsformular unter „Allgemeine Informationen“ erfasst und
 erscheint, sofern gesetzt, in der Detailansicht in einem eigenen
 Abschnitt.
+
+### Kontakt und Bewertung
+
+- **Mobilnummer/E-Mail:** Optionale Felder im Bearbeitungsformular,
+  Abschnitt „Kontakt & Webseite“ (vor „Webseite“). In der Detailansicht
+  erscheinen sie im Abschnitt „Kontakt“ als anklickbare Telefon-/
+  E-Mail-Links (öffnen die Telefon-App bzw. das Standard-Mailprogramm).
+  Beide Felder werden auch von „🔍 Angaben automatisch ermitteln“
+  (siehe oben) mit ermittelt, sofern auf der Website bzw. auf
+  OpenStreetMap hinterlegt.
+- **Bewertung:** Eine optionale Sterne-Bewertung von 0 (keine Bewertung)
+  bis 5. Im Bearbeitungsformular ganz unten über eine interaktive
+  Sterne-Auswahl gesetzt – ein erneuter Klick auf das zuletzt gefüllte
+  Symbol setzt sie wieder auf 0 zurück. In der Detailansicht nur zur
+  Ansicht dargestellt. In der Listenansicht als zusätzliche,
+  sortierbare Spalte, in der Kachelansicht klein neben dem
+  Status-Badge. Steht zusätzlich als eigener Sensor „Bewertung“ zur
+  Verfügung (siehe Kapitel 5) und lässt sich als Standard-Sortierfeld
+  der Übersicht über den Options Flow vorgeben (siehe Kapitel 3).
 
 ## 9. Actions und Automationen
 

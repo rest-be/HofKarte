@@ -106,9 +106,14 @@ Einrichtungsversuch wird entsprechend abgelehnt.
 HofKarte unterscheidet zwei Arten von „Konfiguration“:
 
 - **Die Integration selbst:** Der Config Flow fragt ausschliesslich
-  einen Anzeigenamen ab (siehe „Einrichtung“). Es gibt aktuell keinen
-  Options Flow – Update-Intervall und Abruf-Timeout des Coordinators
-  sind nur auf Code-Ebene änderbar (siehe „Bekannte Einschränkungen“).
+  einen Anzeigenamen ab (siehe „Einrichtung“). Über „Konfigurieren“ bei
+  der Integration steht zusätzlich ein Options Flow („Einstellungen“)
+  zur Verfügung: Standard-Sortierfeld/-richtung für die
+  Hofladen-Übersicht sowie ein dauerhaft gespeicherter Standard-
+  Suchradius für „🔍 Angaben automatisch ermitteln“ (20–2000 m,
+  voreingestellt 200 m). Update-Intervall und Abruf-Timeout des
+  Coordinators sind davon unabhängig und weiterhin nur auf Code-Ebene
+  änderbar (siehe „Bekannte Einschränkungen“).
 - **Die Hofladen-Daten:** Hofläden, ihre Stammdaten, Öffnungszeiten und
   ihr Sortiment werden **nicht** über die Home-Assistant-Konfiguration
   gepflegt, sondern über die grafische Verwaltungsoberfläche (siehe
@@ -168,6 +173,11 @@ Dort können Administratoren:
 - Angebote (vormals getrennt: Kategorien/Produkte, seither zusätzlich
   auf eine schlichte Namensliste ohne Gruppierung vereinfacht) und
   Zahlungsarten bearbeiten,
+- Kontaktdaten erfassen (Mobilnummer, E-Mail – im Bearbeitungsformular
+  im Abschnitt „Kontakt & Webseite“, in der Detailansicht als
+  anklickbare Telefon-/E-Mail-Links),
+- eine Bewertung von 0–5 Sternen vergeben (interaktive Sterne-Auswahl;
+  erneuter Klick auf das zuletzt gefüllte Symbol setzt sie zurück),
 - eine optionale Bemerkung erfassen (freies Textfeld, unabhängig von
   der Beschreibung),
 - Hofläden kontrolliert löschen.
@@ -226,7 +236,10 @@ und keine Kommunikation mit einem zusätzlichen Geodienst statt.
 Routing-Auswahl eine **eingebettete** Karte mit einer Stecknadel für
 **jeden** Hofladen mit gültigen Koordinaten gleichzeitig – dafür
 technisch nötig, da eine einzelne externe Karte immer nur einen
-Standort zeigt. Umgesetzt mit [Leaflet](https://leafletjs.com/) `1.9.4`
+Standort zeigt. Die Marker sind analog zur Statusfarbgebung in
+Kacheln-/Listenansicht nach Öffnungsstatus eingefärbt (grün geöffnet,
+grau geschlossen, sonst die bisherige Standardfarbe bei unbekanntem
+Status). Umgesetzt mit [Leaflet](https://leafletjs.com/) `1.9.4`
 und OpenStreetMap-Kartenkacheln, per `<script>`/`<link>` mit fest
 gepinnter Version von einem CDN nachgeladen – bewusst erst beim ersten
 Öffnen dieser Ansicht, keine Build-Pipeline, kein API-Schlüssel nötig.
@@ -275,6 +288,7 @@ gebildet):
 | `sensor`         | Nächste Öffnung        | `timestamp`  | –                              |
 | `sensor`         | Nächste Schliessung    | `timestamp`  | –                              |
 | `sensor`         | Entfernung             | `distance`   | –                              |
+| `sensor`         | Bewertung              | –            | –                              |
 | `image`          | Hauptbild              | –            | Bilder (siehe unten)          |
 
 Für den Binary Sensor wurde bewusst **keine** Device Class gesetzt: Es
@@ -283,7 +297,7 @@ gibt keine passende Home-Assistant-Device-Class für „Geschäft geöffnet“
 wie Türen/Fenster).
 
 Neu über die Verwaltungsoberfläche hinzukommende Hofläden erhalten
-automatisch alle fünf Entities, ohne dass ein Reload nötig ist. Entities
+automatisch alle sechs Entities, ohne dass ein Reload nötig ist. Entities
 werden „unavailable“, sobald der letzte Coordinator-Abruf fehlgeschlagen
 ist oder der Hofladen aus den Daten verschwunden ist.
 
@@ -660,8 +674,9 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
 
 - Nur eine Instanz pro Home-Assistant-Installation möglich (Single
   Instance).
-- Kein Options Flow; Update-Intervall und Timeout des Coordinators sind
-  aktuell nur auf Code-Ebene konfigurierbar.
+- Der Options Flow deckt nur die Übersicht-Sortiervorgabe und den
+  Standard-Suchradius ab; Update-Intervall und Timeout des Coordinators
+  sind weiterhin nur auf Code-Ebene konfigurierbar.
 - Bei Uhrzeiten in einer Sommerzeit-Umstellungslücke bzw. im doppelt
   vorkommenden Bereich beim Zurückstellen wird die von `zoneinfo`
   standardmässig gewählte Auflösung verwendet, ohne explizite
@@ -711,8 +726,9 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
     Haupt-Instanz überlastet oder nicht erreichbar ist;
     ausschliesslich freie, kostenlose, kontofreie
     OpenStreetMap-Community-Dienste, kein kommerzieller Cloud-Dienst
-    und kein LLM) und sucht dort im Formular einstellbar (10–500 m,
-    voreingestellt 50 m) nach benannten Orten, die entweder direkt
+    und kein LLM) und sucht dort im Formular einstellbar (20–2000 m,
+    voreingestellt 200 m, dauerhaft über den Options Flow anpassbar –
+    siehe „Konfiguration“) nach benannten Orten, die entweder direkt
     als Laden/Hof/Marktplatz getaggt sind (`shop`-, `craft=agricultural`-
     oder `amenity=marketplace`-Tag) oder – seit Issue #11 – anhand
     ihres Namens auf ein untertagt gebliebenes Hofgelände hindeuten
@@ -728,7 +744,8 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
     für die ausführliche Einordnung dieser Ausnahme.
 
   In beiden Fällen werden die gefundenen Angaben (Name, Adresse,
-  Beschreibung, Öffnungszeiten, Angebote, Zahlungsarten) zusammengeführt
+  Beschreibung, Öffnungszeiten, Angebote, Zahlungsarten, Mobilnummer,
+  E-Mail) zusammengeführt
   und ausschliesslich als **ein gemeinsamer Vorschlag zur Überprüfung**
   angezeigt, je Feld mit seiner Herkunft (Website und/oder
   OpenStreetMap) gekennzeichnet – es wird dabei nichts automatisch

@@ -684,8 +684,15 @@ solche gekennzeichnet werden – nie stillschweigend mit echten
 Tag-Treffern gleichgesetzt.
 
 **Einstellbarer Suchradius:** Der bisher fest verdrahtete
-`STANDARD_RADIUS_METER` (50 m) ist weiterhin der Vorgabewert, aber neu
-im Formular überschreibbar. Zwei unabhängige Schichten sichern das ab:
+`STANDARD_RADIUS_METER` (50 m) bleibt als harte Absicherung bestehen,
+falls keine Config Entry ermittelt werden kann, ist im Formular aber
+neu überschreibbar. Seit dem in einem späteren Schritt ergänzten
+Options Flow (siehe „Kontakt, Bewertung, Einstellungen und
+Kartenmarker“ unten) ist der tatsächlich vorgeschlagene Vorgabewert
+stattdessen der dort dauerhaft gespeicherte, standardmässig auf 200 m
+angehobene `DEFAULT_OSM_RADIUS_METER`. Zwei unabhängige Schichten
+sichern den zulässigen Wertebereich (`MIN_RADIUS_METER`–
+`MAX_RADIUS_METER`, mittlerweile 20–2000 m) ab:
 clientseitig/schemaseitig über `vol.Range(min=MIN_RADIUS_METER,
 max=MAX_RADIUS_METER)` in `ws_osm_info`s WebSocket-Schema (weist einen
 Wert ausserhalb des Bereichs mit einem Schema-Fehler zurück), und
@@ -722,6 +729,60 @@ ohne ein bereits vorliegendes Website-Ergebnis zu verwerfen – gelöst
 über ein Zwischenspeicherfeld (`_wartendesWebseiteErgebnis`), das sowohl
 bei Auswahl eines Treffers als auch bei Abbruch der Auswahl wieder mit
 eingemischt wird.
+
+## Kontakt, Bewertung, Einstellungen und Kartenmarker (`dev.7`)
+
+Vier fachlich unabhängige, aber im selben Entwicklungsschritt
+umgesetzte Erweiterungen des Datenmodells und der Verwaltungsoberfläche
+ohne neue externe Abhängigkeiten oder zusätzliche ausgehende
+HTTP-Anfragen:
+
+- **Kontaktfelder (`models.Hofladen.mobilnummer`/`email`):** Optionale
+  Felder, durchgängig berücksichtigt in `parsing.py`, der
+  Serialisierung für die Verwaltungsoberfläche, dem
+  WebSocket-Save-Pfad sowie Export/Import. Im Bearbeitungsformular im
+  Abschnitt „Kontakt & Webseite“ (vor „Webseite“), in der
+  Detailansicht als eigener Abschnitt „Kontakt“ mit `tel:`-/
+  `mailto:`-Links. `webseite_info.py` und `osm_info.py` liefern beide
+  Felder seither zusätzlich als Teil ihrer jeweiligen Ermittlung mit.
+- **Bewertung (`models.Hofladen.bewertung`, 0–5, Standard 0):** Neue
+  Sensor-Plattform-Entity `HofKarteBewertungSensor`
+  (`custom_components/hofkarte/sensor.py`) analog zu den bestehenden
+  Entfernungs-/Zeitpunkt-Sensoren, `unique_id`-Muster
+  `{DOMAIN}_{hofladen_id}_bewertung`, keine eigene Device Class (es
+  gibt keine passende für eine einfache Sterne-Bewertung), aber
+  `SensorStateClass.MEASUREMENT` für Statistik-/Verlaufsfähigkeit. Der
+  Wert wird beim Einlesen auf den gültigen Bereich begrenzt. In der
+  Listenansicht als zusätzliche, über `LISTEN_SORT_SPALTEN` (siehe
+  unten) sortierbare Spalte, in der Kachelansicht kompakt neben dem
+  Status-Badge.
+- **Options Flow („Einstellungen“, `config_flow.HofKarteOptionsFlow`):**
+  Eine einzige `async_step_init`-Maske mit drei Feldern
+  (`CONF_LISTEN_SORT_SPALTE`, `CONF_LISTEN_SORT_RICHTUNG`,
+  `CONF_OSM_RADIUS_METER`, alle in `const.py` definiert) – dauerhaft in
+  der Config Entry gespeicherte Vorgabewerte für die Übersicht bzw. für
+  „Angaben automatisch ermitteln“, analog zur globalen
+  „Einstellungen“-Maske der parallel gepflegten iOS-App. Anders als bei
+  Home-Assistant-Integrationen, die sich auf eine automatisch von
+  `OptionsFlow` bereitgestellte Basis-Implementierung verlassen, setzt
+  `HofKarteOptionsFlow.__init__` `self.config_entry` bewusst explizit,
+  um unabhängig von einer sich über Home-Assistant-Versionen wandelnden
+  Basisklassen-Eigenheit zu bleiben. Die Verwaltungsoberfläche liest
+  diese Werte beim Laden über den neuen, administratorpflichtigen
+  WebSocket-Befehl `hofkarte/management/settings` und verwendet sie als
+  Vorgabewerte statt wie bisher rein pro Formularsitzung flüchtiger
+  Werte. `DEFAULT_OSM_RADIUS_METER` wurde dabei zugleich von 50 auf
+  200 m angehoben (an die iOS-App angeglichen), der zulässige Bereich
+  `MIN_RADIUS_METER`–`MAX_RADIUS_METER` von 10–500 m auf 20–2000 m.
+- **Kartenmarker nach Status eingefärbt:** `erzeugeKarteMarkerIcon()`
+  (`hofkarte-panel.js`, siehe „Eingebettete Kartenansicht“ oben)
+  erhält eigene CSS-Klassen für „geöffnet“ (grün) und „geschlossen“
+  (grau, bewusst nicht Rot – auf einer Karte sonst leicht mit einem
+  Fehlerhinweis verwechselbar) statt durchgängig derselben
+  HA-Theme-Primärfarbe; unbekannter Status behält die bisherige
+  Standardfarbe. Eigene CSS-Klassen statt Wiederverwendung der
+  Kacheln-/Listen-Statusfarbgebung, da die beiden Kontexte (SVG-Marker
+  vs. HTML-Badge) unterschiedliche Selektoren benötigen.
 
 ## Suche/Filter
 

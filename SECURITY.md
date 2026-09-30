@@ -184,7 +184,7 @@ Sicherheitsmassnahmen bzw. bewusste Abgrenzungen:
   damit ein zu grosser oder ungültiger Wert weder eine überdimensionierte
   Anfrage an den externen Dienst erzeugt noch die Anwendung mit einem
   Fehler abbricht: Das WebSocket-Schema von `ws_osm_info` weist einen
-  Wert ausserhalb von `MIN_RADIUS_METER`–`MAX_RADIUS_METER` (10–500 m)
+  Wert ausserhalb von `MIN_RADIUS_METER`–`MAX_RADIUS_METER` (20–2000 m)
   bereits vor der Verarbeitung mit einem Schema-Fehler zurück; zusätzlich
   klammert `async_ermittle_osm_orte()` selbst jeden übergebenen Radius
   defensiv auf denselben Bereich, unabhängig davon, ob er über den

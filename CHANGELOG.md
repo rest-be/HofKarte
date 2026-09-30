@@ -13,426 +13,96 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
-## [2026.9.2-dev.7] - Entwicklungsversion (develop)
+## [2026.9.2] - 2026-09-30
 
-Kein produktiver Release. Umfangreiche Erweiterung des Datenmodells um
-Mobilnummer, E-Mail und eine 0–5-Sterne-Bewertung, ein neuer Options
-Flow für dauerhaft gespeicherte Einstellungen sowie eine
-Status-Einfärbung der Kartenmarker.
-
-### Hinzugefügt
-
-- **Kontaktfelder Mobilnummer/E-Mail:** `models.Hofladen` um die
-  optionalen Felder `mobilnummer` und `email` ergänzt. Durchgängig
-  berücksichtigt in `parsing.py`, der Serialisierung für die
-  Verwaltungsoberfläche, dem WebSocket-Save-Pfad sowie Export/Import
-  (inkl. Anzeige im Import-Konfliktdialog). Im Bearbeitungsformular als
-  neue Felder im Abschnitt „Kontakt & Webseite“ (vor „Webseite“), in der
-  Detailansicht als neuer Abschnitt „Kontakt“ (nach „Adresse“, vor
-  „Standort / Koordinaten“) mit anklickbaren `tel:`-/`mailto:`-Links -
-  ersetzt dort den bisherigen eigenständigen „Webseite“-Abschnitt.
-- **Bewertung (0–5 Sterne):** Neues Feld `models.Hofladen.bewertung`
-  (Standard `0`, beim Einlesen auf den gültigen Bereich begrenzt). Neuer
-  Abschnitt „Bewertung“ im Bearbeitungsformular (ganz unten, interaktive
-  Sterne-Auswahl - erneuter Klick auf das zuletzt gefüllte Symbol setzt
-  auf 0 zurück) sowie in der Detailansicht (nur Anzeige). Neuer, analog
-  zu „Entfernung“/„Nächste Öffnung“ aufgebauter Sensor „Bewertung“ je
-  Hofladen-Device. In der Listenansicht als zusätzliche, sortierbare
-  Spalte, in der Kachelansicht klein neben dem Status-Badge.
-- **Automatische Ermittlung um Kontaktdaten erweitert:** Sowohl die
-  Website-Analyse (schema.org-Feld `telephone`/`email`, ergänzt um eine
-  Text-Heuristik für E-Mail-Adressen und DACH-übliche
-  Telefonnummern-Schreibweisen) als auch die OpenStreetMap-Abfrage
-  (Tags `phone`/`contact:phone`, `email`/`contact:email`) ermitteln jetzt
-  zusätzlich Mobilnummer und E-Mail. Das Bestätigungs-Popup „Gefundene
-  Informationen“ zeigt dafür zwei neue Zeilen „Telefon“ und „E-Mail“.
-- **Options Flow („Einstellungen“):** Neue, über „Einstellungen“ bei der
-  Integration erreichbare Konfigurationsmaske (analog zur globalen
-  „Einstellungen“-Maske der parallel gepflegten iOS-App): Standard-
-  Sortierfeld/-richtung für die Übersicht sowie ein dauerhaft
-  gespeicherter Standard-Suchradius für „Angaben automatisch ermitteln“
-  (OpenStreetMap), Bereich jetzt 20–2000 m (Standard 200 m, an die
-  iOS-App angeglichen; zuvor 10–500 m, Standard 50 m). Die
-  Verwaltungsoberfläche liest diese Werte beim Laden über den neuen
-  WebSocket-Befehl `hofkarte/management/settings` und verwendet sie als
-  Vorgabewerte statt der bisher rein pro Formularsitzung flüchtigen
-  Werte.
-- **Kartenmarker nach Status eingefärbt:** Marker auf der Kartenansicht
-  sind jetzt grün (geöffnet), grau (geschlossen) bzw. in der
-  bisherigen Standardfarbe (unbekannter Status) eingefärbt statt
-  einheitlich in der HA-Theme-Primärfarbe - analog zur bereits
-  bestehenden Statusfarbgebung der Kacheln-/Listenansicht, mit eigenen
-  CSS-Klassen statt denselben (Grau statt Rot für „geschlossen“, auf
-  einer Karte sonst leicht mit einem Fehlerhinweis verwechselbar).
-
-## [2026.9.2-dev.6] - Entwicklungsversion (develop)
-
-Kein produktiver Release. Umsetzung von Issue #11 („Vereinfachung der
-automatischen Ermittlung“): Zusammenlegung der bisher getrennten
-Funktionen „🔎 Infos ermitteln“ und „📍 Ort in der Nähe suchen“ zu einer
-einzigen Aktion, Erweiterung der OpenStreetMap-Suche sowie ein
-einstellbarer Suchradius.
-
-### Geändert
-
-- **Eine Aktion statt zwei getrennter Buttons:** Die bisher
-  unabhängigen Funktionen „🔎 Infos ermitteln“ (Website, Issue #8) und
-  „📍 Ort in der Nähe suchen“ (OpenStreetMap, Issue #10) stehen im
-  Bearbeitungsformular jetzt als eine einzige Aktion „🔍 Angaben
-  automatisch ermitteln“ (Abschnitt „Automatisch ausfüllen“) zur
-  Verfügung. Sie fragt – je nachdem, ob eine Website-Adresse und/oder
-  gültige Koordinaten eingetragen sind – wahlweise beide Quellen
-  **parallel** ab (statt wie zuvor zwei separate Klicks zu benötigen)
-  und führt die Ergebnisse zu einem gemeinsamen Vorschlag im
-  bestehenden Bestätigungs-Popup zusammen. Jedes Feld im Popup ist mit
-  seiner Herkunft gekennzeichnet (Website und/oder OpenStreetMap);
-  liefern beide Quellen unterschiedliche Werte für dasselbe Feld,
-  gewinnt die Website (in der Regel die vom Betreiber selbst gepflegte
-  Quelle), der abweichende OpenStreetMap-Wert wird dabei aber nicht
-  verworfen, sondern über die Kennzeichnung nachvollziehbar gehalten.
-  Ein bereits vorliegendes Website-Ergebnis geht auch dann nicht
-  verloren, wenn die Koordinatensuche mehrere Treffer liefert und
-  zunächst eine Auswahl abgewartet werden muss. Nach wie vor wird dabei
-  **nichts automatisch gespeichert** – jeder Vorschlag muss weiterhin
-  ausdrücklich über „Übernehmen“ bestätigt werden.
-- **Erweiterte OpenStreetMap-Suche:** Eine Prüfung der
-  Overpass-QL-Dokumentation ergab, dass der bisherige Filter
-  `["shop"]` bereits jeden `shop=*`-Wert erfasst (Schlüssel-Existenz-,
-  kein Wertevergleich) – `shop=farm`/`shop=greengrocer` waren also
-  bereits abgedeckt, eine wörtliche „Erweiterung“ um diese Werte hätte
-  nichts verändert. Stattdessen wurden zwei tatsächlich neue,
-  wiki-verifizierte Fälle ergänzt: der dokumentierte Tag
-  `amenity=marketplace` (Marktplätze), sowie – für Hofgelände ohne
-  passenden Laden-/Markt-Tag – eine zusätzliche, unabhängige Suche nach
-  `landuse=farmyard`/`building=farm`-Objekten, die nur dann
-  vorgeschlagen werden, wenn ihr Name auf einen Hofladen hindeutet
-  (z. B. „Hof“, „Bauernhof“, „Hofladen“, „Laden“). Solche
-  namensbasierten Treffer werden in der Trefferauswahl ausdrücklich als
-  „anhand des Namens gefunden, kein Hofladen-Tag auf OpenStreetMap“
-  gekennzeichnet, statt mit tatsächlich getaggten Treffern
-  gleichgesetzt zu werden (`OsmOrt.via_namen_heuristik`).
-- **Einstellbarer Suchradius:** Der Suchradius für die
-  OpenStreetMap-Suche (bisher fest auf 50 m verdrahtet) ist im
-  Formular jetzt einstellbar (10–500 m, weiterhin 50 m voreingestellt).
-  Der Wert wird zweifach begrenzt: schemaseitig im WebSocket-Befehl
-  `ws_osm_info` (`vol.Range`) sowie zusätzlich, unabhängig davon,
-  defensiv innerhalb von `async_ermittle_osm_orte()` selbst – ein
-  Wert ausserhalb des gültigen Bereichs führt dadurch nie zu einem
-  Fehler, sondern wird stillschweigend auf den gültigen Bereich
-  begrenzt.
-
-### Dokumentation
-
-- `README.md` (Datenschutz- und Standort-Hinweise), `docs/handbuch.md`
-  (Kapitel 4 und 14) sowie `docs/architecture.md` und `SECURITY.md`
-  wurden an die zusammengelegte Aktion, die erweiterte
-  OpenStreetMap-Suche und den einstellbaren Radius angepasst.
-
-## [2026.9.2-dev.5] - Entwicklungsversion (develop)
-
-Kein produktiver Release. Behebung der weiterhin gemeldeten Meldung
-„Die Overpass API (OpenStreetMap) konnte nicht erreicht werden.“ für
-„Ort in der Nähe suchen“ (Issue #10), auf ausdrücklichen Wunsch
-anhand einer Analyse der Overpass-API-Dokumentation
-([Overpass-API auf GitHub](https://github.com/drolbr/Overpass-API),
-[OSM-Wiki „Overpass API“](https://wiki.openstreetmap.org/wiki/Overpass_API),
-[overpass-api.de](https://overpass-api.de)) durchgeführt.
-
-### Geändert
-
-- **Mehrere Overpass-Instanzen statt eines Einzelpunkts
-  (`OVERPASS_URLS`):** Die im OSM-Wiki dokumentierte, offizielle
-  Selbstauskunft der bisher allein verwendeten Haupt-Instanz
-  (`overpass-api.de`) beschreibt diese ausdrücklich als „overloaded …
-  do not expect high reliability. Use alternatives if possible.“ Das
-  erklärt die gemeldete Nichterreichbarkeit, ohne dass dabei auf
-  Seiten von HofKarte ein Fehler vorlag. `osm_info.py` versucht jetzt
-  der Reihe nach mehrere bekannte, freie, kostenlose, kontofreie
-  OpenStreetMap-Community-Instanzen (`overpass-api.de`,
-  `overpass.private.coffee`, das Schweiz-regionale `overpass.osm.ch`)
-  und meldet erst dann „nicht erreichbar“, wenn **alle** Instanzen
-  fehlschlagen. Jeder einzelne Fehlversuch sowie eine
-  Gesamtzusammenfassung werden über `_LOGGER.warning(...)`
-  protokolliert, sodass sich anhand der Home-Assistant-Protokolle
-  (Einstellungen → System → Protokolle) genau nachvollziehen lässt,
-  welche Instanz(en) aus welchem Grund fehlgeschlagen sind. Dies
-  bleibt innerhalb der bereits dokumentierten, eng begrenzten
-  Ausnahme vom Grundsatz „kein externer/Cloud-/KI-Dienst“ (alle drei
-  Instanzen sind freie, kostenlose, kontofreie OSM-Community-Dienste –
-  keine neue Kategorie externer Abhängigkeit). Siehe
-  [`SECURITY.md`](SECURITY.md) und
-  [`docs/architecture.md`](docs/architecture.md) für die ausführliche
-  Einordnung.
-- **Erkennbarer `User-Agent`-Header ergänzt:** Die Overpass-API-Nutzungsrichtlinien
-  verlangen ausdrücklich einen identifizierenden `User-Agent`- oder
-  `Referer`-Header; bisher wurde keiner gesendet, was ebenfalls zu
-  Ablehnungen führen kann. HofKarte sendet jetzt bei jeder Anfrage
-  `User-Agent: HofKarte/HomeAssistant (+https://github.com/rest-be/HofKarte)`.
-- **Abfrage auf den `nwr`-Selektor umgestellt:** Die Overpass-QL-Abfrage
-  verwendet jetzt den kombinierten `nwr(around:…)[…];`-Selektor
-  (Node/Way/Relation in einer Zeile) statt getrennter `node(…)`- und
-  `way(…)`-Zeilen – laut OSM-Wiki die empfohlene, kompaktere Schreibweise
-  für „alle Objekttypen im Umkreis“.
-- **Timeouts angepasst:** Der HTTP-Abruf-Timeout je Instanz wurde von 15
-  auf 25 Sekunden angehoben; zusätzlich begrenzt ein neuer, kürzerer
-  interner Overpass-Abfrage-Timeout (`[timeout:20]` in der Abfrage
-  selbst, 20 Sekunden) die serverseitige Bearbeitungszeit bei Overpass,
-  sodass Overpass selbst sauber abbrechen kann, bevor der HTTP-Client
-  abbricht.
-- Konnte auch in dieser Entwicklungsrunde nicht in der
-  Entwicklungsumgebung reproduziert werden (kein Netzwerkzugriff auf
-  `overpass-api.de` oder die weiteren Instanzen von hier aus) – die
-  Behebung stützt sich auf die dokumentierten Ursachen (Überlastung
-  der Haupt-Instanz, fehlender `User-Agent`-Header) statt auf eine
-  direkte Reproduktion. Bitte nach dem Update erneut testen und bei
-  weiterhin auftretenden Problemen die Home-Assistant-Protokolle
-  prüfen – diese zeigen jetzt für jede versuchte Instanz den genauen
-  Fehlergrund.
-
-## [2026.9.2-dev.4] - Entwicklungsversion (develop)
-
-Kein produktiver Release. Diagnose-Verbesserung für „Ort in der Nähe
-suchen“ (Issue #10), ausgelöst durch eine gemeldete Meldung „Die
-Overpass API (OpenStreetMap) konnte nicht erreicht werden.“ beim
-tatsächlichen Testen.
-
-### Geändert
-
-- **Protokollierung in `osm_info.py` ergänzt:** Bisher wurde bei jedem
-  der drei möglichen Fehlerfälle des Overpass-Abrufs (HTTP-Fehlerstatus,
-  Verbindungsfehler/Timeout, unlesbare Antwort) zwar der bereits
-  bestehende, bewusst allgemein gehaltene Fehlertext an die
-  Verwaltungsoberfläche zurückgegeben, aber **nirgends protokolliert,
-  was die tatsächliche Ursache war** – weder der genaue Exception-Typ
-  bei einem Verbindungsfehler (DNS, TLS, Timeout, Firewall, …) noch der
-  von der Overpass API zurückgegebene Antworttext bei einem
-  Fehlerstatus. Dadurch liess sich ein gemeldetes „nicht erreichbar“
-  bisher nicht in den Home-Assistant-Protokollen nachvollziehen. Alle
-  drei Fehlerfälle protokollieren jetzt über `_LOGGER.warning(...)` die
-  jeweilige Ursache (sichtbar in den Protokollen auch ohne aktiviertes
-  Debug-Logging).
-- Konnte in dieser Entwicklungsrunde nicht reproduziert werden (die
-  Entwicklungsumgebung, in der dieser Fix erstellt wurde, hat aus
-  eigenen, unabhängigen Netzwerkgründen keinen Zugriff auf
-  `overpass-api.de`) – die genaue Ursache (z. B. fehlender
-  Internetzugriff des Home-Assistant-Hosts, DNS-/TLS-Problem, temporäre
-  Nichterreichbarkeit von `overpass-api.de`) lässt sich erst anhand der
-  neu protokollierten Meldung in den Home-Assistant-Protokollen
-  (**Einstellungen → System → Protokolle**) bestimmen.
-
-## [2026.9.2-dev.3] - Entwicklungsversion (develop)
-
-Kein produktiver Release. Erweiterung des „Infos ermitteln“-Workflows
-(Issue #8/#9) um eine zweite Datenquelle: die OpenStreetMap-Overpass-API
-(Issue #10, „Erweiterung OpenStreetMap zu #8“).
+Enthält die in den sieben Entwicklungsversionen `2026.9.2-dev.1` bis
+`-dev.7` (Issues #8–#11) entwickelten Änderungen. Für diesen Release
+gab es – anders als bei `2026.9.1` – keinen eigenen Release-Candidate-
+Schritt; die Konsolidierung erfolgte direkt auf Basis von `dev.7`.
 
 ### Hinzugefügt
 
-- **„Ort in der Nähe suchen“ (Issue #10):** Neuer Button im Abschnitt
-  „Standort / Koordinaten“ des Bearbeitungsformulars. Sucht über die
-  freie, kostenlose, kontofreie OpenStreetMap-Overpass-API
-  (`overpass-api.de`) nach benannten, hofladenartigen Orten (OSM-Tags
-  `shop=*` bzw. `craft=agricultural`) im Umkreis der aktuell im
-  Formular eingetragenen Koordinaten (Standardradius 50 m). Der Button
-  ist ohne gültige WGS84-Koordinaten deaktiviert (analog zu „Auf Google
-  Maps anzeigen“).
-  - Genau ein Treffer öffnet direkt das bereits aus Issue #9 bekannte
-    Bestätigungs-Popup; mehrere Treffer zeigen zunächst eine
-    Trefferauswahl (Name, Adresse, Entfernung) zum Auswählen. Das
-    Bestätigungs-Popup selbst wird für beide Datenquellen
-    (Website/OSM) gemeinsam genutzt statt dupliziert – ergänzt um eine
-    zusätzliche „Webseite“-Zeile.
-  - Neuer Backend-Baustein `osm_info.py` (`async_ermittle_osm_orte()`)
-    sowie neuer, admin-geschützter WebSocket-Befehl
-    `hofkarte/management/osm_info` (`ws_osm_info`), der wie
-    `ws_webseite_info` ausschliesslich Vorschlagsdaten zur Überprüfung
-    liefert – gespeichert wird weiterhin nur über das bestehende
-    `ws_save`.
-  - Enthält einen begrenzten, dokumentierten Parser für OpenStreetMaps
-    `opening_hours`-Syntax (Semikolon-getrennte Regeln, englische
-    Wochentagskürzel, Wochentag-/Zeitbereiche inkl. mehrerer
-    Zeitintervalle pro Tag, `24/7`) – nicht unterstützte Syntax
-    (Feiertagsregeln, Datumsbereiche, `off`-Ausnahmen u. Ä.) wird
-    bewusst ignoriert statt geraten oder teilweise interpretiert
-    (Prinzip „lieber nichts als falsch“, wie schon bei der
-    Text-Heuristik aus Issue #9).
-  - **Architektonische Einordnung:** Wie das clientseitige
-    Leaflet/OpenStreetMap-Kartenmodul (Issue #2) und
-    `webseite_info.py` (Issue #8) ist dies eine bewusst begrenzte,
-    dokumentierte Ausnahme vom Grundsatz „kein externer/Cloud-/
-    KI-Dienst“ – kein kommerzieller Cloud-Dienst, kein LLM,
-    kein „Scraping-as-a-Service“. Anders als bei den rein
-    clientseitigen Kartenkacheln werden hier serverseitig konkrete
-    Hofladen-Koordinaten an einen externen, wenn auch kostenlosen und
-    kontofreien Dienst übermittelt – ausschliesslich auf ausdrücklichen
-    Klick, nie automatisch (siehe README.md, Abschnitt
-    „Datenschutz- und Standort-Hinweise“, sowie SECURITY.md für die
-    ausführliche Begründung).
-  - Bewusst auf koordinatenbasierte Suche begrenzt (keine
-    Freitext-/Adresssuche) – eine solche würde einen dritten externen
-    Dienst (z. B. Nominatim-Geocoding) erfordern und wird hier nicht
-    eingeführt.
-
-### Tests
-
-- 43 neue Tests in `tests/test_osm_info.py`: `opening_hours`-Parsing
-  (inkl. Mehrfach-Intervalle pro Tag, widersprüchliche Regeln, `24/7`,
-  `24:00`-Normalisierung, ignorierte `PH`/`off`-Regeln), Adress-/
-  Entfernungshilfsfunktionen, Koordinatenvalidierung sowie alle drei
-  Fehlerfälle des Overpass-Abrufs (Fake-Session, kein echtes Netzwerk).
-- 8 neue Tests in `tests/test_management.py` für `ws_osm_info`
-  (Registrierung, Erfolgsfall, alle drei Fehlercodes, Admin-Pflicht,
-  „nicht eingerichtet“).
-- 20 neue strukturelle Frontend-Tests in
-  `tests/test_static_panel_js_osm_info.py`: Button-Verkabelung,
-  Formularzustand-Erfassung vor jedem Re-Render (Regressionsschutz wie
-  bei Issue #9), Ein-Treffer-/Mehr-Treffer-Verzweigung, Trefferauswahl
-  (Verkabelung, Escape-Handling, Barrierefreiheit), Wiederverwendung des
-  Bestätigungs-Popups, Datenschutzhinweis im Formular.
-
-## [2026.9.2-dev.2] - Entwicklungsversion (develop)
-
-Kein produktiver Release. Korrektur- und Härtungsrunde für die in
-`2026.9.2-dev.1` (Issue #8) eingeführte Funktion „Infos ermitteln“
-(Issue #9).
+- **Automatische Ermittlung von Website-Angaben (Issue #8/#9):** Im
+  Bearbeitungsformular ruft der Button „🔎 Infos ermitteln“ (Abschnitt
+  „Kontakt & Webseite“) auf ausdrücklichen Klick die dort eingetragene
+  Website-Adresse ab und wertet ausschliesslich strukturierte, von der
+  Seite selbst veröffentlichte Daten (schema.org-JSON-LD, ergänzend
+  `<title>`/Meta-Beschreibung sowie – falls kein JSON-LD vorliegt –
+  dokumentierte Text-Heuristiken für Adresse und Öffnungszeiten) aus,
+  um Name, Adresse, Beschreibung, Öffnungszeiten, Angebote und
+  Zahlungsarten als Vorschlag zu ermitteln. Rein lokale, deterministische
+  Extraktion – kein externer/Cloud-/KI-Dienst. Ermittelte Angaben
+  erscheinen in einem Bestätigungs-Popup zur Prüfung; erst ein Klick auf
+  „Übernehmen“ überträgt sie ins Formular, „Abbrechen“ verwirft sie
+  vollständig – es wird dabei nie automatisch gespeichert.
+- **„Ort in der Nähe suchen“ über OpenStreetMap (Issue #10):** Zweite
+  Datenquelle über die freie, kostenlose, kontofreie
+  OpenStreetMap-Overpass-API: sucht anhand der im Formular eingetragenen
+  Koordinaten nach benannten, hofladenartigen Orten in der Nähe und
+  bietet sie, bei mehreren Treffern über eine Trefferauswahl, zur
+  Übernahme über dasselbe Bestätigungs-Popup an. Gehärtet über mehrere
+  bekannte Overpass-Instanzen als automatischen Fallback
+  (`overpass-api.de`, `overpass.private.coffee`, `overpass.osm.ch`)
+  sowie ausführliche Fehlerprotokollierung, falls eine Instanz
+  fehlschlägt.
+- **Eine gemeinsame Aktion „🔍 Angaben automatisch ermitteln“
+  (Issue #11):** Die bis dahin getrennten Funktionen „Infos ermitteln“
+  (Website) und „Ort in der Nähe suchen“ (OpenStreetMap) wurden zu einer
+  einzigen Aktion zusammengelegt, die – je nach im Formular vorhandener
+  Website-Adresse und/oder Koordinaten – wahlweise beide Quellen
+  parallel abfragt und die Ergebnisse in einem gemeinsamen Vorschlag
+  zusammenführt (je Feld mit Herkunftskennzeichnung Website/
+  OpenStreetMap). Der Suchradius für die OpenStreetMap-Suche ist dabei
+  im Formular einstellbar. Die OpenStreetMap-Suche wurde ausserdem um
+  den Tag `amenity=marketplace` sowie eine Namens-Heuristik für
+  untertaggte Hofgelände (`landuse=farmyard`/`building=farm` mit
+  passendem Namen) erweitert.
+- **Kontaktfelder Mobilnummer und E-Mail:** Neue, optionale Felder im
+  Datenmodell, durchgängig berücksichtigt im Bearbeitungsformular
+  (Abschnitt „Kontakt & Webseite“), in der Detailansicht (anklickbare
+  Telefon-/E-Mail-Links), bei Export/Import sowie bei der automatischen
+  Ermittlung (Website-Analyse und OpenStreetMap-Suche liefern jetzt
+  ebenfalls Telefon/E-Mail, sofern verfügbar).
+- **Bewertung (0–5 Sterne):** Neues Bewertungsfeld je Hofladen mit
+  interaktiver Sterne-Auswahl im Bearbeitungsformular, Anzeige in der
+  Detailansicht, eigenem, sortierbarem Sensor je Hofladen-Device sowie
+  als zusätzliche, sortierbare Spalte in der Listenansicht bzw. kleiner
+  Anzeige neben dem Status-Badge in der Kachelansicht.
+- **Neue „Einstellungen“-Maske (Options Flow):** Über die Integration
+  erreichbare, dauerhaft gespeicherte Voreinstellungen für die
+  Übersicht (Standard-Sortierfeld und -richtung) sowie für „Angaben
+  automatisch ermitteln“ (dauerhaft gespeicherter Standard-Suchradius,
+  Bereich jetzt 20–2000 m, Standard 200 m – zuvor nur pro
+  Formularsitzung flüchtig, 10–500 m, Standard 50 m).
+- **Kartenmarker nach Öffnungsstatus eingefärbt:** Marker in der
+  eingebetteten Kartenansicht sind jetzt grün (geöffnet) bzw. grau
+  (geschlossen) eingefärbt statt einheitlich in der
+  HA-Theme-Primärfarbe, analog zur bereits bestehenden Statusfarbgebung
+  in Kacheln-/Listenansicht.
 
 ### Behoben
 
 - **Datenverlust im Bearbeitungsformular nach „Infos ermitteln“
-  (Issue #9):** Ein Klick auf „🔎 Infos ermitteln“ liess zuvor
-  jeden bereits im Formular eingetragenen, aber noch nicht
-  gespeicherten Wert verschwinden – ursprünglich als „der Eintrag
-  wird gelöscht“ gemeldet, tatsächlich aber ein allgemeines Problem:
-  `ermittleWebseiteInfo()` löste am Ende einen `render()`-Aufruf aus,
-  der das gesamte Formular-HTML ausschliesslich aus dem internen
-  Bearbeitungszustand neu aufbaut – live eingegebene, aber noch nicht
-  dorthin übernommene Werte (nicht nur das Feld „Webseite“) gingen
-  dadurch verloren, obwohl in Wirklichkeit nichts gespeichert oder
-  gelöscht wurde. Behoben durch eine neue, allgemeine Erfassung des
-  vollständigen Formularzustands (`erfasseFormularZustand()`, nutzt
-  denselben Mechanismus wie das bestehende `formData()`/„Speichern“),
-  die konsequent **vor** jedem mit „Infos ermitteln“ verbundenen
-  Re-Render aufgerufen wird – unabhängig davon, ob die Ermittlung
-  erfolgreich ist, einen Fehler liefert, oder das neue
-  Bestätigungs-Popup (siehe unten) abgebrochen wird.
-
-### Hinzugefügt
-
-- **Bestätigungs-Popup vor der Übernahme (Issue #9):** Ermittelte
-  Informationen werden nicht mehr direkt in die Formularfelder
-  geschrieben. Nach einem erfolgreichen Abruf öffnet sich stattdessen
-  ein Popup, das die gefundenen Angaben (Name, Adresse, Beschreibung,
-  Anzahl gefundener Öffnungszeiten-Einträge, Angebote, Zahlungsarten)
-  übersichtlich zusammenfasst – nicht gefundene Felder werden klar als
-  solche gekennzeichnet statt weggelassen. Erst ein Klick auf
-  „Übernehmen“ überträgt die Vorschläge in die Formularfelder (weiterhin
-  vor dem Speichern zu prüfen); „Abbrechen“ verwirft sie vollständig
-  und lässt das Formular unverändert. Schliessbar auch per
-  Escape-Taste; der Dialog erhält beim Öffnen den Tastaturfokus
-  (`role="dialog"`, `aria-modal`, `aria-labelledby`).
-- **Vertiefte Extraktion für Adresse und Öffnungszeiten (Issue #9):**
-  Liefert die Website kein auswertbares JSON-LD, wertet
-  `webseite_info.py` zusätzlich den sichtbaren Seitentext über
-  dokumentierte, rein lokale Regex-Heuristiken aus (weiterhin **kein**
-  externer/Cloud-/KI-Dienst) – als reine Ergänzung, nicht als Ersatz
-  des bisherigen, zuverlässigeren JSON-LD-Pfads:
-  - **Adresse:** erkennt das im DACH-Raum übliche Muster „‹Strasse›
-    ‹Hausnummer›, ‹PLZ› ‹Ort›“ (vierstellige PLZ), sofern der
-    Strassenname auf eine gängige deutschsprachige
-    Strassenbezeichnungs-Endung endet (z. B. -strasse, -weg, -gasse).
-  - **Öffnungszeiten:** erkennt gängige deutschsprachige Freitext-Muster
-    wie „Mo-Fr 08:00-18:00 Uhr“, „Montag bis Freitag: 8 – 18 Uhr“ oder
-    „Sa 08:00–12:00“, inklusive Abbildung von Wochentag-Bereichen auf
-    die einzelnen Wochentage.
-  - Beide Heuristiken bleiben dem Prinzip „lieber nichts als falsch“
-    verpflichtet: mehrere unterschiedliche bzw. widersprüchliche
-    Fundstellen führen bewusst zu **keinem** Vorschlag (für Öffnungszeiten
-    pro betroffenem Wochentag einzeln), statt einen unsicheren zu
-    raten. Diese vorsichtige Erweiterung wird erst durch das neue
-    Bestätigungs-Popup gerechtfertigt, das jeden Vorschlag vor der
-    Übernahme einer expliziten menschlichen Prüfung unterzieht (siehe
-    `webseite_info.py`, Moduldoc „Vertiefte Text-Heuristik“, für die im
-    Detail dokumentierten Grenzen, u. a.: Adresse und Öffnungszeiten
-    müssen jeweils innerhalb eines einzelnen Absatzes/derselben Zeile
-    stehen, nicht über mehrere Absätze verteilt).
+  (Issue #9):** Ein Klick auf „Infos ermitteln“ liess zuvor jeden
+  bereits im Formular eingetragenen, aber noch nicht gespeicherten Wert
+  verschwinden, da der abschliessende Re-Render das Formular
+  ausschliesslich aus dem internen Bearbeitungszustand neu aufbaute.
+  Behoben durch eine vollständige Erfassung des Formularzustands vor
+  jedem mit der automatischen Ermittlung verbundenen Re-Render.
+- **„Die Overpass API (OpenStreetMap) konnte nicht erreicht werden.“**
+  bei „Ort in der Nähe suchen“: verbesserte Fehlerprotokollierung sowie
+  mehrere Overpass-Instanzen als Fallback (siehe oben), ein
+  identifizierender `User-Agent`-Header, der kombinierte
+  `nwr`-Selektor sowie angepasste Timeouts adressieren die
+  dokumentierten, wahrscheinlichsten Ursachen (Überlastung der
+  Haupt-Instanz, fehlender `User-Agent`). Aus dieser
+  Entwicklungsumgebung heraus ohne Netzwerkzugriff auf die
+  Overpass-Instanzen nicht direkt reproduzierbar gewesen.
 
 ### Tests
 
-- 15 neue Tests für die Text-Heuristiken in `tests/test_webseite_info.py`
-  (positive Fälle, mehrdeutiger/widersprüchlicher Text, JSON-LD-Vorrang).
-- 12 neue strukturelle Frontend-Tests in
-  `tests/test_static_panel_js_webseite_info.py`: Regressionsschutz gegen
-  den Datenverlust-Bug sowie Abdeckung des neuen Popups (Vorhandensein,
-  Verkabelung von „Übernehmen“/„Abbrechen“, Escape-Handling,
-  Barrierefreiheits-Attribute).
-- Gesamte Suite: 440 Tests grün (zuvor 413), `pyflakes`/`mypy` sauber.
-
-## [2026.9.2-dev.1] - Entwicklungsversion (develop)
-
-Kein produktiver Release. Erste Entwicklungsversion für Milestone
-`2026.9.2` (Issue #8).
-
-### Hinzugefügt
-
-- **Informationen aus Homepage (Issue #8):** Im Bearbeitungsformular
-  steht im Bereich „Kontakt & Webseite“ jetzt der Button
-  „🔎 Infos ermitteln“ zur Verfügung. Er ruft – nur auf ausdrücklichen
-  Klick – die dort eingetragene Website-Adresse ab und wertet
-  ausschliesslich strukturierte, von der Seite selbst veröffentlichte
-  Daten (schema.org-JSON-LD, ergänzend `<title>`/Meta-Beschreibung als
-  Fallback) aus, um Name, Adresse, Beschreibung, Öffnungszeiten,
-  Angebote und Zahlungsarten als **Vorschlag zur Überprüfung** in die
-  Formularfelder zu übernehmen – es wird dabei **nichts automatisch
-  gespeichert**; das Speichern erfolgt unverändert über den
-  bestehenden „Speichern“-Weg.
-  - Rein lokale, deterministische Extraktion – **kein externer/Cloud-/
-    KI-Dienst**, keine neue Python-Abhängigkeit (Python-Standardbibliothek
-    `html.parser`/`json`). Nicht zuverlässig ermittelbare Felder (z. B.
-    Öffnungszeiten aus unstrukturiertem Fliesstext) bleiben bewusst
-    leer statt geraten zu werden.
-  - Deckt alle drei im Issue geforderten Fehlerfälle mit eigenen,
-    unterscheidbaren Meldungen ab: keine Website-Adresse eingegeben,
-    Website nicht erreichbar/lesbar, keine Informationen gefunden.
-  - Neuer WebSocket-Befehl `hofkarte/management/webseite_info`
-    (`ws_webseite_info`, administratorpflichtig wie alle übrigen
-    Verwaltungsbefehle) sowie neues Modul
-    `custom_components/hofkarte/webseite_info.py`.
-  - **Diese Funktion ist die erste eigene, ausgehende HTTP-Anfrage im
-    Backend-Code von HofKarte** – bisher wurde jede
-    Netzwerkkommunikation an Home-Assistant-Komponenten oder den
-    Browser delegiert (siehe README/SECURITY.md/
-    docs/architecture.md für die ausführliche Begründung und das
-    Sicherheitsmodell). SSRF-Schutz über den bestehenden
-    Bild-URL-Standard hinaus: Antwortgrössen-Limit (2 MB),
-    Content-Type-Prüfung, Zeitüberschreitung (10 s) sowie eine
-    manuelle, bei jedem Sprung erneut geprüfte
-    Weiterleitungsauflösung (max. 3 Sprünge). Verwendet Home
-    Assistants verwaltete Client-Session
-    (`aiohttp_client.async_get_clientsession`).
-  - Neues, von `images.py` und `webseite_info.py` gemeinsam genutztes
-    Modul `custom_components/hofkarte/url_sicherheit.py`: bündelt den
-    bisher nur in `images.py` vorhandenen syntaktischen
-    SSRF-Prüfkern (Schema, Zugangsdaten, „localhost“, private/interne
-    IP-Literale), keine Verhaltensänderung der bestehenden
-    Bild-URL-Prüfung.
-  - 40 neue Tests: `test_webseite_info.py` (23),
-    `test_url_sicherheit.py` (10), `test_management.py` (7 zu
-    `ws_webseite_info`), `test_static_panel_js_webseite_info.py` (7
-    strukturelle Frontend-Tests).
-
-### Geändert
-
-- `quality_scale.yaml`, Kriterium `inject-websession`: von `exempt`
-  auf `done` geändert – die bisherige Begründung („keine eigene
-  HTTP-Client-Session“) trifft seit Issue #8 nicht mehr zu; der neue
-  Abruf verwendet konsequent Home Assistants verwaltete Client-Session.
-- README.md/SECURITY.md/docs/handbuch.md, Abschnitt „Datenschutz“:
-  „mit zwei Ausnahmen“ auf „mit drei Ausnahmen“ erweitert (neue
-  Ausnahme: Abruf einer vom Benutzer im Verwaltungs-Panel angegebenen
-  Website-Adresse über „Infos ermitteln“).
-- `docs/architecture.md`: neuer Abschnitt „Informationen aus Homepage
-  (Issue #8)“ mit Datenfluss, Extraktionsstrategie und
-  Sicherheitsmodell.
+- 572 Tests insgesamt (zuvor 366 bei `2026.9.1`), `pyflakes`/`mypy`/
+  `node --check` durchgehend fehlerfrei.
 
 ## [2026.9.1] - 2026-09-19
 
