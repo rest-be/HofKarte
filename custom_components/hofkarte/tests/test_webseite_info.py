@@ -59,7 +59,9 @@ def test_extrahiert_vollstaendiges_local_business_objekt() -> None:
         {"@type": "OpeningHoursSpecification", "dayOfWeek": "Saturday", "opens": "08:00", "closes": "12:00"}
       ],
       "paymentAccepted": "Cash, Twint",
-      "makesOffer": [{"itemOffered": {"name": "Eier"}}, {"itemOffered": {"name": "Honig"}}]
+      "makesOffer": [{"itemOffered": {"name": "Eier"}}, {"itemOffered": {"name": "Honig"}}],
+      "telephone": "+41 79 123 45 67",
+      "email": "info@hofladen-muster.ch"
     }
     """
     info = _extrahiere_aus_html(_json_ld_seite(payload))
@@ -70,6 +72,8 @@ def test_extrahiert_vollstaendiges_local_business_objekt() -> None:
     assert info.plz == "3000"
     assert info.ort == "Bern"
     assert info.land == "Schweiz"
+    assert info.mobilnummer == "+41 79 123 45 67"
+    assert info.email == "info@hofladen-muster.ch"
     assert info.oeffnungszeiten == (
         {"wochentag": 1, "beginn": "08:00", "ende": "18:00"},
         {"wochentag": 2, "beginn": "08:00", "ende": "18:00"},
@@ -135,9 +139,40 @@ def test_leere_seite_ohne_jegliche_information_ist_leer() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Vertiefte Text-Heuristik (Issue #9): Adresse/Öffnungszeiten als Fallback,
-# wenn JSON-LD dafür nichts liefert.
+# Mobilnummer/E-Mail: Text-Heuristik als Fallback, wenn JSON-LD dafür
+# nichts liefert.
 # ---------------------------------------------------------------------------
+
+
+def test_telefon_und_email_werden_aus_text_erkannt_wenn_kein_json_ld_vorhanden() -> None:
+    html = (
+        "<html><head><title>Seitentitel</title></head>"
+        "<body><p>Kontakt: +41 79 123 45 67, info@hofladen.ch</p></body></html>"
+    )
+    info = _extrahiere_aus_html(html)
+
+    assert info.mobilnummer == "+41 79 123 45 67"
+    assert info.email == "info@hofladen.ch"
+
+
+def test_mehrere_unterschiedliche_telefonnummern_liefern_keinen_vorschlag() -> None:
+    html = (
+        "<html><head><title>Seitentitel</title></head>"
+        "<body><p>+41 79 123 45 67</p><p>+41 78 987 65 43</p></body></html>"
+    )
+    info = _extrahiere_aus_html(html)
+
+    assert info.mobilnummer is None
+
+
+def test_identisch_wiederholte_telefonnummer_gilt_nicht_als_mehrdeutig() -> None:
+    html = (
+        "<html><head><title>Seitentitel</title></head>"
+        "<body><p>+41 79 123 45 67</p><p>+41 79 123 45 67</p></body></html>"
+    )
+    info = _extrahiere_aus_html(html)
+
+    assert info.mobilnummer == "+41 79 123 45 67"
 
 
 def _text_seite(*absaetze: str) -> str:

@@ -22,9 +22,21 @@ function isValidWgs84(lat, lon) {
 // begrenzt den tatsächlich verwendeten Wert ohnehin serverseitig noch
 // einmal (siehe management.ws_osm_info), diese Konstanten steuern nur
 // die Eingabegrenzen im Formular.
-const OSM_STANDARD_RADIUS_METER = 50;
-const OSM_MIN_RADIUS_METER = 10;
-const OSM_MAX_RADIUS_METER = 500;
+// An die iOS-App angeglichene Vorgabewerte (Options Flow, siehe
+// const.py: DEFAULT_OSM_RADIUS_METER sowie die dortigen
+// MIN_RADIUS_METER/MAX_RADIUS_METER in osm_info.py) - der tatsächlich
+// dauerhaft gespeicherte Vorgabewert wird beim Laden des Panels über
+// "hofkarte/management/settings" ermittelt und ersetzt
+// OSM_STANDARD_RADIUS_METER dann als Ausgangswert (siehe load()); diese
+// Konstante bleibt als Absicherung, solange die Einstellungen noch nicht
+// geladen wurden.
+const OSM_STANDARD_RADIUS_METER = 200;
+const OSM_MIN_RADIUS_METER = 20;
+const OSM_MAX_RADIUS_METER = 2000;
+
+// Anzahl Symbole der Bewertungsdarstellung (Editor und Detailansicht) -
+// Wertebereich 0-5, siehe models.Hofladen.bewertung.
+const BEWERTUNG_MAX = 5;
 
 /** Google-Maps-Link für eine WGS84-Koordinate (offizielles URL-Schema,
  * siehe https://developers.google.com/maps/documentation/urls/get-started).
@@ -140,9 +152,22 @@ function ladeLeaflet() {
 // Regeln (.karte-marker-*) zuverlässig – ganz ohne Shadow-DOM-Falle.
 const KARTE_MARKER_GLYPH_PATH = "M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z";
 
-function erzeugeKarteMarkerIcon(L) {
+// Marker-Einfärbung nach Öffnungsstatus (Issue Kartenmarker): analog zur
+// bereits bestehenden Status-Einfärbung der Kacheln-/Listenansicht
+// (siehe .status-open/.status-closed/.status-unknown in styles()), aber
+// bewusst mit eigenen CSS-Klassen statt denselben - die Badge-Farben
+// (u. a. Rot für "geschlossen") wären auf einem Kartenmarker deutlich
+// schwerer von einem echten Fehler-/Warnhinweis zu unterscheiden; Grau
+// ist für "geschlossen" auf der Karte eindeutiger.
+function karteMarkerStatusKlasse(geoeffnet) {
+  if (geoeffnet === true) return "karte-marker-pin-offen";
+  if (geoeffnet === false) return "karte-marker-pin-geschlossen";
+  return "karte-marker-pin-unbekannt";
+}
+
+function erzeugeKarteMarkerIcon(L, geoeffnet) {
   const html = `<svg class="karte-marker-svg" viewBox="0 0 32 42" width="32" height="42" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <path class="karte-marker-pin" d="M16 0C7.163 0 0 7.163 0 16c0 11 16 26 16 26s16-15 16-26C32 7.163 24.837 0 16 0z"/>
+    <path class="karte-marker-pin ${karteMarkerStatusKlasse(geoeffnet)}" d="M16 0C7.163 0 0 7.163 0 16c0 11 16 26 16 26s16-15 16-26C32 7.163 24.837 0 16 0z"/>
     <g transform="translate(8,7) scale(0.8)"><path class="karte-marker-glyph" d="${KARTE_MARKER_GLYPH_PATH}"/></g>
   </svg>`;
   return L.divIcon({
@@ -187,7 +212,9 @@ class HofkartePanel extends HTMLElement {
     this.autoErmittlungStatusKind = ""; // "" | "success" | "error", passend zu autoErmittlungStatusText
     this.autoErmittlungQuellen = null; // { feldname: "website"|"osm"|"beide" } für die im Bestätigungs-Popup angezeigte Quellenkennzeichnung (Issue #11, 5.1), solange this.webseiteInfoVorschlag aus mehr als einer Quelle stammt - sonst null (keine Kennzeichnung nötig).
     this.osmOrteAuswahl = null; // Liste der von der Overpass API gefundenen Treffer, solange mehr als einer gefunden wurde und noch keiner ausgewählt ist (Issue #10, "Ort in der Nähe suchen"); bei genau einem Treffer wird die Auswahlliste übersprungen und direkt this.webseiteInfoVorschlag gesetzt.
-    this.osmRadius = OSM_STANDARD_RADIUS_METER; // Im Formular eingestellter Suchradius für OpenStreetMap (Issue #11) - wird wie alle übrigen Formularfelder über erfasseFormularZustand() vor jedem Re-Render gesichert, damit ein bereits geänderter Wert nicht verloren geht.
+    this.osmRadius = OSM_STANDARD_RADIUS_METER; // Im Formular eingestellter Suchradius für OpenStreetMap (Issue #11) - wird wie alle übrigen Formularfelder über erfasseFormularZustand() vor jedem Re-Render gesichert, damit ein bereits geänderter Wert nicht verloren geht. Initialisiert aus den dauerhaft gespeicherten Einstellungen (Options Flow, siehe ladeEinstellungen()), OSM_STANDARD_RADIUS_METER dient nur als Absicherung, bis diese geladen sind.
+    this._osmRadiusVorgabe = OSM_STANDARD_RADIUS_METER; // Dauerhaft gespeicherter Vorgabewert (Options Flow) - im Unterschied zu this.osmRadius, das pro Formularsitzung geändert werden kann, ist dies der Wert, auf den start() jedes neue Formular zurücksetzt.
+    this._einstellungenGeladen = false; // Verhindert, dass ein bereits von der Nutzerin/dem Nutzer geänderter Sortier-/Radius-Wert durch einen erneuten load() (z. B. nach dem Speichern) überschrieben wird.
     this._wartendesWebseiteErgebnis = null; // Zwischengespeichertes Website-Ergebnis, während die OSM-Trefferauswahl (mehrere Treffer) noch offen ist (Issue #11, siehe ermittleAutomatisch()/waehleOsmOrt()).
     this.attachShadow({ mode: "open" });
   }
@@ -205,10 +232,39 @@ class HofkartePanel extends HTMLElement {
     return this.hass.connection.sendMessagePromise({ type, ...payload });
   }
 
+  /** Dauerhaft gespeicherte Einstellungen (Options Flow, siehe
+   * config_flow.HofKarteOptionsFlow / management.ws_settings) laden und
+   * als Vorgabewerte übernehmen - einmalig pro Panel-Sitzung (siehe
+   * this._einstellungenGeladen), damit ein bereits von der Nutzerin/dem
+   * Nutzer geänderter Sortier- oder Radius-Wert durch ein erneutes
+   * load() (z. B. nach dem Speichern eines Hofladens) nicht
+   * stillschweigend zurückgesetzt wird. Ein Fehler beim Laden (z. B.
+   * HofKarte noch nicht bereit) verhindert bewusst nicht das Laden der
+   * eigentlichen Hofladen-Liste - die eingebauten Konstanten
+   * (OSM_STANDARD_RADIUS_METER u. Ä.) bleiben dann als Fallback. */
+  async ladeEinstellungen() {
+    if (this._einstellungenGeladen) return;
+    try {
+      const result = await this.call("hofkarte/management/settings");
+      const einstellungen = result.einstellungen || {};
+      this.listenSortSpalte = einstellungen.listen_sort_spalte || this.listenSortSpalte;
+      this.listenSortRichtung = einstellungen.listen_sort_richtung || this.listenSortRichtung;
+      if (typeof einstellungen.osm_radius_meter === "number") {
+        this._osmRadiusVorgabe = einstellungen.osm_radius_meter;
+        this.osmRadius = einstellungen.osm_radius_meter;
+      }
+    } catch (err) {
+      console.warn("Einstellungen konnten nicht geladen werden:", err);
+    } finally {
+      this._einstellungenGeladen = true;
+    }
+  }
+
   async load() {
     if (!this.hass || this._loading) return;
     this._loading = true;
     try {
+      await this.ladeEinstellungen();
       const result = await this.call("hofkarte/management/list");
       this.items = result.hoflaeden || [];
       this._loaded = true;
@@ -228,7 +284,7 @@ class HofkartePanel extends HTMLElement {
   }
 
   empty() {
-    return { id: "", name: "", beschreibung: "", bemerkung: "", adresse: "", plz: "", ort: "", land: "", website: "", latitude: "", longitude: "", oeffnungszeiten: [], sonderoeffnungszeiten: [], angebote: [], zahlungsarten: [], bilder: [] };
+    return { id: "", name: "", beschreibung: "", bemerkung: "", adresse: "", plz: "", ort: "", land: "", website: "", mobilnummer: "", email: "", latitude: "", longitude: "", oeffnungszeiten: [], sonderoeffnungszeiten: [], angebote: [], zahlungsarten: [], bilder: [], bewertung: 0 };
   }
 
   clone(item) { return JSON.parse(JSON.stringify(item)); }
@@ -472,6 +528,8 @@ class HofkartePanel extends HTMLElement {
       plz: ort.plz || null,
       ort: ort.ort || null,
       website: ort.website || null,
+      mobilnummer: ort.mobilnummer || null,
+      email: ort.email || null,
       oeffnungszeiten: ort.oeffnungszeiten || [],
     };
   }
@@ -520,7 +578,7 @@ class HofkartePanel extends HTMLElement {
     const ziel = {};
     const quellen = {};
 
-    for (const feld of ["name", "beschreibung", "adresse", "plz", "ort", "land", "website"]) {
+    for (const feld of ["name", "beschreibung", "adresse", "plz", "ort", "land", "website", "mobilnummer", "email"]) {
       const w = websiteVorschlag?.[feld];
       const o = osmVorschlag?.[feld];
       if (w) {
@@ -715,7 +773,9 @@ class HofkartePanel extends HTMLElement {
     // "website" ist seit Issue #10 Teil der gemeinsamen Vorschlagsform
     // (osmOrtZuVorschlag()) - WebseiteInfo (Issue #8/#9) liefert dieses
     // Feld nicht, daher ändert die Ergänzung dessen Verhalten nicht.
-    for (const feld of ["name", "beschreibung", "adresse", "plz", "ort", "land", "website"]) {
+    // "mobilnummer"/"email" analog seit der Kontaktdaten-Erweiterung von
+    // beiden Quellen geliefert.
+    for (const feld of ["name", "beschreibung", "adresse", "plz", "ort", "land", "website", "mobilnummer", "email"]) {
       if (info[feld]) { this.editing[feld] = info[feld]; uebernommen = true; }
     }
 
@@ -772,6 +832,8 @@ class HofkartePanel extends HTMLElement {
     data.bemerkung = value("bemerkung") || null;
     data.adresse = value("adresse") || null; data.plz = value("plz") || null;
     data.ort = value("ort") || null; data.land = value("land") || null;
+    data.mobilnummer = value("mobilnummer") || null;
+    data.email = value("email") || null;
     data.website = value("website") || null;
     data.oeffnungszeiten = this.readOpeningHours(f);
     data.sonderoeffnungszeiten = [...f.querySelectorAll("[data-special]")].map(row => ({ datum_von: row.querySelector("[name=datum_von]").value, datum_bis: row.querySelector("[name=datum_bis]").value, geschlossen: row.querySelector("[name=geschlossen]").checked, beginn: row.querySelector("[name=beginn]").value || null, ende: row.querySelector("[name=ende]").value || null }));
@@ -882,7 +944,7 @@ class HofkartePanel extends HTMLElement {
     this.webseiteInfoVorschlag = null; this.autoErmittlungQuellen = null;
     this.autoErmittlungStatusText = ""; this.autoErmittlungStatusKind = "";
     this.osmOrteAuswahl = null; this._wartendesWebseiteErgebnis = null;
-    this.osmRadius = OSM_STANDARD_RADIUS_METER;
+    this.osmRadius = this._osmRadiusVorgabe;
     this.editing = item ? this.clone(item) : this.empty(); this.render();
   }
   cancel() {
@@ -971,9 +1033,17 @@ class HofkartePanel extends HTMLElement {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>-Mitwirkende',
     }).addTo(map);
 
-    const markerIcon = erzeugeKarteMarkerIcon(L);
+    // Je Status ein eigenes Icon (statt pro Marker neu erzeugt) - drei
+    // mögliche Werte (true/false/null bzw. undefined), daher reicht ein
+    // einfacher Cache über genau diese drei Fälle.
+    const markerIcons = {
+      offen: erzeugeKarteMarkerIcon(L, true),
+      geschlossen: erzeugeKarteMarkerIcon(L, false),
+      unbekannt: erzeugeKarteMarkerIcon(L, null),
+    };
+    const markerIconFuer = (geoeffnet) => geoeffnet === true ? markerIcons.offen : geoeffnet === false ? markerIcons.geschlossen : markerIcons.unbekannt;
     for (const item of markerItems) {
-      const marker = L.marker([item.latitude, item.longitude], { icon: markerIcon }).addTo(map);
+      const marker = L.marker([item.latitude, item.longitude], { icon: markerIconFuer(item.geoeffnet) }).addTo(map);
       marker.bindPopup(`<div class="karte-popup"><strong>${this.esc(item.name)}</strong><br><button type="button" class="link-button" data-karte-view>Zur Detailansicht</button></div>`);
       marker.on("popupopen", (e) => {
         e.popup.getElement()?.querySelector("[data-karte-view]")?.addEventListener("click", () => this.view(item));
@@ -1048,6 +1118,9 @@ class HofkartePanel extends HTMLElement {
       .karte-marker-icon{background:transparent;border:0}
       .karte-marker-svg{display:block}
       .karte-marker-pin{fill:var(--primary-color,#db4437);filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}
+      .karte-marker-pin-offen{fill:var(--success-color,#43a047)}
+      .karte-marker-pin-geschlossen{fill:var(--disabled-text-color,#9e9e9e)}
+      .karte-marker-pin-unbekannt{fill:var(--primary-color,#db4437)}
       .karte-marker-glyph{fill:#fff}
       .karte-popup{font-size:.95em}
       .karte-popup button{margin-top:6px}
@@ -1128,6 +1201,13 @@ class HofkartePanel extends HTMLElement {
       .webseite-info-zeile{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--divider-color);font-size:.95em}
       .webseite-info-zeile:last-of-type{border-bottom:0}
       .webseite-info-label{font-weight:500;flex:0 0 auto}
+      .sterne-reihe{display:flex;justify-content:center;gap:4px;margin-top:4px}
+      .stern-btn{background:none;border:0;padding:2px;font-size:1.8em;line-height:1;cursor:pointer;color:var(--secondary-text-color,#888)}
+      .stern-btn.stern-gefuellt{color:var(--warning-color,#f5a623)}
+      .stern-btn:not(.stern-anzeige):hover,.stern-btn:not(.stern-anzeige):focus-visible{color:var(--warning-color,#f5a623);outline:none}
+      .stern-anzeige{cursor:default;font-size:1.5em}
+      .bewertung-klein{font-size:.85em;color:var(--secondary-text-color);margin-top:2px}
+      .kontakt-zeile{margin:4px 0}
     `;
   }
 
@@ -1184,7 +1264,7 @@ class HofkartePanel extends HTMLElement {
       <h2><button type="button" class="link-button" data-view="${item.id}">${this.esc(item.name)}</button></h2>
       ${adresse ? `<div>${this.esc(adresse)}</div>` : ""}
       ${this.websiteLinkHtml(item.website)}
-      <div>${this.geoeffnetBadge(item.geoeffnet)}</div>
+      <div>${this.geoeffnetBadge(item.geoeffnet)}${item.bewertung ? ` <span class="bewertung-klein">${"★".repeat(item.bewertung)}</span>` : ""}</div>
       <div class="coord-actions">${this.routingAuswahl(item)}</div>
       <div class="actions">
         <button class="secondary" data-view="${item.id}">Details</button>
@@ -1209,6 +1289,7 @@ class HofkartePanel extends HTMLElement {
       const wert = (item) => {
         if (spalte === "adresse") return [item.adresse, item.plz, item.ort, item.land].filter(Boolean).join(", ").toLowerCase();
         if (spalte === "geoeffnet") return item.geoeffnet === true ? 2 : item.geoeffnet === false ? 1 : 0;
+        if (spalte === "bewertung") return Number(item.bewertung) || 0;
         return String(item[spalte] || "").toLowerCase();
       };
       ergebnis = [...ergebnis].sort((a, b) => {
@@ -1234,6 +1315,7 @@ class HofkartePanel extends HTMLElement {
               <th><button type="button" class="table-sort" data-sort="name">Name${pfeil("name")}</button></th>
               <th><button type="button" class="table-sort" data-sort="adresse">Adresse${pfeil("adresse")}</button></th>
               <th><button type="button" class="table-sort" data-sort="geoeffnet">Status${pfeil("geoeffnet")}</button></th>
+              <th><button type="button" class="table-sort" data-sort="bewertung">Bewertung${pfeil("bewertung")}</button></th>
               <th>Route</th>
             </tr>
           </thead>
@@ -1245,9 +1327,10 @@ class HofkartePanel extends HTMLElement {
                 <td><button type="button" class="link-button" data-view="${item.id}">${this.esc(item.name)}</button></td>
                 <td>${this.esc(adresse) || '<span class="muted">–</span>'}</td>
                 <td>${this.geoeffnetBadge(item.geoeffnet)}</td>
+                <td>${item.bewertung ? "★".repeat(item.bewertung) : '<span class="muted">–</span>'}</td>
                 <td>${this.routingAuswahl(item)}</td>
               </tr>`;
-            }).join("") : `<tr><td colspan="5" class="muted">Keine Treffer für diesen Filter.</td></tr>`}
+            }).join("") : `<tr><td colspan="6" class="muted">Keine Treffer für diesen Filter.</td></tr>`}
           </tbody>
         </table>
       </div>`;
@@ -1391,8 +1474,9 @@ class HofkartePanel extends HTMLElement {
   diffFelder(bestehend, importiert) {
     const skalar = [
       ["name", "Name"], ["adresse", "Adresse"], ["plz", "PLZ"], ["ort", "Ort"], ["land", "Land"],
-      ["website", "Website"], ["beschreibung", "Beschreibung"], ["bemerkung", "Bemerkung"],
-      ["latitude", "Latitude"], ["longitude", "Longitude"],
+      ["website", "Website"], ["mobilnummer", "Mobilnummer"], ["email", "E-Mail"],
+      ["beschreibung", "Beschreibung"], ["bemerkung", "Bemerkung"],
+      ["latitude", "Latitude"], ["longitude", "Longitude"], ["bewertung", "Bewertung"],
     ];
     const sammlungen = [
       ["oeffnungszeiten", "Öffnungszeiten"], ["sonderoeffnungszeiten", "Sonderöffnungszeiten"],
@@ -1503,6 +1587,8 @@ class HofkartePanel extends HTMLElement {
         <div>${adresse ? this.esc(adresse) : '<span class="muted">Keine Adresse hinterlegt</span>'}</div>
       </section>
 
+      ${this.detailKontaktSection(d)}
+
       <section class="card detail-section">
         <h3>Standort / Koordinaten</h3>
         <div class="coord-row">
@@ -1510,8 +1596,6 @@ class HofkartePanel extends HTMLElement {
         </div>
         <div class="coord-actions">${this.routingAuswahl(d)}</div>
       </section>
-
-      ${this.websiteLinkBlock(d.website)}
 
       <section class="card detail-section">
         <h3>Öffnungszeiten</h3>
@@ -1523,6 +1607,11 @@ class HofkartePanel extends HTMLElement {
       ${this.detailPillSection("Zahlungsarten", d.zahlungsarten)}
 
       ${(d.bilder || []).length ? `<section class="card detail-section"><h3>Bilder</h3><div class="thumbs">${d.bilder.map(b => `<img src="${this.escAttr(b.url)}" alt="${this.escAttr(b.beschreibung || d.name)}" loading="lazy">`).join("")}</div></section>` : ""}
+
+      <section class="card detail-section">
+        <h3>Bewertung</h3>
+        ${this.bewertungSterne(d.bewertung || 0, false)}
+      </section>
     `;
   }
 
@@ -1546,6 +1635,32 @@ class HofkartePanel extends HTMLElement {
     const inhalt = this.websiteLinkHtml(website);
     if (!inhalt) return "";
     return `<section class="card detail-section"><h3>Webseite</h3>${inhalt}</section>`;
+  }
+
+  /** Abschnitt "Kontakt" der Detailansicht: Mobilnummer (tel:-Link),
+   * E-Mail (mailto:-Link) und Webseite (dieselbe Darstellung wie zuvor
+   * im eigenständigen "Webseite"-Abschnitt, siehe websiteLinkHtml()) -
+   * unmittelbar nach "Adresse" und vor "Standort / Koordinaten". Entfällt
+   * vollständig, wenn keines der drei Felder gesetzt ist (wie bei den
+   * übrigen bedingten Abschnitten dieser Ansicht). */
+  detailKontaktSection(d) {
+    const mobilnummer = (d.mobilnummer || "").trim();
+    const email = (d.email || "").trim();
+    const websiteHtml = this.websiteLinkHtml(d.website);
+    if (!mobilnummer && !email && !websiteHtml) return "";
+
+    const zeilen = [];
+    if (mobilnummer) {
+      zeilen.push(`<div class="kontakt-zeile"><a class="website-link" href="tel:${this.escAttr(mobilnummer.replace(/[^\d+]/g, ""))}">📞 ${this.esc(mobilnummer)}</a></div>`);
+    }
+    if (email) {
+      zeilen.push(`<div class="kontakt-zeile"><a class="website-link" href="mailto:${this.escAttr(email)}">✉️ ${this.esc(email)}</a></div>`);
+    }
+    if (websiteHtml) {
+      zeilen.push(`<div class="kontakt-zeile">${websiteHtml}</div>`);
+    }
+
+    return `<section class="card detail-section"><h3>Kontakt</h3>${zeilen.join("")}</section>`;
   }
 
   detailOpeningHours(rows) {
@@ -1642,6 +1757,8 @@ class HofkartePanel extends HTMLElement {
         <section class=card>
           <h2>Kontakt &amp; Webseite</h2>
           <div class="fields">
+            <div class="field-row">${this.input("Mobilnummer", "mobilnummer", d.mobilnummer || "")}</div>
+            <div class="field-row">${this.input("E-Mail", "email", d.email || "")}</div>
             <div class="field-row">${this.input("Webseite", "website", d.website || "")}</div>
           </div>
         </section>
@@ -1689,6 +1806,11 @@ class HofkartePanel extends HTMLElement {
               <button type="button" class="secondary" data-add-external-url>Hinzufügen</button>
             </div>
           </details>
+        </section>
+
+        <section class=card>
+          <h2>Bewertung</h2>
+          ${this.bewertungSterne(d.bewertung || 0, true)}
         </section>
 
         <div class=actions>
@@ -1744,6 +1866,8 @@ class HofkartePanel extends HTMLElement {
         ${zeile("Beschreibung", info.beschreibung, "beschreibung")}
         ${zeile("Adresse", adresse, "adresse")}
         ${zeile("Webseite", info.website, "website")}
+        ${zeile("Telefon", info.mobilnummer, "mobilnummer")}
+        ${zeile("E-Mail", info.email, "email")}
         ${zeile("Öffnungszeiten", oeffnungszeitenText, "oeffnungszeiten")}
         ${zeile("Angebote", namenListe(info.angebote), "angebote")}
         ${zeile("Zahlungsarten", namenListe(info.zahlungsarten), "zahlungsarten")}
@@ -1809,6 +1933,43 @@ class HofkartePanel extends HTMLElement {
         <button type="button" class="danger" data-bild-entfernen="${i}" title="Bild entfernen">🗑️</button>
       </div>
     </div>`).join("");
+  }
+
+  /** Sterne-Darstellung einer Bewertung (0-5), gemeinsam genutzt vom
+   * interaktiven Editor-Abschnitt "Bewertung" und der nur anzeigenden
+   * Detailansicht (``interaktiv=false``). Horizontal zentriert (siehe
+   * .sterne-reihe). Im interaktiven Modus ist jedes Symbol ein eigener
+   * Button (data-bewertung-stern="n") statt eines einzigen Schiebereglers
+   * - das bildet die geforderte "Klick auf das n-te Symbol setzt
+   * Bewertung auf n"-Logik unmittelbar ab, ohne eine zusätzliche
+   * Positions-/Breitenberechnung aus einem Klickereignis ableiten zu
+   * müssen. */
+  bewertungSterne(wert, interaktiv = false) {
+    const aktuell = Math.max(0, Math.min(BEWERTUNG_MAX, Number(wert) || 0));
+    const symbole = [];
+    for (let n = 1; n <= BEWERTUNG_MAX; n++) {
+      const gefuellt = n <= aktuell;
+      const glyph = gefuellt ? "★" : "☆";
+      if (interaktiv) {
+        symbole.push(`<button type="button" class="stern-btn${gefuellt ? " stern-gefuellt" : ""}" data-bewertung-stern="${n}" aria-label="${n} von ${BEWERTUNG_MAX} Sternen" aria-pressed="${gefuellt}">${glyph}</button>`);
+      } else {
+        symbole.push(`<span class="stern-btn stern-anzeige${gefuellt ? " stern-gefuellt" : ""}" aria-hidden="true">${glyph}</span>`);
+      }
+    }
+    return `<div class="sterne-reihe" role="${interaktiv ? "group" : "img"}" aria-label="Bewertung: ${aktuell} von ${BEWERTUNG_MAX} Sternen">${symbole.join("")}</div>`;
+  }
+
+  /** Setzt die Bewertung auf ``wert`` (1-5) bzw. auf 0, wenn erneut auf
+   * das aktuell zuletzt gefüllte Symbol geklickt wird (einzige
+   * Möglichkeit, 0 zu erreichen - siehe Anforderung "Bewertung").
+   * Sichert vorher den übrigen Formularzustand (erfasseFormularZustand()),
+   * da render() das Formular danach komplett neu aufbaut (analog zu
+   * setHauptbild()/removeBild()). */
+  setBewertung(wert) {
+    if (!this.editing) return;
+    this.erfasseFormularZustand();
+    this.editing.bewertung = (this.editing.bewertung === wert) ? 0 : wert;
+    this.render();
   }
 
   coordInfoBox() {
@@ -2057,6 +2218,11 @@ class HofkartePanel extends HTMLElement {
       this.addExternalUrl(input?.value);
       if (input) input.value = "";
     });
+
+    // --- Bewertung (interaktiver Sterne-Editor) ---
+    this.shadowRoot.querySelectorAll("[data-bewertung-stern]").forEach(b =>
+      b.addEventListener("click", () => this.setBewertung(Number(b.dataset.bewertungStern)))
+    );
   }
 
   esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c])); }

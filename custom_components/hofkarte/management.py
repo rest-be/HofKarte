@@ -19,7 +19,15 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import (
+    CONF_LISTEN_SORT_RICHTUNG,
+    CONF_LISTEN_SORT_SPALTE,
+    CONF_OSM_RADIUS_METER,
+    DEFAULT_LISTEN_SORT_RICHTUNG,
+    DEFAULT_LISTEN_SORT_SPALTE,
+    DEFAULT_OSM_RADIUS_METER,
+    DOMAIN,
+)
 from .coordinator import HofKarteUpdateCoordinator
 from .data_provider import HofladenNotFoundError
 from .images import get_main_image_url
@@ -28,7 +36,6 @@ from .opening_hours import is_open
 from .osm_info import (
     MAX_RADIUS_METER,
     MIN_RADIUS_METER,
-    STANDARD_RADIUS_METER,
     OsmKeineOrteGefundenError,
     OsmNichtErreichbarError,
     OsmUngueltigeKoordinatenError,
@@ -49,6 +56,7 @@ WS_IMPORT_PREVIEW = "hofkarte/management/import_preview"
 WS_IMPORT_COMMIT = "hofkarte/management/import_commit"
 WS_WEBSEITE_INFO = "hofkarte/management/webseite_info"
 WS_OSM_INFO = "hofkarte/management/osm_info"
+WS_SETTINGS = "hofkarte/management/settings"
 
 # Gültige Werte für "aktion" in einem einzelnen Eintrag von
 # WS_IMPORT_COMMIT (siehe ws_import_commit()).
@@ -157,6 +165,44 @@ def _get_coordinator(hass: HomeAssistant) -> HofKarteUpdateCoordinator:
             "HofKarte ist nicht eingerichtet oder nicht eindeutig geladen."
         )
     return next(iter(entries.values()))
+
+
+def _settings(coordinator: HofKarteUpdateCoordinator) -> dict[str, Any]:
+    """Dauerhaft gespeicherte Einstellungen (Options Flow) mit Vorgabewerten
+    für fehlende Schlüssel ermitteln (z. B. eine noch nie über den Options
+    Flow bestätigte Config Entry - diese hat ``options == {}``)."""
+    optionen = (coordinator.config_entry.options if coordinator.config_entry else None) or {}
+    return {
+        CONF_LISTEN_SORT_SPALTE: optionen.get(
+            CONF_LISTEN_SORT_SPALTE, DEFAULT_LISTEN_SORT_SPALTE
+        ),
+        CONF_LISTEN_SORT_RICHTUNG: optionen.get(
+            CONF_LISTEN_SORT_RICHTUNG, DEFAULT_LISTEN_SORT_RICHTUNG
+        ),
+        CONF_OSM_RADIUS_METER: optionen.get(
+            CONF_OSM_RADIUS_METER, DEFAULT_OSM_RADIUS_METER
+        ),
+    }
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_SETTINGS})
+@websocket_api.require_admin
+@callback
+def ws_settings(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Dauerhaft gespeicherte Einstellungen (Options Flow, siehe
+    ``config_flow.HofKarteOptionsFlow``) an die Verwaltungsoberfläche
+    liefern - dient dort als Vorgabewert für Sortierung und OSM-
+    Suchradius beim erstmaligen Laden eines Formulars/der Übersicht
+    (siehe ``static/hofkarte-panel.js``, Initialisierung)."""
+    try:
+        coordinator = _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    connection.send_result(msg["id"], {"einstellungen": _settings(coordinator)})
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_LIST})
@@ -466,7 +512,7 @@ async def ws_webseite_info(
         vol.Required("type"): WS_OSM_INFO,
         vol.Required("latitude"): vol.Coerce(float),
         vol.Required("longitude"): vol.Coerce(float),
-        vol.Optional("radius", default=STANDARD_RADIUS_METER): vol.All(
+        vol.Optional("radius"): vol.All(
             vol.Coerce(int), vol.Range(min=MIN_RADIUS_METER, max=MAX_RADIUS_METER)
         ),
     }
@@ -501,26 +547,38 @@ async def ws_osm_info(
     Zustand aufrufen kann, konsistent mit ``ws_list``/``ws_save``/
     ``ws_webseite_info``.
 
-    ``radius`` ist seit Issue #11 optional (Standardwert
-    ``STANDARD_RADIUS_METER``) und wird bereits über das
-    Nachrichtenschema auf ``MIN_RADIUS_METER``-``MAX_RADIUS_METER``
-    begrenzt (ein Wert ausserhalb dieses Bereichs führt zu einem
+    ``radius`` ist seit Issue #11 optional (fehlt er, greift der über den
+    Options Flow dauerhaft gespeicherte Vorgabewert, siehe ``_settings``)
+    und wird bereits über das Nachrichtenschema auf
+    ``MIN_RADIUS_METER``-``MAX_RADIUS_METER`` begrenzt (ein Wert
+    ausserhalb dieses Bereichs führt zu einem
     regulären Schema-Validierungsfehler der Verwaltungsoberfläche); die
     zusätzliche Begrenzung in ``async_ermittle_osm_orte`` selbst bleibt
     als zweite, unabhängige Absicherung bestehen (siehe ``osm_info.py``).
     """
     try:
-        _get_coordinator(hass)
+        coordinator = _get_coordinator(hass)
     except ValueError as err:
         connection.send_error(msg["id"], "not_ready", str(err))
         return
+
+    # Ohne vom Aufrufer angegebenen Radius greift der über den Options
+    # Flow dauerhaft gespeicherte Vorgabewert (Fallback auf
+    # ``STANDARD_RADIUS_METER``, falls keine Config Entry ermittelbar
+    # ist) - siehe Moduldoc von ``config_flow.py``. Die Verwaltungs-
+    # oberfläche selbst sendet den Radius inzwischen ohnehin stets
+    # explizit (initialisiert aus ``ws_settings``), dieser Fallback
+    # greift daher primär für andere WebSocket-Aufrufer.
+    radius = msg.get("radius")
+    if radius is None:
+        radius = _settings(coordinator)[CONF_OSM_RADIUS_METER]
 
     try:
         orte = await async_ermittle_osm_orte(
             hass,
             msg["latitude"],
             msg["longitude"],
-            radius_meter=msg.get("radius", STANDARD_RADIUS_METER),
+            radius_meter=radius,
         )
     except OsmUngueltigeKoordinatenError as err:
         connection.send_error(msg["id"], "invalid_coordinates", str(err))
@@ -546,3 +604,4 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_import_commit)
     websocket_api.async_register_command(hass, ws_webseite_info)
     websocket_api.async_register_command(hass, ws_osm_info)
+    websocket_api.async_register_command(hass, ws_settings)

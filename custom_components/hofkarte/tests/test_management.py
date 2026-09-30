@@ -12,7 +12,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import Unauthorized
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.hofkarte.const import DOMAIN
+from custom_components.hofkarte.const import (
+    CONF_LISTEN_SORT_RICHTUNG,
+    CONF_LISTEN_SORT_SPALTE,
+    CONF_OSM_RADIUS_METER,
+    DEFAULT_LISTEN_SORT_RICHTUNG,
+    DEFAULT_LISTEN_SORT_SPALTE,
+    DEFAULT_OSM_RADIUS_METER,
+    DOMAIN,
+)
 from custom_components.hofkarte.coordinator import HofKarteUpdateCoordinator
 from custom_components.hofkarte.data_provider import HofladenDataProvider
 from custom_components.hofkarte.management import (
@@ -27,6 +35,7 @@ from custom_components.hofkarte.management import (
     ws_list,
     ws_osm_info,
     ws_save,
+    ws_settings,
     ws_webseite_info,
 )
 from custom_components.hofkarte.models import Hofladen, Oeffnungszeit
@@ -480,6 +489,7 @@ async def test_async_register_websocket_commands_registriert_alle_drei(
     assert "hofkarte/management/list" in ws_handlers
     assert "hofkarte/management/save" in ws_handlers
     assert "hofkarte/management/delete" in ws_handlers
+    assert "hofkarte/management/settings" in ws_handlers
 
 
 # ---------------------------------------------------------------------------
@@ -1347,13 +1357,17 @@ async def test_ws_osm_info_ohne_eingerichtete_integration_sendet_fehler(
 # ---------------------------------------------------------------------------
 
 
-def test_ws_osm_info_schema_setzt_standard_radius_ohne_angabe() -> None:
-    """Ohne explizite Angabe wird der Standardradius aus osm_info.py
-    verwendet (siehe Nachrichtenschema von ws_osm_info)."""
+def test_ws_osm_info_schema_ohne_angabe_hat_keinen_radius_schluessel() -> None:
+    """Seit dem Options Flow (dauerhaft gespeicherter Standardwert statt
+    eines im Nachrichtenschema fest hinterlegten Standards) fehlt der
+    Schlüssel ``radius`` im geparsten Ergebnis, wenn er nicht mitgegeben
+    wurde - der tatsächliche Vorgabewert wird stattdessen erst innerhalb
+    von ``ws_osm_info`` über ``_settings()`` ermittelt (siehe dortigen
+    Test ``test_ws_osm_info_verwendet_gespeicherten_radius_ohne_angabe``)."""
     ergebnis = ws_osm_info._ws_schema(
         {"type": "hofkarte/management/osm_info", "latitude": 46.9, "longitude": 7.4, "id": 1}
     )
-    assert ergebnis["radius"] == 50
+    assert "radius" not in ergebnis
 
 
 def test_ws_osm_info_schema_akzeptiert_gueltigen_radius() -> None:
@@ -1424,4 +1438,93 @@ async def test_ws_osm_info_gibt_radius_an_async_ermittle_osm_orte_weiter(
         await hass.async_block_till_done()
 
     fake.assert_called_once_with(hass, 46.948, 7.4474, radius_meter=200)
+
+
+async def test_ws_osm_info_verwendet_gespeicherten_radius_ohne_angabe(
+    hass: HomeAssistant,
+) -> None:
+    """Ohne explizit angegebenen Radius muss der über den Options Flow
+    dauerhaft gespeicherte Vorgabewert verwendet werden (siehe
+    management._settings(), config_flow.HofKarteOptionsFlow)."""
+    coordinator = await _setup_mit_coordinator(hass)
+    hass.config_entries.async_update_entry(
+        coordinator.config_entry, options={CONF_OSM_RADIUS_METER: 777}
+    )
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_osm_orte"
+    ) as fake:
+        fake.return_value = (OsmOrt(name="Hofladen X"),)
+
+        connection = _FakeConnection()
+        ws_osm_info(
+            hass,
+            connection,
+            {
+                "id": 61,
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.948,
+                "longitude": 7.4474,
+            },
+        )
+        await hass.async_block_till_done()
+
+    fake.assert_called_once_with(hass, 46.948, 7.4474, radius_meter=777)
+
+
+# ---------------------------------------------------------------------------
+# ws_settings (Options Flow: dauerhaft gespeicherte Einstellungen)
+# ---------------------------------------------------------------------------
+
+
+async def test_ws_settings_liefert_vorgabewerte_ohne_gespeicherte_optionen(
+    hass: HomeAssistant,
+) -> None:
+    await _setup_mit_coordinator(hass)
+
+    connection = _FakeConnection()
+    ws_settings(hass, connection, {"id": 70, "type": "hofkarte/management/settings"})
+    await hass.async_block_till_done()
+
+    msg_id, data = connection.results[0]
+    assert msg_id == 70
+    assert data["einstellungen"] == {
+        CONF_LISTEN_SORT_SPALTE: DEFAULT_LISTEN_SORT_SPALTE,
+        CONF_LISTEN_SORT_RICHTUNG: DEFAULT_LISTEN_SORT_RICHTUNG,
+        CONF_OSM_RADIUS_METER: DEFAULT_OSM_RADIUS_METER,
+    }
+
+
+async def test_ws_settings_liefert_gespeicherte_optionen(
+    hass: HomeAssistant,
+) -> None:
+    coordinator = await _setup_mit_coordinator(hass)
+    hass.config_entries.async_update_entry(
+        coordinator.config_entry,
+        options={
+            CONF_LISTEN_SORT_SPALTE: "bewertung",
+            CONF_LISTEN_SORT_RICHTUNG: "desc",
+            CONF_OSM_RADIUS_METER: 500,
+        },
+    )
+
+    connection = _FakeConnection()
+    ws_settings(hass, connection, {"id": 71, "type": "hofkarte/management/settings"})
+    await hass.async_block_till_done()
+
+    _msg_id, data = connection.results[0]
+    assert data["einstellungen"][CONF_LISTEN_SORT_SPALTE] == "bewertung"
+    assert data["einstellungen"][CONF_LISTEN_SORT_RICHTUNG] == "desc"
+    assert data["einstellungen"][CONF_OSM_RADIUS_METER] == 500
+
+
+def test_ws_settings_ohne_eingerichtete_integration_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    connection = _FakeConnection()
+    ws_settings(hass, connection, {"id": 72, "type": "hofkarte/management/settings"})
+
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 72
+    assert code == "not_ready"
 

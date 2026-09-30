@@ -130,6 +130,8 @@ class Hofladen:
     ort: str | None = None
     land: str | None = None
     website: str | None = None
+    mobilnummer: str | None = None
+    email: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     oeffnungszeiten: tuple[Oeffnungszeit, ...] = ()
@@ -137,3 +139,8 @@ class Hofladen:
     angebote: tuple[Angebot, ...] = ()
     zahlungsarten: tuple[Zahlungsart, ...] = ()
     bilder: tuple[Bild, ...] = ()
+    # Bewertung (0-5 Sterne, 0 = unbewertet). Bewusst ein einfacher Integer
+    # statt eines eigenen Typs: Der Wertebereich ist klein und fest, eine
+    # eigene Klasse würde hier keinen zusätzlichen Nutzen bringen (siehe
+    # ``parsing.py`` für die Begrenzung/Validierung auf 0-5 beim Einlesen).
+    bewertung: int = 0

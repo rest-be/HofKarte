@@ -35,7 +35,7 @@ def test_panel_js_definiert_eigene_marker_icon_funktion() -> None:
     existieren, statt sich auf Leaflets defekte Standard-Icon-Erkennung
     zu verlassen."""
     quelltext = _lade_panel_js()
-    assert "function erzeugeKarteMarkerIcon(L)" in quelltext
+    assert "function erzeugeKarteMarkerIcon(L, geoeffnet)" in quelltext
     assert "L.divIcon(" in quelltext
 
 
@@ -54,16 +54,19 @@ def test_panel_js_verlaesst_sich_nicht_mehr_auf_icon_default() -> None:
 def test_panel_js_marker_erzeugung_uebergibt_icon_option() -> None:
     """``L.marker(...)`` muss die selbst erzeugte Icon-Option erhalten,
     statt Leaflet ohne ``icon:``-Option das (defekte) Standardbild
-    wählen zu lassen."""
+    wählen zu lassen. Seit der Marker-Einfärbung nach Öffnungsstatus wird
+    das Icon pro Marker über ``markerIconFuer(item.geoeffnet)`` ermittelt
+    statt eines einzigen, für alle Marker gleichen ``markerIcon``."""
     quelltext = _lade_panel_js()
     treffer = re.search(
         r"const marker = L\.marker\(\[item\.latitude, item\.longitude\],\s*"
-        r"\{\s*icon:\s*markerIcon\s*\}\)\.addTo\(map\);",
+        r"\{\s*icon:\s*markerIconFuer\(item\.geoeffnet\)\s*\}\)\.addTo\(map\);",
         quelltext,
     )
     assert treffer, (
-        "L.marker(...) übergibt keine 'icon: markerIcon'-Option - "
-        "Marker würden weiterhin Leaflets defektes Standardbild verwenden."
+        "L.marker(...) übergibt keine passende 'icon: markerIconFuer(...)'-"
+        "Option - Marker würden weiterhin Leaflets defektes Standardbild "
+        "verwenden bzw. nicht mehr nach Status eingefärbt."
     )
 
 
@@ -74,7 +77,7 @@ def test_panel_js_marker_icon_html_enthaelt_kein_img_und_keine_url() -> None:
     Handbuch)."""
     quelltext = _lade_panel_js()
     match = re.search(
-        r"function erzeugeKarteMarkerIcon\(L\) \{(.*?)\n\}",
+        r"function erzeugeKarteMarkerIcon\(L, geoeffnet\) \{(.*?)\n\}",
         quelltext,
         re.DOTALL,
     )

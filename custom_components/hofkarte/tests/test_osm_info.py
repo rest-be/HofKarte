@@ -405,6 +405,8 @@ async def test_vollstaendiges_element_liefert_alle_felder(
             "addr:postcode": "3000",
             "addr:city": "Bern",
             "website": "https://hofladen-muster.example",
+            "phone": "+41 79 123 45 67",
+            "email": "info@hofladen-muster.example",
             "opening_hours": "Mo-Fr 08:00-18:00",
         },
     }
@@ -420,6 +422,8 @@ async def test_vollstaendiges_element_liefert_alle_felder(
     assert ort.plz == "3000"
     assert ort.ort == "Bern"
     assert ort.website == "https://hofladen-muster.example"
+    assert ort.mobilnummer == "+41 79 123 45 67"
+    assert ort.email == "info@hofladen-muster.example"
     assert ort.oeffnungszeiten == (
         {"wochentag": 1, "beginn": "08:00", "ende": "18:00"},
         {"wochentag": 2, "beginn": "08:00", "ende": "18:00"},
@@ -441,6 +445,25 @@ async def test_contact_website_fallback(
 
     orte = await async_ermittle_osm_orte(hass, 46.948, 7.4474)
     assert orte[0].website == "https://beispiel.example"
+
+
+async def test_contact_phone_und_email_fallback(
+    hass: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    element = {
+        "type": "node", "lat": 46.949, "lon": 7.448,
+        "tags": {
+            "name": "Hofladen", "shop": "farm",
+            "contact:phone": "+41 79 123 45 67",
+            "contact:email": "info@beispiel.example",
+        },
+    }
+    session = _FakeSession([_FakeResponse(body=_overpass_antwort([element]))])
+    _patch_session(monkeypatch, session)
+
+    orte = await async_ermittle_osm_orte(hass, 46.948, 7.4474)
+    assert orte[0].mobilnummer == "+41 79 123 45 67"
+    assert orte[0].email == "info@beispiel.example"
 
 
 async def test_elemente_ohne_namen_werden_verworfen(

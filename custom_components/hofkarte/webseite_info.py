@@ -232,6 +232,30 @@ _ADRESSE_TEXT_MUSTER = re.compile(
 )
 
 
+# Erkennt Standard-E-Mail-Adressen im sichtbaren Seitentext (Issue für
+# Mobilnummer/E-Mail-Auto-Ermittlung). Bewusst eine einfache, gängige
+# Teilmenge der RFC-5322-Syntax statt eines vollständig konformen Musters -
+# für die hier relevanten, von Menschen auf einer Website veröffentlichten
+# Kontaktadressen ist das ausreichend ("lieber nichts als falsch": eine
+# exotische, technisch zwar gültige aber untypische Adresse wird im
+# Zweifel nicht erkannt, statt eine falsche Interpretation zu riskieren).
+_EMAIL_TEXT_MUSTER = re.compile(
+    r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
+)
+
+# Erkennt im DACH-Raum übliche Telefonnummern-Schreibweisen, z. B.
+# "+41 79 123 45 67", "079 123 45 67" oder "0791234567". Erfordert eine
+# führende "+" (internationale Vorwahl) oder eine führende "0" (nationale
+# Schreibweise) sowie insgesamt mindestens 9 Ziffern, damit nicht
+# beliebige kurze Ziffernfolgen (z. B. Postleitzahlen, Jahreszahlen)
+# fälschlich als Telefonnummer erkannt werden. Leerzeichen, Schrägstriche
+# und Bindestriche innerhalb der Nummer sind erlaubt (im Feld selbst
+# unverändert übernommen, siehe ``_extrahiere_kontakt_aus_text``).
+_TELEFON_TEXT_MUSTER = re.compile(
+    r"(?<![\d/])(\+\d{2}|0)[ \t]?\d{2}[ \t/\-]?\d{3}[ \t/\-]?\d{2}[ \t/\-]?\d{2}(?!\d)"
+)
+
+
 def _hat_strassen_endung(wort: str) -> bool:
     wort_klein = wort.lower()
     return any(wort_klein.endswith(endung) for endung in _STRASSEN_ENDUNGEN)
@@ -272,6 +296,8 @@ class WebseiteInfo:
     plz: str | None = None
     ort: str | None = None
     land: str | None = None
+    mobilnummer: str | None = None
+    email: str | None = None
     oeffnungszeiten: tuple[dict[str, Any], ...] = ()
     angebote: tuple[str, ...] = ()
     zahlungsarten: tuple[str, ...] = ()
@@ -285,6 +311,8 @@ class WebseiteInfo:
             or self.plz
             or self.ort
             or self.land
+            or self.mobilnummer
+            or self.email
             or self.oeffnungszeiten
             or self.angebote
             or self.zahlungsarten
@@ -509,6 +537,36 @@ def _extrahiere_oeffnungszeiten(obj: dict[str, Any]) -> tuple[dict[str, Any], ..
     return tuple(ergebnis)
 
 
+def _extrahiere_kontakt(obj: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Mobilnummer/Telefon (``telephone``) und E-Mail (``email``) aus dem
+    JSON-LD-Businessobjekt lesen, sofern vorhanden. Beide Felder sind laut
+    schema.org einfache Zeichenketten - keine strukturierte Auswertung
+    nötig, anders als z. B. ``address``."""
+    return _str_or_none(obj.get("telephone")), _str_or_none(obj.get("email"))
+
+
+def _extrahiere_kontakt_aus_text(
+    text: str,
+) -> tuple[str | None, str | None]:
+    """Fallback-Erkennung von Mobilnummer/Telefon und E-Mail im sichtbaren
+    Seitentext, falls JSON-LD keine (oder keine vollständigen)
+    Kontaktangaben liefert.
+
+    Bewusst konservativ (Prinzip "lieber nichts als falsch", siehe
+    Moduldoc): Werden im Text **mehrere unterschiedliche** Treffer für
+    dasselbe Feld gefunden, ist das Ergebnis uneindeutig - dann wird für
+    dieses Feld kein Vorschlag geliefert (identische Wiederholungen, z. B.
+    im Kopf- und Fussbereich der Seite, zählen dabei nicht als
+    Widerspruch). Beide Felder werden unabhängig voneinander ausgewertet.
+    """
+    telefon_treffer = {m.group(0).strip() for m in _TELEFON_TEXT_MUSTER.finditer(text)}
+    email_treffer = {m.group(0).strip() for m in _EMAIL_TEXT_MUSTER.finditer(text)}
+
+    telefon = next(iter(telefon_treffer)) if len(telefon_treffer) == 1 else None
+    email = next(iter(email_treffer)) if len(email_treffer) == 1 else None
+    return telefon, email
+
+
 def _extrahiere_zahlungsarten(obj: dict[str, Any]) -> tuple[str, ...]:
     wert = obj.get("paymentAccepted")
     if isinstance(wert, str):
@@ -685,6 +743,8 @@ def _extrahiere_aus_html(html_text: str) -> WebseiteInfo:
     name: str | None = None
     beschreibung: str | None = None
     adresse = plz = ort = land = None
+    mobilnummer: str | None = None
+    email: str | None = None
     oeffnungszeiten: tuple[dict[str, Any], ...] = ()
     angebote: tuple[str, ...] = ()
     zahlungsarten: tuple[str, ...] = ()
@@ -693,6 +753,7 @@ def _extrahiere_aus_html(html_text: str) -> WebseiteInfo:
         name = _str_or_none(business.get("name"))
         beschreibung = _str_or_none(business.get("description"))
         adresse, plz, ort, land = _extrahiere_adresse(business)
+        mobilnummer, email = _extrahiere_kontakt(business)
         oeffnungszeiten = _extrahiere_oeffnungszeiten(business)
         angebote = _extrahiere_angebote(business)
         zahlungsarten = _extrahiere_zahlungsarten(business)
@@ -725,6 +786,20 @@ def _extrahiere_aus_html(html_text: str) -> WebseiteInfo:
     if not oeffnungszeiten:
         oeffnungszeiten = _extrahiere_oeffnungszeiten_aus_text(parser.sichtbarer_text())
 
+    # Mobilnummer/E-Mail per Text-Heuristik nur ergänzen, wenn JSON-LD das
+    # jeweilige Feld nicht geliefert hat - je Feld unabhängig, analog zu
+    # Öffnungszeiten (nicht wie bei der Adresse "alles oder nichts", da
+    # Telefon und E-Mail inhaltlich unabhängige Einzelwerte ohne
+    # gegenseitige Konsistenzbeziehung sind).
+    if mobilnummer is None or email is None:
+        text_mobilnummer, text_email = _extrahiere_kontakt_aus_text(
+            parser.sichtbarer_text()
+        )
+        if mobilnummer is None:
+            mobilnummer = text_mobilnummer
+        if email is None:
+            email = text_email
+
     return WebseiteInfo(
         name=name,
         beschreibung=beschreibung,
@@ -732,6 +807,8 @@ def _extrahiere_aus_html(html_text: str) -> WebseiteInfo:
         plz=plz,
         ort=ort,
         land=land,
+        mobilnummer=mobilnummer,
+        email=email,
         oeffnungszeiten=oeffnungszeiten,
         angebote=angebote,
         zahlungsarten=zahlungsarten,

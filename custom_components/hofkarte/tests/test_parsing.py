@@ -374,3 +374,58 @@ def test_parse_bild_hochgeladen_muss_bool_sein() -> None:
 
     with pytest.raises(HofladenValidationError):
         parse_hofladen(raw)
+
+
+def test_parse_mobilnummer_und_email() -> None:
+    """Mobilnummer und E-Mail müssen wie die übrigen optionalen
+    Textfelder eingelesen werden."""
+    raw = {
+        "id": "hof-19",
+        "name": "Hofladen",
+        "mobilnummer": "+41 79 123 45 67",
+        "email": "info@beispiel.ch",
+    }
+
+    hofladen = parse_hofladen(raw)
+
+    assert hofladen.mobilnummer == "+41 79 123 45 67"
+    assert hofladen.email == "info@beispiel.ch"
+
+
+def test_parse_mobilnummer_und_email_default_none() -> None:
+    hofladen = parse_hofladen({"id": "hof-20", "name": "Hofladen"})
+
+    assert hofladen.mobilnummer is None
+    assert hofladen.email is None
+
+
+def test_parse_bewertung_default_ist_null() -> None:
+    hofladen = parse_hofladen({"id": "hof-21", "name": "Hofladen"})
+
+    assert hofladen.bewertung == 0
+
+
+@pytest.mark.parametrize(
+    ("eingabe", "erwartet"),
+    [
+        (0, 0),
+        (3, 3),
+        (5, 5),
+        (5.7, 5),  # float wird auf int begrenzt, nicht gerundet
+        (-2, 0),  # unterhalb des Bereichs -> auf 0 begrenzt
+        (7, 5),  # oberhalb des Bereichs -> auf 5 begrenzt
+    ],
+)
+def test_parse_bewertung_wird_auf_gueltigen_bereich_begrenzt(
+    eingabe: float, erwartet: int
+) -> None:
+    hofladen = parse_hofladen(
+        {"id": "hof-22", "name": "Hofladen", "bewertung": eingabe}
+    )
+
+    assert hofladen.bewertung == erwartet
+
+
+def test_parse_bewertung_muss_zahl_sein() -> None:
+    with pytest.raises(HofladenValidationError):
+        parse_hofladen({"id": "hof-23", "name": "Hofladen", "bewertung": "viele"})

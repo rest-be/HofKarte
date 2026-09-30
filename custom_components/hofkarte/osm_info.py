@@ -193,6 +193,12 @@ _OVERPASS_DROSSELUNGS_STATUS = {429, 502, 503, 504}
 # Von den Overpass-Nutzungsrichtlinien ausdrücklich verlangt ("Be sure to
 # check that your app or website adds User-Agent or Referer headers").
 _USER_AGENT = "HofKarte/HomeAssistant (+https://github.com/rest-be/HofKarte)"
+# Harte Absicherung, falls (z. B. in Tests oder bei fehlender Config
+# Entry) kein über den Options Flow gespeicherter Vorgabewert ermittelt
+# werden kann - der eigentliche, für die Verwaltungsoberfläche relevante
+# Vorgabewert ist seit dessen Einführung ``const.DEFAULT_OSM_RADIUS_METER``
+# (dauerhaft gespeichert statt nur pro Formularsitzung flüchtig, siehe
+# ``config_flow.py``).
 STANDARD_RADIUS_METER = 50
 # Sinnvolle Grenzen für den seit Issue #11 im Formular einstellbaren
 # Suchradius - ein zu kleiner Radius liefert praktisch nie Treffer (GPS-
@@ -201,8 +207,10 @@ STANDARD_RADIUS_METER = 50
 # Bereichs werden von ``async_ermittle_osm_orte`` auf die jeweilige Grenze
 # begrenzt (nicht als Fehler behandelt), da eine geringfügig falsche
 # Eingabe hier keinen Sicherheits- oder Korrektheitsschaden anrichtet.
-MIN_RADIUS_METER = 10
-MAX_RADIUS_METER = 500
+# An die iOS-App angeglichen (Options Flow, 20-2000 m statt der früheren
+# 10-500 m).
+MIN_RADIUS_METER = 20
+MAX_RADIUS_METER = 2000
 # Innerhalb der Overpass-Anfrage selbst gesetztes Zeitlimit (siehe
 # _baue_overpass_query, "[out:json][timeout:...]"); das HTTP-Zeitlimit
 # (ABRUF_TIMEOUT_SEKUNDEN) liegt bewusst etwas darüber, damit ein von der
@@ -273,6 +281,8 @@ class OsmOrt:
     plz: str | None = None
     ort: str | None = None
     website: str | None = None
+    mobilnummer: str | None = None
+    email: str | None = None
     oeffnungszeiten: tuple[dict[str, Any], ...] = ()
     entfernung_meter: float | None = None
     # Issue #11: True, wenn dieser Treffer NICHT über ein Hofladen-Tag
@@ -669,6 +679,14 @@ async def async_ermittle_osm_orte(
                 website=(
                     _str_or_none(tags.get("website"))
                     or _str_or_none(tags.get("contact:website"))
+                ),
+                mobilnummer=(
+                    _str_or_none(tags.get("phone"))
+                    or _str_or_none(tags.get("contact:phone"))
+                ),
+                email=(
+                    _str_or_none(tags.get("email"))
+                    or _str_or_none(tags.get("contact:email"))
                 ),
                 oeffnungszeiten=_extrahiere_oeffnungszeiten_osm(tags.get("opening_hours")),
                 entfernung_meter=round(entfernung, 1) if entfernung is not None else None,

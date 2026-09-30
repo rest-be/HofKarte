@@ -19,10 +19,28 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
 from homeassistant.const import CONF_NAME
 
-from .const import DEFAULT_NAME, DOMAIN
+from .const import (
+    CONF_LISTEN_SORT_RICHTUNG,
+    CONF_LISTEN_SORT_SPALTE,
+    CONF_OSM_RADIUS_METER,
+    DEFAULT_LISTEN_SORT_RICHTUNG,
+    DEFAULT_LISTEN_SORT_SPALTE,
+    DEFAULT_NAME,
+    DEFAULT_OSM_RADIUS_METER,
+    DOMAIN,
+    LISTEN_SORT_RICHTUNGEN,
+    LISTEN_SORT_SPALTEN,
+)
+from .osm_info import MAX_RADIUS_METER, MIN_RADIUS_METER
 
 
 def _normalize_name(raw_name: str) -> str:
@@ -71,3 +89,68 @@ class HofKarteConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=data_schema,
             errors=errors,
         )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> HofKarteOptionsFlow:
+        """Options Flow für diese Config Entry bereitstellen."""
+        return HofKarteOptionsFlow(config_entry)
+
+
+class HofKarteOptionsFlow(OptionsFlow):
+    """Options Flow für HofKarte.
+
+    Entspricht der globalen „Einstellungen“-Maske der parallel gepflegten
+    iOS-App: dauerhaft gespeicherte Vorgabewerte statt (wie bislang) rein
+    im Browser-Formular flüchtig gehaltener Werte. Es gibt bewusst nur
+    diesen einen Schritt (``init``) - die Anzahl der Felder rechtfertigt
+    keinen mehrstufigen Flow.
+
+    ``self.config_entry`` wird hier (wie bei Home-Assistant-Integrationen
+    dieser Art historisch üblich) explizit im Konstruktor gesetzt statt
+    sich auf eine von Home Assistant automatisch bereitgestellte Basis-
+    Implementierung zu verlassen - das hält die Kompatibilität mit der in
+    diesem Projekt aktuell eingesetzten Home-Assistant-Version explizit
+    nachvollziehbar, statt sich auf eine bestimmte, sich über Versionen
+    hinweg wandelnde Basisklassen-Eigenheit zu verlassen.
+    """
+
+    def __init__(self, config_entry: ConfigEntry) -> None:
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Einzigen Einstellungen-Schritt behandeln."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        optionen = self.config_entry.options
+
+        data_schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_LISTEN_SORT_SPALTE,
+                    default=optionen.get(
+                        CONF_LISTEN_SORT_SPALTE, DEFAULT_LISTEN_SORT_SPALTE
+                    ),
+                ): vol.In(LISTEN_SORT_SPALTEN),
+                vol.Required(
+                    CONF_LISTEN_SORT_RICHTUNG,
+                    default=optionen.get(
+                        CONF_LISTEN_SORT_RICHTUNG, DEFAULT_LISTEN_SORT_RICHTUNG
+                    ),
+                ): vol.In(LISTEN_SORT_RICHTUNGEN),
+                vol.Required(
+                    CONF_OSM_RADIUS_METER,
+                    default=optionen.get(
+                        CONF_OSM_RADIUS_METER, DEFAULT_OSM_RADIUS_METER
+                    ),
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_RADIUS_METER, max=MAX_RADIUS_METER),
+                ),
+            }
+        )
+
+        return self.async_show_form(step_id="init", data_schema=data_schema)

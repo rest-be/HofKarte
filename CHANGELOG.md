@@ -13,6 +13,58 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.2-dev.7] - Entwicklungsversion (develop)
+
+Kein produktiver Release. Umfangreiche Erweiterung des Datenmodells um
+Mobilnummer, E-Mail und eine 0–5-Sterne-Bewertung, ein neuer Options
+Flow für dauerhaft gespeicherte Einstellungen sowie eine
+Status-Einfärbung der Kartenmarker.
+
+### Hinzugefügt
+
+- **Kontaktfelder Mobilnummer/E-Mail:** `models.Hofladen` um die
+  optionalen Felder `mobilnummer` und `email` ergänzt. Durchgängig
+  berücksichtigt in `parsing.py`, der Serialisierung für die
+  Verwaltungsoberfläche, dem WebSocket-Save-Pfad sowie Export/Import
+  (inkl. Anzeige im Import-Konfliktdialog). Im Bearbeitungsformular als
+  neue Felder im Abschnitt „Kontakt & Webseite“ (vor „Webseite“), in der
+  Detailansicht als neuer Abschnitt „Kontakt“ (nach „Adresse“, vor
+  „Standort / Koordinaten“) mit anklickbaren `tel:`-/`mailto:`-Links -
+  ersetzt dort den bisherigen eigenständigen „Webseite“-Abschnitt.
+- **Bewertung (0–5 Sterne):** Neues Feld `models.Hofladen.bewertung`
+  (Standard `0`, beim Einlesen auf den gültigen Bereich begrenzt). Neuer
+  Abschnitt „Bewertung“ im Bearbeitungsformular (ganz unten, interaktive
+  Sterne-Auswahl - erneuter Klick auf das zuletzt gefüllte Symbol setzt
+  auf 0 zurück) sowie in der Detailansicht (nur Anzeige). Neuer, analog
+  zu „Entfernung“/„Nächste Öffnung“ aufgebauter Sensor „Bewertung“ je
+  Hofladen-Device. In der Listenansicht als zusätzliche, sortierbare
+  Spalte, in der Kachelansicht klein neben dem Status-Badge.
+- **Automatische Ermittlung um Kontaktdaten erweitert:** Sowohl die
+  Website-Analyse (schema.org-Feld `telephone`/`email`, ergänzt um eine
+  Text-Heuristik für E-Mail-Adressen und DACH-übliche
+  Telefonnummern-Schreibweisen) als auch die OpenStreetMap-Abfrage
+  (Tags `phone`/`contact:phone`, `email`/`contact:email`) ermitteln jetzt
+  zusätzlich Mobilnummer und E-Mail. Das Bestätigungs-Popup „Gefundene
+  Informationen“ zeigt dafür zwei neue Zeilen „Telefon“ und „E-Mail“.
+- **Options Flow („Einstellungen“):** Neue, über „Einstellungen“ bei der
+  Integration erreichbare Konfigurationsmaske (analog zur globalen
+  „Einstellungen“-Maske der parallel gepflegten iOS-App): Standard-
+  Sortierfeld/-richtung für die Übersicht sowie ein dauerhaft
+  gespeicherter Standard-Suchradius für „Angaben automatisch ermitteln“
+  (OpenStreetMap), Bereich jetzt 20–2000 m (Standard 200 m, an die
+  iOS-App angeglichen; zuvor 10–500 m, Standard 50 m). Die
+  Verwaltungsoberfläche liest diese Werte beim Laden über den neuen
+  WebSocket-Befehl `hofkarte/management/settings` und verwendet sie als
+  Vorgabewerte statt der bisher rein pro Formularsitzung flüchtigen
+  Werte.
+- **Kartenmarker nach Status eingefärbt:** Marker auf der Kartenansicht
+  sind jetzt grün (geöffnet), grau (geschlossen) bzw. in der
+  bisherigen Standardfarbe (unbekannter Status) eingefärbt statt
+  einheitlich in der HA-Theme-Primärfarbe - analog zur bereits
+  bestehenden Statusfarbgebung der Kacheln-/Listenansicht, mit eigenen
+  CSS-Klassen statt denselben (Grau statt Rot für „geschlossen“, auf
+  einer Karte sonst leicht mit einem Fehlerhinweis verwechselbar).
+
 ## [2026.9.2-dev.6] - Entwicklungsversion (develop)
 
 Kein produktiver Release. Umsetzung von Issue #11 („Vereinfachung der
