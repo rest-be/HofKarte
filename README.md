@@ -106,9 +106,14 @@ Einrichtungsversuch wird entsprechend abgelehnt.
 HofKarte unterscheidet zwei Arten von „Konfiguration“:
 
 - **Die Integration selbst:** Der Config Flow fragt ausschliesslich
-  einen Anzeigenamen ab (siehe „Einrichtung“). Es gibt aktuell keinen
-  Options Flow – Update-Intervall und Abruf-Timeout des Coordinators
-  sind nur auf Code-Ebene änderbar (siehe „Bekannte Einschränkungen“).
+  einen Anzeigenamen ab (siehe „Einrichtung“). Über „Konfigurieren“ bei
+  der Integration steht zusätzlich ein Options Flow („Einstellungen“)
+  zur Verfügung: Standard-Sortierfeld/-richtung für die
+  Hofladen-Übersicht sowie ein dauerhaft gespeicherter Standard-
+  Suchradius für „🔍 Angaben automatisch ermitteln“ (20–2000 m,
+  voreingestellt 200 m). Update-Intervall und Abruf-Timeout des
+  Coordinators sind davon unabhängig und weiterhin nur auf Code-Ebene
+  änderbar (siehe „Bekannte Einschränkungen“).
 - **Die Hofladen-Daten:** Hofläden, ihre Stammdaten, Öffnungszeiten und
   ihr Sortiment werden **nicht** über die Home-Assistant-Konfiguration
   gepflegt, sondern über die grafische Verwaltungsoberfläche (siehe
@@ -168,6 +173,11 @@ Dort können Administratoren:
 - Angebote (vormals getrennt: Kategorien/Produkte, seither zusätzlich
   auf eine schlichte Namensliste ohne Gruppierung vereinfacht) und
   Zahlungsarten bearbeiten,
+- Kontaktdaten erfassen (Mobilnummer, E-Mail – im Bearbeitungsformular
+  im Abschnitt „Kontakt & Webseite“, in der Detailansicht als
+  anklickbare Telefon-/E-Mail-Links),
+- eine Bewertung von 0–5 Sternen vergeben (interaktive Sterne-Auswahl;
+  erneuter Klick auf das zuletzt gefüllte Symbol setzt sie zurück),
 - eine optionale Bemerkung erfassen (freies Textfeld, unabhängig von
   der Beschreibung),
 - Hofläden kontrolliert löschen.
@@ -226,7 +236,10 @@ und keine Kommunikation mit einem zusätzlichen Geodienst statt.
 Routing-Auswahl eine **eingebettete** Karte mit einer Stecknadel für
 **jeden** Hofladen mit gültigen Koordinaten gleichzeitig – dafür
 technisch nötig, da eine einzelne externe Karte immer nur einen
-Standort zeigt. Umgesetzt mit [Leaflet](https://leafletjs.com/) `1.9.4`
+Standort zeigt. Die Marker sind analog zur Statusfarbgebung in
+Kacheln-/Listenansicht nach Öffnungsstatus eingefärbt (grün geöffnet,
+grau geschlossen, sonst die bisherige Standardfarbe bei unbekanntem
+Status). Umgesetzt mit [Leaflet](https://leafletjs.com/) `1.9.4`
 und OpenStreetMap-Kartenkacheln, per `<script>`/`<link>` mit fest
 gepinnter Version von einem CDN nachgeladen – bewusst erst beim ersten
 Öffnen dieser Ansicht, keine Build-Pipeline, kein API-Schlüssel nötig.
@@ -275,6 +288,7 @@ gebildet):
 | `sensor`         | Nächste Öffnung        | `timestamp`  | –                              |
 | `sensor`         | Nächste Schliessung    | `timestamp`  | –                              |
 | `sensor`         | Entfernung             | `distance`   | –                              |
+| `sensor`         | Bewertung              | –            | –                              |
 | `image`          | Hauptbild              | –            | Bilder (siehe unten)          |
 
 Für den Binary Sensor wurde bewusst **keine** Device Class gesetzt: Es
@@ -283,7 +297,7 @@ gibt keine passende Home-Assistant-Device-Class für „Geschäft geöffnet“
 wie Türen/Fenster).
 
 Neu über die Verwaltungsoberfläche hinzukommende Hofläden erhalten
-automatisch alle fünf Entities, ohne dass ein Reload nötig ist. Entities
+automatisch alle sechs Entities, ohne dass ein Reload nötig ist. Entities
 werden „unavailable“, sobald der letzte Coordinator-Abruf fehlgeschlagen
 ist oder der Hofladen aus den Daten verschwunden ist.
 
@@ -660,8 +674,9 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
 
 - Nur eine Instanz pro Home-Assistant-Installation möglich (Single
   Instance).
-- Kein Options Flow; Update-Intervall und Timeout des Coordinators sind
-  aktuell nur auf Code-Ebene konfigurierbar.
+- Der Options Flow deckt nur die Übersicht-Sortiervorgabe und den
+  Standard-Suchradius ab; Update-Intervall und Timeout des Coordinators
+  sind weiterhin nur auf Code-Ebene konfigurierbar.
 - Bei Uhrzeiten in einer Sommerzeit-Umstellungslücke bzw. im doppelt
   vorkommenden Bereich beim Zurückstellen wird die von `zoneinfo`
   standardmässig gewählte Auflösung verwendet, ohne explizite
@@ -684,14 +699,62 @@ Verfügung (siehe oben). Für tiefergehende Logs das Logging für
 ## Datenschutz- und Standort-Hinweise
 
 - **Keine Cloud, kein externer Dienst:** HofKarte kommuniziert nicht mit
-  externen Servern – mit zwei Ausnahmen: dem Laden von Hofladen-Bildern
-  über die vom Benutzer hinterlegten Bild-URLs (siehe „Bilder“) sowie
-  dem Laden der Kartenbibliothek Leaflet und der Kartenkacheln von
+  externen Servern – mit vier Ausnahmen: dem Laden von Hofladen-Bildern
+  über die vom Benutzer hinterlegten Bild-URLs (siehe „Bilder“), dem
+  Laden der Kartenbibliothek Leaflet und der Kartenkacheln von
   OpenStreetMap, sobald die Übersichtsansicht „🗺️ Karte“ tatsächlich
   geöffnet wird (siehe „Eingebettete Kartenansicht“ oben) – dabei werden
   nur Kachel-/Ausschnittkoordinaten übertragen, keine Hofladen- oder
-  Standortdaten im Klartext. Ausserhalb davon findet keine Telemetrie
-  und keine Datenübertragung an Dritte statt.
+  Standortdaten im Klartext – dem Abruf über die Funktion
+  „🔍 Angaben automatisch ermitteln“ (Formular „Hofladen bearbeiten“,
+  Abschnitt „Automatisch ausfüllen“). Diese eine Aktion fasst seit
+  Issue #11 die beiden früheren, getrennten Funktionen „Infos
+  ermitteln“ (Website) und „Ort in der Nähe suchen“ (OpenStreetMap)
+  zusammen und fragt – je nachdem, was im Formular bereits eingetragen
+  ist – wahlweise beide Quellen parallel ab:
+  - Ist eine Website-Adresse eingetragen, ruft HofKarte auf
+    ausdrücklichen Klick genau diese eine, vom Benutzer selbst
+    eingegebene Adresse ab und wertet ausschliesslich strukturierte,
+    von der Seite selbst veröffentlichte Daten (schema.org-JSON-LD)
+    sowie Titel/Meta-Beschreibung aus. Die Adresse wird dabei
+    serverseitig gegen private/interne Ziele geprüft (siehe
+    [`SECURITY.md`](SECURITY.md)).
+  - Sind gültige Koordinaten eingetragen, übermittelt HofKarte diese
+    serverseitig an eine von mehreren bekannten, freien
+    OpenStreetMap-Overpass-Instanzen (u. a. `overpass-api.de` und
+    automatische Ausweichziele wie `overpass.osm.ch`, falls die
+    Haupt-Instanz überlastet oder nicht erreichbar ist;
+    ausschliesslich freie, kostenlose, kontofreie
+    OpenStreetMap-Community-Dienste, kein kommerzieller Cloud-Dienst
+    und kein LLM) und sucht dort im Formular einstellbar (20–2000 m,
+    voreingestellt 200 m, dauerhaft über den Options Flow anpassbar –
+    siehe „Konfiguration“) nach benannten Orten, die entweder direkt
+    als Laden/Hof/Marktplatz getaggt sind (`shop`-, `craft=agricultural`-
+    oder `amenity=marketplace`-Tag) oder – seit Issue #11 – anhand
+    ihres Namens auf ein untertagt gebliebenes Hofgelände hindeuten
+    (`landuse=farmyard`/`building=farm` mit einem Namen wie „Hof“,
+    „Bauernhof“, „Hofladen“ oder „Laden“); solche namensbasierten
+    Treffer werden in der Trefferauswahl ausdrücklich als „anhand des
+    Namens gefunden, kein Hofladen-Tag auf OpenStreetMap“
+    gekennzeichnet, statt mit tatsächlich getaggten Treffern
+    gleichgesetzt zu werden. Anders als bei den rein clientseitig
+    geladenen Kartenkacheln werden dabei tatsächlich
+    hofladenspezifische Standortdaten (die konkreten Koordinaten) an
+    den externen Dienst übertragen; siehe [`SECURITY.md`](SECURITY.md)
+    für die ausführliche Einordnung dieser Ausnahme.
+
+  In beiden Fällen werden die gefundenen Angaben (Name, Adresse,
+  Beschreibung, Öffnungszeiten, Angebote, Zahlungsarten, Mobilnummer,
+  E-Mail) zusammengeführt
+  und ausschliesslich als **ein gemeinsamer Vorschlag zur Überprüfung**
+  angezeigt, je Feld mit seiner Herkunft (Website und/oder
+  OpenStreetMap) gekennzeichnet – es wird dabei nichts automatisch
+  gespeichert und kein externer/Cloud-/KI-Dienst eingebunden
+  (rein lokale, deterministische Auswertung bzw. freie
+  OpenStreetMap-Community-Dienste). Liefert eine Quelle keine Angaben
+  oder schlägt fehl, wird dies in der Statusmeldung offen ausgewiesen.
+  Ausserhalb dieser vier Fälle findet keine Telemetrie und keine
+  Datenübertragung an Dritte statt.
 - **Standort (Home-Assistant-Server):** Der Entfernungs-Sensor liest
   ausschliesslich die statische, in Home Assistant konfigurierte
   Position (`hass.config.latitude`/`longitude`) – kein `device_tracker`,

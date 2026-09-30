@@ -16,6 +16,19 @@
       "single_instance_allowed": "HofKarte ist bereits eingerichtet. Es wird nur eine Instanz unterstützt."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HofKarte-Einstellungen",
+        "description": "Standard-Sortierung für die Übersicht sowie der Standard-Suchradius für „Angaben automatisch ermitteln“ (OpenStreetMap).",
+        "data": {
+          "listen_sort_spalte": "Standard-Sortierfeld",
+          "listen_sort_richtung": "Sortierrichtung",
+          "osm_radius_meter": "Suchradius OpenStreetMap (Meter)"
+        }
+      }
+    }
+  },
   "services": {
     "hoflaeden_suchen": {
       "name": "Hofläden suchen",

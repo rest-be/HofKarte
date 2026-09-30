@@ -449,6 +449,341 @@ ist damit die **Herkunft** (von HofKarte selbst erzeugt), nicht der
 Adressbereich – eine bewusste, im Modul dokumentierte Ausnahme statt
 einer fragilen Erkennung anhand des URL-Musters.
 
+## Informationen aus Homepage (Issue #8, Korrektur/Erweiterung in Issue #9)
+
+`webseite_info.py` implementiert die **erste eigene, ausgehende
+HTTP-Anfrage im Backend-Code von HofKarte** – bisher delegierte
+HofKarte jede Netzwerkkommunikation entweder an Home Assistants eigene
+`image`-Entity-Infrastruktur (siehe Kapitel „Bilder“ oben) oder an den
+Browser (Leaflet/OpenStreetMap, siehe „Eingebettete Kartenansicht“
+weiter unten). Architektonisch bewusst als eigenständiges Modul
+umgesetzt, nicht innerhalb von `management.py`, analog zur bestehenden
+Trennung `images.py`/`opening_hours.py`/`search.py`.
+
+**Datenfluss:**
+
+1. Verwaltungsoberfläche (`hofkarte-panel.js`): Klick auf „🔎 Infos
+   ermitteln“ im Bearbeitungsformular (Abschnitt „Kontakt & Webseite“)
+   ruft `ermittleWebseiteInfo()` auf, das den WebSocket-Befehl
+   `hofkarte/management/webseite_info` mit der aktuell im Formular
+   eingetragenen Website-Adresse sendet.
+2. `management.ws_webseite_info` (administratorpflichtig, wie alle
+   Verwaltungsbefehle) delegiert an
+   `webseite_info.async_ermittle_webseite_info(hass, website)`.
+3. `webseite_info.py` prüft die Adresse syntaktisch (siehe
+   „Sicherheitsmodell“ unten), ruft sie über Home Assistants verwaltete
+   Client-Session ab, extrahiert strukturierte Daten und liefert ein
+   `WebseiteInfo`-Objekt (oder wirft einen der drei unten beschriebenen
+   Fehler) zurück.
+4. `ws_webseite_info` bildet die Fehlerfälle auf eigene WebSocket-
+   Fehlercodes ab (`invalid_url`/`unreachable`/`not_found`) bzw.
+   serialisiert das Ergebnis (`_json_value`, dieselbe Hilfsfunktion wie
+   für `Hofladen`-Objekte).
+5. `hofkarte-panel.js` speichert das Ergebnis seit Issue #9 zunächst nur
+   als Vorschlag (`this.webseiteInfoVorschlag`) und zeigt es in einem
+   Bestätigungs-Popup (`webseiteInfoPopup()`) zur Prüfung an. Erst ein
+   Klick auf „Übernehmen“ (`uebernehmeWebseiteInfoVorschlag()`) überträgt
+   es über die unverändert bestehende `uebernehmeWebseiteInfo()` in
+   `this.editing` (den Bearbeitungszustand des offenen Formulars);
+   „Abbrechen“ (`abbrechenWebseiteInfo()`) verwirft es. **Es wird dabei
+   nie automatisch gespeichert** – das eigentliche Speichern erfolgt
+   unverändert über den bestehenden `ws_save`-Befehl, nachdem die
+   Benutzerin/der Benutzer die übernommenen Werte geprüft und ggf.
+   angepasst hat.
+
+**Datenverlust-Fix (Issue #9):** `ermittleWebseiteInfo()` sicherte vor
+Issue #9 nur implizit den zuletzt gespeicherten Formularzustand; das
+abschliessende `render()` (Rückmeldung anzeigen) baute das gesamte
+Formular-HTML ausschliesslich aus `this.editing` neu auf und liess
+dabei jeden inzwischen live eingetippten, aber noch nicht dorthin
+übernommenen Wert optisch verschwinden. Behoben durch
+`erfasseFormularZustand()`, das denselben Erfassungsmechanismus wie
+`formData()`/„Speichern“ (den gemeinsamen Helfer `leseEinfacheFelder()`)
+nutzt und konsequent vor jedem mit „Infos ermitteln“ verbundenen
+`render()`-Aufruf ausgeführt wird – unabhängig vom Ausgang der
+Ermittlung oder davon, ob das Popup per „Abbrechen“ geschlossen wird.
+
+**Vertiefte Text-Heuristik (Issue #9):** Liefert JSON-LD keine Adresse
+bzw. keine `openingHoursSpecification`, wertet `webseite_info.py`
+zusätzlich den über `_SeitenParser.sichtbarer_text()` extrahierten,
+sichtbaren Seitentext mit dokumentierten Regex-Mustern aus
+(`_extrahiere_adresse_aus_text`/`_extrahiere_oeffnungszeiten_aus_text`)
+– weiterhin ohne externen/Cloud-/KI-Dienst, rein lokal und
+deterministisch. Diese Erweiterung wird durch das neue
+Bestätigungs-Popup gerechtfertigt (menschliche Prüfung vor jeder
+Übernahme, siehe oben) und bleibt dem Prinzip „lieber nichts als
+falsch“ verpflichtet: mehrdeutige oder widersprüchliche Fundstellen
+liefern bewusst keinen Vorschlag. Siehe `webseite_info.py`, Moduldoc
+„Vertiefte Text-Heuristik“, für die im Detail dokumentierten Grenzen
+dieses Ansatzes.
+
+**Extraktionsstrategie (kein externer/Cloud-/KI-Dienst):**
+Ausschliesslich lokale, deterministische Auswertung mit der
+Python-Standardbibliothek (`html.parser`, `json` – keine neue
+Abhängigkeit). Primär schema.org-konforme JSON-LD-Daten
+(`<script type="application/ld+json">`, aufgelöst inkl. `@graph` und
+Objekt-Listen; ein Objekt gilt als Hofladen-Kandidat, wenn es einen
+`name` sowie mindestens ein typisches Geschäfts-Feld – `address`,
+`openingHours(Specification)`, `telephone`, `priceRange`,
+`paymentAccepted` oder `makesOffer` – trägt). Ergänzend, nur zur
+Lückenfüllung: `<title>` (unverfälschter Namens-Fallback) und
+`<meta name="description">` (Beschreibungs-Fallback). Öffnungszeiten
+werden ausschliesslich aus dem vollständig strukturierten
+`openingHoursSpecification` übernommen – das kompakte schema.org-
+Kurzformat (`openingHours`, z. B. `"Mo-Fr 08:00-18:00"`) wird bewusst
+**nicht** geparst (Tagesbereich-Interpretation wäre eine zusätzliche,
+fehleranfällige Heuristik-Schicht). Nicht zuverlässig ermittelbare
+Felder bleiben leer statt geraten zu werden („lieber nichts als
+falsch“ – siehe Moduldoc in `webseite_info.py`).
+
+**Sicherheitsmodell:** Der gemeinsame syntaktische Prüfkern
+(`url_sicherheit.py`, aus `images.py` herausgelöst und von beiden
+Modulen genutzt – Schema-Whitelist, keine Zugangsdaten, kein
+„localhost“, keine privaten/internen IP-Literale, keine DNS-Auflösung)
+wird hier um Massnahmen erweitert, die speziell für den tatsächlichen
+Abruf und die Verarbeitung des Antwortinhalts nötig sind: ein
+Antwortgrössen-Limit (2 MB), eine Content-Type-Prüfung (nur HTML-artige
+Antworten), eine Zeitüberschreitung (10 Sekunden) sowie eine manuelle,
+bei jedem Sprung erneut gegen denselben Prüfkern validierte
+Weiterleitungsauflösung (maximal 3 Sprünge – verhindert, dass eine
+zunächst sichere URL über einen `Location`-Header stillschweigend auf
+ein privates/internes Ziel umgeleitet wird). Der HTTP-Abruf verwendet
+`homeassistant.helpers.aiohttp_client.async_get_clientsession` statt
+einer eigenen, unverwalteten `aiohttp.ClientSession` (siehe
+`quality_scale.yaml`, Kriterium `inject-websession`, seit diesem Issue
+`done` statt `exempt`). Ausführliche Begründung siehe `SECURITY.md`,
+Abschnitt „Funktion ‚Infos ermitteln‘“.
+
+## Ort in der Nähe suchen (Issue #10, Erweiterung von Issue #8)
+
+`osm_info.py` führt die **zweite eigene, ausgehende HTTP-Anfrage im
+Backend-Code von HofKarte** ein – diesmal an die
+OpenStreetMap-Overpass-API, einen von HofKarte nicht kontrollierten, aber
+freien, kostenlosen, kontofreien OpenStreetMap-Community-Dienst. Wie
+`webseite_info.py` bewusst als eigenständiges Modul umgesetzt, nicht
+innerhalb von `management.py`.
+
+**Mehrere Instanzen statt eines Einzelpunkts:** Die Haupt-Instanz
+`overpass-api.de` beschreibt sich selbst als häufig überlastet. Statt
+eines einzelnen, fest verdrahteten Endpunkts hinterlegt `osm_info.py`
+deshalb eine kurze, statische Liste bekannter, öffentlicher
+Overpass-Instanzen (`OVERPASS_URLS`: `overpass-api.de` als Haupt-Instanz,
+`overpass.private.coffee` sowie die für Schweizer Nutzung naheliegende
+Regional-Instanz `overpass.osm.ch`). `_rufe_overpass_ab()` versucht sie
+der Reihe nach; schlägt eine Instanz fehl (Verbindungsfehler,
+Zeitüberschreitung, Fehler- oder Drosselungs-Status wie HTTP 429), wird
+automatisch die nächste versucht, jeder Fehlversuch wird protokolliert
+(`_LOGGER.warning`) – erst wenn alle konfigurierten Instanzen
+fehlschlagen, wirft die Funktion `OsmNichtErreichbarError`. Jede Anfrage
+sendet zudem einen identifizierenden `User-Agent`-Header, wie von den
+Overpass-Nutzungsrichtlinien verlangt. Die eigentliche Overpass-QL-Anfrage
+nutzt den kombinierten `nwr`-Selektor (statt separater `node`-/
+`way`-Anweisungen) und deckt damit auch als Relation gemappte Läden ab.
+
+**Architektonische Einordnung:** Eine zweite, bewusst eng begrenzte
+Ausnahme vom Grundsatz „kein externer/Cloud-/KI-Dienst“, analog zur
+bereits bestehenden Ausnahme für die clientseitig geladenen
+Leaflet/OpenStreetMap-Kartenkacheln (siehe „Eingebettete Kartenansicht“
+unten) – kein kommerzieller Cloud-Dienst, kein LLM/KI-Dienst, kein
+„Scraping-as-a-Service“. Anders als die Kartenkacheln (nur generische
+Kachel-/Ausschnittkoordinaten, keine Hofladendaten) überträgt dieses
+Modul **serverseitig konkrete Koordinaten eines bestimmten Hofladens**
+– ausschliesslich auf ausdrücklichen Klick, nie automatisch. Siehe
+`osm_info.py`, Moduldoc, sowie `SECURITY.md`, Abschnitt „Funktion ‚Ort
+in der Nähe suchen‘“, für die ausführliche Begründung.
+
+**Datenfluss (Stand nach Issue #11, siehe eigener Abschnitt unten für
+die Änderungen im Detail):**
+
+1. Verwaltungsoberfläche (`hofkarte-panel.js`): Klick auf „🔍 Angaben
+   automatisch ermitteln“ im Bearbeitungsformular (Abschnitt
+   „Automatisch ausfüllen“) ruft `ermittleAutomatisch()` auf; ist ein
+   gültiges WGS84-Koordinatenpaar eingetragen (siehe `isValidWgs84()`),
+   ruft diese Funktion u. a. `holeOsmOrte(latitude, longitude,
+   this.osmRadius)` auf, das den WebSocket-Befehl
+   `hofkarte/management/osm_info` mit den aktuell im Formular
+   eingetragenen Koordinaten und dem einstellbaren Suchradius sendet.
+2. `management.ws_osm_info` (administratorpflichtig, wie alle
+   Verwaltungsbefehle) delegiert an
+   `osm_info.async_ermittle_osm_orte(hass, latitude, longitude,
+   radius_meter=...)`.
+3. `osm_info.py` validiert die Koordinaten, klammert den Radius serverseitig
+   auf `MIN_RADIUS_METER`–`MAX_RADIUS_METER`, baut eine Overpass-QL-Anfrage
+   (siehe Moduldoc „Tag-Auswahl“ sowie den Abschnitt „Erweiterung (Issue
+   #11)“ unten), ruft sie über Home Assistants verwaltete Client-Session
+   ab, klassifiziert jeden Treffer über `_klassifiziere_herkunft()`,
+   verwirft unbenannte oder nicht zuordenbare Treffer und liefert eine
+   nach Entfernung sortierte Liste von `OsmOrt`-Objekten (oder wirft
+   einen der drei Fehler) zurück.
+4. `ws_osm_info` bildet die Fehlerfälle auf eigene WebSocket-Fehlercodes
+   ab (`invalid_coordinates`/`unreachable`/`not_found`) bzw. serialisiert
+   das Ergebnis (`_json_value`, derselbe generische Serialisierer wie für
+   `Hofladen`- und `WebseiteInfo`-Objekte).
+5. `hofkarte-panel.js`: Bei genau einem Treffer (bzw. keinem parallel
+   laufenden Website-Ergebnis, das noch auf eine Auswahl wartet) wird die
+   Trefferauswahl übersprungen; bei mehreren Treffern zeigt
+   `osmOrteAuswahlPopup()` zunächst eine Auswahlliste (Name, Adresse,
+   Entfernung, inkl. Kennzeichnung von Namens-Heuristik-Treffern), aus
+   der `waehleOsmOrt()` den gewählten Treffer übernimmt. Anschliessend
+   führt `mischeAutoVorschlaege()` das OSM-Ergebnis mit einem eventuell
+   parallel ermittelten Website-Ergebnis zusammen und `zeigeAutoErgebnis()`
+   öffnet dasselbe Bestätigungs-Popup wie bei einer reinen Website-Suche
+   (`webseiteInfoPopup()`, inkl. Quellen-Kennzeichnung je Feld), dieselbe
+   Übernahme-Funktion (`uebernehmeWebseiteInfo()`) – bewusst wiederverwendet
+   statt für die zweite Datenquelle dupliziert. Es wird nie automatisch
+   gespeichert.
+
+**`opening_hours`-Parser:** OpenStreetMaps `opening_hours`-Tag folgt
+einer eigenen, formal spezifizierten Syntax
+(https://wiki.openstreetmap.org/wiki/Key:opening_hours) – kein Fliesstext
+wie bei der Text-Heuristik aus Issue #9. `osm_info.py` unterstützt
+bewusst nur eine gängige Teilmenge (Semikolon-getrennte Regeln,
+englische Zwei-Buchstaben-Wochentagskürzel, Wochentag-/Zeitbereiche
+inkl. mehrerer Zeitintervalle pro Tag, `24/7`); nicht unterstützte Syntax
+(Feiertagsregeln, Datumsbereiche, `off`-Ausnahmen u. Ä.) wird komplett
+übersprungen statt teilweise interpretiert. Wie bei der Text-Heuristik
+aus Issue #9 gilt zusätzlich: Liefern mehrere Regeln unterschiedliche,
+widersprüchliche Zeiten für denselben Wochentag, gibt es für diesen Tag
+keinen Vorschlag; mehrere Zeitintervalle **derselben** Regel für denselben
+Tag (z. B. eine Mittagspause) sind dagegen kein Widerspruch.
+
+**Bewusst nicht umgesetzt (Scope-Abgrenzung):** Reine Koordinatensuche,
+keine Freitext-/Adresssuche – eine solche würde einen dritten externen
+Dienst (z. B. Nominatim-Geocoding) erfordern und wurde bewusst nicht
+eingeführt, um den Umfang dieser Erweiterung nicht unnötig auszuweiten.
+
+## Vereinfachung der automatischen Ermittlung (Issue #11)
+
+Ausgangspunkt war ein Vorschlag, den bisherigen Tag-Filter um konkrete
+`shop`-Werte wie `shop=farm`/`shop=greengrocer` zu „erweitern“. Eine
+Prüfung der Overpass-QL-Semantik (siehe Moduldoc in `osm_info.py`,
+Abschnitt „Erweiterung (Issue #11)“) ergab: `["shop"]` ist in Overpass
+QL ein reiner **Schlüssel-Existenz-Filter**, kein Wertevergleich – er
+matcht bereits jeden `shop=*`-Wert, `shop=farm` und `shop=greengrocer`
+eingeschlossen. Eine solche „Erweiterung“ wäre ein No-Op gewesen. Statt
+der wörtlichen Vorgabe zu folgen, wurde die tatsächliche Absicht des
+Issues – mehr, aber weiterhin korrekte Treffer für untertaggte
+Hofläden – mit zwei echten, wiki-verifizierten Ergänzungen umgesetzt:
+
+- **`amenity=marketplace`** als zusätzlicher, dokumentierter Tag (ein
+  von Issue-Seite vorgeschlagener Subtag `marketplace=farmers`
+  existiert auf OpenStreetMap nicht und wurde deshalb nicht übernommen).
+- Eine zweite, unabhängige Filtergruppe für Hofgelände ohne
+  Laden-/Markt-Tag (`landuse=farmyard`, `building=farm`), kombiniert
+  mit einer **Namens-Heuristik**: Nur wenn der Name eines solchen
+  Objekts einen der Begriffe „hof“, „bauernhof“, „hofladen“ oder „laden“
+  enthält (case-insensitiv), wird es überhaupt vorgeschlagen –
+  ungetaggte Hofgelände ohne passenden Namen werden weiterhin verworfen
+  („lieber nichts als falsch“).
+
+`_klassifiziere_herkunft(tags, name)` trennt beide Fälle serverseitig
+scharf und liefert `"tag"`, `"name"` oder `None` (verwerfen); `OsmOrt`
+trägt das Ergebnis als `via_namen_heuristik: bool` weiter bis in die
+Trefferauswahl der Oberfläche, wo Namens-Treffer ausdrücklich als
+solche gekennzeichnet werden – nie stillschweigend mit echten
+Tag-Treffern gleichgesetzt.
+
+**Einstellbarer Suchradius:** Der bisher fest verdrahtete
+`STANDARD_RADIUS_METER` (50 m) bleibt als harte Absicherung bestehen,
+falls keine Config Entry ermittelt werden kann, ist im Formular aber
+neu überschreibbar. Seit dem in einem späteren Schritt ergänzten
+Options Flow (siehe „Kontakt, Bewertung, Einstellungen und
+Kartenmarker“ unten) ist der tatsächlich vorgeschlagene Vorgabewert
+stattdessen der dort dauerhaft gespeicherte, standardmässig auf 200 m
+angehobene `DEFAULT_OSM_RADIUS_METER`. Zwei unabhängige Schichten
+sichern den zulässigen Wertebereich (`MIN_RADIUS_METER`–
+`MAX_RADIUS_METER`, mittlerweile 20–2000 m) ab:
+clientseitig/schemaseitig über `vol.Range(min=MIN_RADIUS_METER,
+max=MAX_RADIUS_METER)` in `ws_osm_info`s WebSocket-Schema (weist einen
+Wert ausserhalb des Bereichs mit einem Schema-Fehler zurück), und
+zusätzlich, unabhängig davon, ein defensiver serverseitiger Clamp
+direkt in `async_ermittle_osm_orte()` (`max(MIN_RADIUS_METER,
+min(MAX_RADIUS_METER, radius))`), der nie einen Fehler wirft, sondern
+einen ausserhalb des Bereichs liegenden Wert stillschweigend
+begrenzt. Diese Redundanz ist bewusst: Tests, die `ws_osm_info` direkt
+mit einem rohen `dict` aufrufen (ohne Durchlauf durch die
+`vol`-Schema-Anwendung), sollen sich weiterhin auf einen sicheren
+Wertebereich verlassen können, ohne von der Schema-Validierung
+abhängig zu sein.
+
+**Zusammenlegung der Oberfläche:** Die beiden bisher unabhängigen
+Aktionen „🔎 Infos ermitteln“ (Website) und „📍 Ort in der Nähe suchen“
+(OpenStreetMap) wurden zu einer einzigen Aktion „🔍 Angaben automatisch
+ermitteln“ (`ermittleAutomatisch()`) zusammengelegt. Statt zwei
+unabhängiger `async`-Methoden mit eigener Status-/Popup-Steuerung gibt
+es nun zwei reine, seiteneffektfreie Abruf-Helfer
+(`holeWebseiteVorschlag()`/`holeOsmOrte()`, jeweils `{ ok, ... }` bzw.
+`{ ok: false, meldung }` zurückgebend) sowie einen Orchestrator, der
+beide **parallel** über `Promise.all` abfragt – je nachdem, ob eine
+Website-Adresse bzw. gültige Koordinaten überhaupt eingetragen sind –
+und eine Merge-Funktion (`mischeAutoVorschlaege()`), die die Ergebnisse
+feldweise zusammenführt. Bei einem Konflikt (beide Quellen liefern
+unterschiedliche Werte für dasselbe Feld) gewinnt die Website als in
+der Regel vom Betreiber selbst gepflegte, autoritativere Quelle – der
+abweichende OSM-Wert wird dabei aber **nicht verworfen**, sondern über
+die Quellen-Kennzeichnung `"website+osm"` im Bestätigungs-Popup
+nachvollziehbar gehalten (wieder „lieber nichts als falsch“, hier auf
+Datenverlust beim automatischen Zusammenführen angewendet). Liefert die
+Koordinatensuche mehrere Treffer, muss die Auswahl abgewartet werden,
+ohne ein bereits vorliegendes Website-Ergebnis zu verwerfen – gelöst
+über ein Zwischenspeicherfeld (`_wartendesWebseiteErgebnis`), das sowohl
+bei Auswahl eines Treffers als auch bei Abbruch der Auswahl wieder mit
+eingemischt wird.
+
+## Kontakt, Bewertung, Einstellungen und Kartenmarker (`dev.7`)
+
+Vier fachlich unabhängige, aber im selben Entwicklungsschritt
+umgesetzte Erweiterungen des Datenmodells und der Verwaltungsoberfläche
+ohne neue externe Abhängigkeiten oder zusätzliche ausgehende
+HTTP-Anfragen:
+
+- **Kontaktfelder (`models.Hofladen.mobilnummer`/`email`):** Optionale
+  Felder, durchgängig berücksichtigt in `parsing.py`, der
+  Serialisierung für die Verwaltungsoberfläche, dem
+  WebSocket-Save-Pfad sowie Export/Import. Im Bearbeitungsformular im
+  Abschnitt „Kontakt & Webseite“ (vor „Webseite“), in der
+  Detailansicht als eigener Abschnitt „Kontakt“ mit `tel:`-/
+  `mailto:`-Links. `webseite_info.py` und `osm_info.py` liefern beide
+  Felder seither zusätzlich als Teil ihrer jeweiligen Ermittlung mit.
+- **Bewertung (`models.Hofladen.bewertung`, 0–5, Standard 0):** Neue
+  Sensor-Plattform-Entity `HofKarteBewertungSensor`
+  (`custom_components/hofkarte/sensor.py`) analog zu den bestehenden
+  Entfernungs-/Zeitpunkt-Sensoren, `unique_id`-Muster
+  `{DOMAIN}_{hofladen_id}_bewertung`, keine eigene Device Class (es
+  gibt keine passende für eine einfache Sterne-Bewertung), aber
+  `SensorStateClass.MEASUREMENT` für Statistik-/Verlaufsfähigkeit. Der
+  Wert wird beim Einlesen auf den gültigen Bereich begrenzt. In der
+  Listenansicht als zusätzliche, über `LISTEN_SORT_SPALTEN` (siehe
+  unten) sortierbare Spalte, in der Kachelansicht kompakt neben dem
+  Status-Badge.
+- **Options Flow („Einstellungen“, `config_flow.HofKarteOptionsFlow`):**
+  Eine einzige `async_step_init`-Maske mit drei Feldern
+  (`CONF_LISTEN_SORT_SPALTE`, `CONF_LISTEN_SORT_RICHTUNG`,
+  `CONF_OSM_RADIUS_METER`, alle in `const.py` definiert) – dauerhaft in
+  der Config Entry gespeicherte Vorgabewerte für die Übersicht bzw. für
+  „Angaben automatisch ermitteln“, analog zur globalen
+  „Einstellungen“-Maske der parallel gepflegten iOS-App. Anders als bei
+  Home-Assistant-Integrationen, die sich auf eine automatisch von
+  `OptionsFlow` bereitgestellte Basis-Implementierung verlassen, setzt
+  `HofKarteOptionsFlow.__init__` `self.config_entry` bewusst explizit,
+  um unabhängig von einer sich über Home-Assistant-Versionen wandelnden
+  Basisklassen-Eigenheit zu bleiben. Die Verwaltungsoberfläche liest
+  diese Werte beim Laden über den neuen, administratorpflichtigen
+  WebSocket-Befehl `hofkarte/management/settings` und verwendet sie als
+  Vorgabewerte statt wie bisher rein pro Formularsitzung flüchtiger
+  Werte. `DEFAULT_OSM_RADIUS_METER` wurde dabei zugleich von 50 auf
+  200 m angehoben (an die iOS-App angeglichen), der zulässige Bereich
+  `MIN_RADIUS_METER`–`MAX_RADIUS_METER` von 10–500 m auf 20–2000 m.
+- **Kartenmarker nach Status eingefärbt:** `erzeugeKarteMarkerIcon()`
+  (`hofkarte-panel.js`, siehe „Eingebettete Kartenansicht“ oben)
+  erhält eigene CSS-Klassen für „geöffnet“ (grün) und „geschlossen“
+  (grau, bewusst nicht Rot – auf einer Karte sonst leicht mit einem
+  Fehlerhinweis verwechselbar) statt durchgängig derselben
+  HA-Theme-Primärfarbe; unbekannter Status behält die bisherige
+  Standardfarbe. Eigene CSS-Klassen statt Wiederverwendung der
+  Kacheln-/Listen-Statusfarbgebung, da die beiden Kontexte (SVG-Marker
+  vs. HTML-Badge) unterschiedliche Selektoren benötigen.
+
 ## Suche/Filter
 
 `search.py` (`find_hoflaeden`) ist eine reine, HA-unabhängige

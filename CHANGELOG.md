@@ -13,6 +13,97 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [2026.9.2] - 2026-09-30
+
+Enthält die in den sieben Entwicklungsversionen `2026.9.2-dev.1` bis
+`-dev.7` (Issues #8–#11) entwickelten Änderungen. Für diesen Release
+gab es – anders als bei `2026.9.1` – keinen eigenen Release-Candidate-
+Schritt; die Konsolidierung erfolgte direkt auf Basis von `dev.7`.
+
+### Hinzugefügt
+
+- **Automatische Ermittlung von Website-Angaben (Issue #8/#9):** Im
+  Bearbeitungsformular ruft der Button „🔎 Infos ermitteln“ (Abschnitt
+  „Kontakt & Webseite“) auf ausdrücklichen Klick die dort eingetragene
+  Website-Adresse ab und wertet ausschliesslich strukturierte, von der
+  Seite selbst veröffentlichte Daten (schema.org-JSON-LD, ergänzend
+  `<title>`/Meta-Beschreibung sowie – falls kein JSON-LD vorliegt –
+  dokumentierte Text-Heuristiken für Adresse und Öffnungszeiten) aus,
+  um Name, Adresse, Beschreibung, Öffnungszeiten, Angebote und
+  Zahlungsarten als Vorschlag zu ermitteln. Rein lokale, deterministische
+  Extraktion – kein externer/Cloud-/KI-Dienst. Ermittelte Angaben
+  erscheinen in einem Bestätigungs-Popup zur Prüfung; erst ein Klick auf
+  „Übernehmen“ überträgt sie ins Formular, „Abbrechen“ verwirft sie
+  vollständig – es wird dabei nie automatisch gespeichert.
+- **„Ort in der Nähe suchen“ über OpenStreetMap (Issue #10):** Zweite
+  Datenquelle über die freie, kostenlose, kontofreie
+  OpenStreetMap-Overpass-API: sucht anhand der im Formular eingetragenen
+  Koordinaten nach benannten, hofladenartigen Orten in der Nähe und
+  bietet sie, bei mehreren Treffern über eine Trefferauswahl, zur
+  Übernahme über dasselbe Bestätigungs-Popup an. Gehärtet über mehrere
+  bekannte Overpass-Instanzen als automatischen Fallback
+  (`overpass-api.de`, `overpass.private.coffee`, `overpass.osm.ch`)
+  sowie ausführliche Fehlerprotokollierung, falls eine Instanz
+  fehlschlägt.
+- **Eine gemeinsame Aktion „🔍 Angaben automatisch ermitteln“
+  (Issue #11):** Die bis dahin getrennten Funktionen „Infos ermitteln“
+  (Website) und „Ort in der Nähe suchen“ (OpenStreetMap) wurden zu einer
+  einzigen Aktion zusammengelegt, die – je nach im Formular vorhandener
+  Website-Adresse und/oder Koordinaten – wahlweise beide Quellen
+  parallel abfragt und die Ergebnisse in einem gemeinsamen Vorschlag
+  zusammenführt (je Feld mit Herkunftskennzeichnung Website/
+  OpenStreetMap). Der Suchradius für die OpenStreetMap-Suche ist dabei
+  im Formular einstellbar. Die OpenStreetMap-Suche wurde ausserdem um
+  den Tag `amenity=marketplace` sowie eine Namens-Heuristik für
+  untertaggte Hofgelände (`landuse=farmyard`/`building=farm` mit
+  passendem Namen) erweitert.
+- **Kontaktfelder Mobilnummer und E-Mail:** Neue, optionale Felder im
+  Datenmodell, durchgängig berücksichtigt im Bearbeitungsformular
+  (Abschnitt „Kontakt & Webseite“), in der Detailansicht (anklickbare
+  Telefon-/E-Mail-Links), bei Export/Import sowie bei der automatischen
+  Ermittlung (Website-Analyse und OpenStreetMap-Suche liefern jetzt
+  ebenfalls Telefon/E-Mail, sofern verfügbar).
+- **Bewertung (0–5 Sterne):** Neues Bewertungsfeld je Hofladen mit
+  interaktiver Sterne-Auswahl im Bearbeitungsformular, Anzeige in der
+  Detailansicht, eigenem, sortierbarem Sensor je Hofladen-Device sowie
+  als zusätzliche, sortierbare Spalte in der Listenansicht bzw. kleiner
+  Anzeige neben dem Status-Badge in der Kachelansicht.
+- **Neue „Einstellungen“-Maske (Options Flow):** Über die Integration
+  erreichbare, dauerhaft gespeicherte Voreinstellungen für die
+  Übersicht (Standard-Sortierfeld und -richtung) sowie für „Angaben
+  automatisch ermitteln“ (dauerhaft gespeicherter Standard-Suchradius,
+  Bereich jetzt 20–2000 m, Standard 200 m – zuvor nur pro
+  Formularsitzung flüchtig, 10–500 m, Standard 50 m).
+- **Kartenmarker nach Öffnungsstatus eingefärbt:** Marker in der
+  eingebetteten Kartenansicht sind jetzt grün (geöffnet) bzw. grau
+  (geschlossen) eingefärbt statt einheitlich in der
+  HA-Theme-Primärfarbe, analog zur bereits bestehenden Statusfarbgebung
+  in Kacheln-/Listenansicht.
+
+### Behoben
+
+- **Datenverlust im Bearbeitungsformular nach „Infos ermitteln“
+  (Issue #9):** Ein Klick auf „Infos ermitteln“ liess zuvor jeden
+  bereits im Formular eingetragenen, aber noch nicht gespeicherten Wert
+  verschwinden, da der abschliessende Re-Render das Formular
+  ausschliesslich aus dem internen Bearbeitungszustand neu aufbaute.
+  Behoben durch eine vollständige Erfassung des Formularzustands vor
+  jedem mit der automatischen Ermittlung verbundenen Re-Render.
+- **„Die Overpass API (OpenStreetMap) konnte nicht erreicht werden.“**
+  bei „Ort in der Nähe suchen“: verbesserte Fehlerprotokollierung sowie
+  mehrere Overpass-Instanzen als Fallback (siehe oben), ein
+  identifizierender `User-Agent`-Header, der kombinierte
+  `nwr`-Selektor sowie angepasste Timeouts adressieren die
+  dokumentierten, wahrscheinlichsten Ursachen (Überlastung der
+  Haupt-Instanz, fehlender `User-Agent`). Aus dieser
+  Entwicklungsumgebung heraus ohne Netzwerkzugriff auf die
+  Overpass-Instanzen nicht direkt reproduzierbar gewesen.
+
+### Tests
+
+- 572 Tests insgesamt (zuvor 366 bei `2026.9.1`), `pyflakes`/`mypy`/
+  `node --check` durchgehend fehlerfrei.
+
 ## [2026.9.1] - 2026-09-19
 
 Enthält die in den sieben Entwicklungsversionen `2026.9.1-dev.1` bis

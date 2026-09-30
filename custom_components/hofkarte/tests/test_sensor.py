@@ -15,6 +15,7 @@ from custom_components.hofkarte.const import DOMAIN
 from custom_components.hofkarte.coordinator import HofKarteUpdateCoordinator
 from custom_components.hofkarte.data_provider import HofladenDataProvider
 from custom_components.hofkarte.sensor import (
+    HofKarteBewertungSensor,
     HofKarteEntfernungSensor,
     HofKarteNaechsteOeffnungSensor,
     HofKarteNaechsteSchliessungSensor,
@@ -273,6 +274,48 @@ async def test_entfernung_none_wenn_hofladen_fehlt(hass: HomeAssistant) -> None:
     await coordinator.async_config_entry_first_refresh()
 
     entity = HofKarteEntfernungSensor(coordinator, "unbekannt")
+
+    assert entity.native_value is None
+    assert entity.available is False
+
+
+async def test_bewertung_unique_id_pattern(hass: HomeAssistant) -> None:
+    """Die unique_id muss stabil und eindeutig aus der Hofladen-ID gebildet werden."""
+    provider = _FakeProvider([{"id": "hof-1", "name": "Hofladen Eins", "bewertung": 4}])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    entity = HofKarteBewertungSensor(coordinator, "hof-1")
+
+    assert entity.unique_id == f"{DOMAIN}_hof-1_bewertung"
+
+
+async def test_bewertung_native_value(hass: HomeAssistant) -> None:
+    provider = _FakeProvider([{"id": "hof-1", "name": "Hofladen Eins", "bewertung": 3}])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    entity = HofKarteBewertungSensor(coordinator, "hof-1")
+
+    assert entity.native_value == 3
+
+
+async def test_bewertung_default_null_ohne_angabe(hass: HomeAssistant) -> None:
+    provider = _FakeProvider([{"id": "hof-1", "name": "Hofladen Eins"}])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    entity = HofKarteBewertungSensor(coordinator, "hof-1")
+
+    assert entity.native_value == 0
+
+
+async def test_bewertung_none_wenn_hofladen_fehlt(hass: HomeAssistant) -> None:
+    provider = _FakeProvider([])
+    coordinator = HofKarteUpdateCoordinator(hass, provider)
+    await coordinator.async_config_entry_first_refresh()
+
+    entity = HofKarteBewertungSensor(coordinator, "unbekannt")
 
     assert entity.native_value is None
     assert entity.available is False

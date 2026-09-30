@@ -41,6 +41,7 @@ async def async_setup_entry(
                 HofKarteNaechsteOeffnungSensor,
                 HofKarteNaechsteSchliessungSensor,
                 HofKarteEntfernungSensor,
+                HofKarteBewertungSensor,
             ],
         )
     )
@@ -157,3 +158,36 @@ class HofKarteEntfernungSensor(HofKarteEntity, SensorEntity):
             hofladen.latitude,
             hofladen.longitude,
         )
+
+
+class HofKarteBewertungSensor(HofKarteEntity, SensorEntity):
+    """Bewertung eines Hofladens (0-5 Sterne).
+
+    Kein ``SensorDeviceClass`` – Home Assistant bietet keine passende
+    Device Class für eine schlichte Sterne-Bewertung (anders als z. B.
+    ``DISTANCE`` für ``HofKarteEntfernungSensor``); der Zustand ist ein
+    einfacher, unitless Integer zwischen 0 und 5. Macht die Bewertung für
+    Dashboards, Vorlagen und Automationen verfügbar (z. B. Filtern/
+    Sortieren nach Bewertung in eigenen Lovelace-Karten).
+    """
+
+    _attr_name = "Bewertung"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self, coordinator: HofKarteUpdateCoordinator, hofladen_id: str
+    ) -> None:
+        super().__init__(coordinator, hofladen_id)
+        self._attr_unique_id = f"{DOMAIN}_{hofladen_id}_bewertung"
+
+    @property
+    def native_value(self) -> int | None:
+        """Aktueller Bewertungswert (0-5).
+
+        Liefert ``None`` (Zustand „unbekannt“), wenn der Hofladen nicht
+        (mehr) existiert.
+        """
+        hofladen = self.hofladen
+        if hofladen is None:
+            return None
+        return hofladen.bewertung

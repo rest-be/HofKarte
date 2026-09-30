@@ -4,13 +4,23 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import Unauthorized
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.hofkarte.const import DOMAIN
+from custom_components.hofkarte.const import (
+    CONF_LISTEN_SORT_RICHTUNG,
+    CONF_LISTEN_SORT_SPALTE,
+    CONF_OSM_RADIUS_METER,
+    DEFAULT_LISTEN_SORT_RICHTUNG,
+    DEFAULT_LISTEN_SORT_SPALTE,
+    DEFAULT_OSM_RADIUS_METER,
+    DOMAIN,
+)
 from custom_components.hofkarte.coordinator import HofKarteUpdateCoordinator
 from custom_components.hofkarte.data_provider import HofladenDataProvider
 from custom_components.hofkarte.management import (
@@ -23,9 +33,24 @@ from custom_components.hofkarte.management import (
     ws_import_commit,
     ws_import_preview,
     ws_list,
+    ws_osm_info,
     ws_save,
+    ws_settings,
+    ws_webseite_info,
 )
 from custom_components.hofkarte.models import Hofladen, Oeffnungszeit
+from custom_components.hofkarte.osm_info import (
+    OsmKeineOrteGefundenError,
+    OsmNichtErreichbarError,
+    OsmOrt,
+    OsmUngueltigeKoordinatenError,
+)
+from custom_components.hofkarte.webseite_info import (
+    WebseiteInfo,
+    WebseiteInformationenNichtGefundenError,
+    WebseiteNichtErreichbarError,
+    WebseiteUngueltigeUrlError,
+)
 
 
 class _FakeConnection:
@@ -464,6 +489,7 @@ async def test_async_register_websocket_commands_registriert_alle_drei(
     assert "hofkarte/management/list" in ws_handlers
     assert "hofkarte/management/save" in ws_handlers
     assert "hofkarte/management/delete" in ws_handlers
+    assert "hofkarte/management/settings" in ws_handlers
 
 
 # ---------------------------------------------------------------------------
@@ -959,4 +985,546 @@ async def test_async_register_websocket_commands_registriert_import_befehle(
     ws_handlers = hass.data.get("websocket_api", {})
     assert "hofkarte/management/import_preview" in ws_handlers
     assert "hofkarte/management/import_commit" in ws_handlers
+
+
+# ---------------------------------------------------------------------------
+# ws_webseite_info (Issue #8, "Informationen aus Homepage")
+# ---------------------------------------------------------------------------
+
+
+async def test_async_register_websocket_commands_registriert_webseite_info(
+    hass: HomeAssistant,
+) -> None:
+    async_register_websocket_commands(hass)
+
+    ws_handlers = hass.data.get("websocket_api", {})
+    assert "hofkarte/management/webseite_info" in ws_handlers
+
+
+async def test_ws_webseite_info_liefert_ermittelte_informationen(
+    hass: HomeAssistant,
+) -> None:
+    """Erfolgsfall: Das Ergebnis wird unverändert (als Vorschlag) an die
+    Verbindung zurückgegeben - ws_webseite_info speichert dabei nichts."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_webseite_info"
+    ) as fake:
+        fake.return_value = WebseiteInfo(name="Hofladen X", angebote=("Eier",))
+
+        connection = _FakeConnection()
+        ws_webseite_info(
+            hass,
+            connection,
+            {
+                "id": 40,
+                "type": "hofkarte/management/webseite_info",
+                "website": "https://beispiel.example",
+            },
+        )
+        await hass.async_block_till_done()
+
+    fake.assert_called_once_with(hass, "https://beispiel.example")
+    assert len(connection.errors) == 0
+    msg_id, ergebnis = connection.results[0]
+    assert msg_id == 40
+    assert ergebnis["info"]["name"] == "Hofladen X"
+    assert ergebnis["info"]["angebote"] == ["Eier"]
+
+
+async def test_ws_webseite_info_fehlerfall_ungueltige_url(
+    hass: HomeAssistant,
+) -> None:
+    """Fehlerfall 1 (keine/ungültige Website-Adresse) -> Fehlercode
+    'invalid_url'."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_webseite_info"
+    ) as fake:
+        fake.side_effect = WebseiteUngueltigeUrlError("keine URL")
+
+        connection = _FakeConnection()
+        ws_webseite_info(
+            hass,
+            connection,
+            {"id": 41, "type": "hofkarte/management/webseite_info", "website": ""},
+        )
+        await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 41
+    assert code == "invalid_url"
+
+
+async def test_ws_webseite_info_fehlerfall_nicht_erreichbar(
+    hass: HomeAssistant,
+) -> None:
+    """Fehlerfall 2 (Website nicht erreichbar/lesbar) -> Fehlercode
+    'unreachable'."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_webseite_info"
+    ) as fake:
+        fake.side_effect = WebseiteNichtErreichbarError("nicht erreichbar")
+
+        connection = _FakeConnection()
+        ws_webseite_info(
+            hass,
+            connection,
+            {
+                "id": 42,
+                "type": "hofkarte/management/webseite_info",
+                "website": "https://nicht-erreichbar.example",
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 42
+    assert code == "unreachable"
+
+
+async def test_ws_webseite_info_fehlerfall_nichts_gefunden(
+    hass: HomeAssistant,
+) -> None:
+    """Fehlerfall 3 (keine Informationen gefunden) -> Fehlercode
+    'not_found'."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_webseite_info"
+    ) as fake:
+        fake.side_effect = WebseiteInformationenNichtGefundenError("nichts gefunden")
+
+        connection = _FakeConnection()
+        ws_webseite_info(
+            hass,
+            connection,
+            {
+                "id": 43,
+                "type": "hofkarte/management/webseite_info",
+                "website": "https://leere-seite.example",
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 43
+    assert code == "not_found"
+
+
+async def test_ws_webseite_info_erfordert_admin(hass: HomeAssistant) -> None:
+    """Wie alle übrigen Verwaltungsbefehle erfordert auch dieser Befehl
+    Home-Assistant-Administratorrechte (require_admin). Der Dekorator
+    wirft dafür - wenn er (wie hier im Test) ausserhalb des normalen
+    Verbindungs-Dispatch direkt aufgerufen wird - eine ``Unauthorized``-
+    Exception, statt einen Verbindungsfehler zu senden (das Umwandeln in
+    einen Verbindungsfehler übernimmt normalerweise der WebSocket-
+    Verbindungs-Dispatch von Home Assistant selbst)."""
+    await _setup_mit_coordinator(hass)
+
+    connection = _FakeConnection()
+    connection.user = SimpleNamespace(is_admin=False)
+
+    with pytest.raises(Unauthorized):
+        ws_webseite_info(
+            hass,
+            connection,
+            {
+                "id": 44,
+                "type": "hofkarte/management/webseite_info",
+                "website": "https://beispiel.example",
+            },
+        )
+
+    assert len(connection.results) == 0
+    assert len(connection.errors) == 0
+
+
+async def test_ws_webseite_info_ohne_eingerichtete_integration_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    connection = _FakeConnection()
+    ws_webseite_info(
+        hass,
+        connection,
+        {
+            "id": 45,
+            "type": "hofkarte/management/webseite_info",
+            "website": "https://beispiel.example",
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 45
+    assert code == "not_ready"
+
+
+# ---------------------------------------------------------------------------
+# ws_osm_info (Issue #10, "Ort in der Nähe suchen")
+# ---------------------------------------------------------------------------
+
+
+async def test_async_register_websocket_commands_registriert_osm_info(
+    hass: HomeAssistant,
+) -> None:
+    async_register_websocket_commands(hass)
+
+    ws_handlers = hass.data.get("websocket_api", {})
+    assert "hofkarte/management/osm_info" in ws_handlers
+
+
+async def test_ws_osm_info_liefert_ermittelte_orte(hass: HomeAssistant) -> None:
+    """Erfolgsfall: Die gefundenen Orte werden unverändert (als
+    Vorschläge) an die Verbindung zurückgegeben - ws_osm_info speichert
+    dabei nichts."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_osm_orte"
+    ) as fake:
+        fake.return_value = (
+            OsmOrt(name="Hofladen X", entfernung_meter=12.3),
+            OsmOrt(name="Hofladen Y", entfernung_meter=45.6),
+        )
+
+        connection = _FakeConnection()
+        ws_osm_info(
+            hass,
+            connection,
+            {
+                "id": 50,
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.948,
+                "longitude": 7.4474,
+            },
+        )
+        await hass.async_block_till_done()
+
+    fake.assert_called_once_with(hass, 46.948, 7.4474, radius_meter=50)
+    assert len(connection.errors) == 0
+    msg_id, ergebnis = connection.results[0]
+    assert msg_id == 50
+    assert [o["name"] for o in ergebnis["orte"]] == ["Hofladen X", "Hofladen Y"]
+
+
+async def test_ws_osm_info_fehlerfall_ungueltige_koordinaten(
+    hass: HomeAssistant,
+) -> None:
+    """Fehlerfall 1 (keine gültigen Koordinaten) -> Fehlercode
+    'invalid_coordinates'."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_osm_orte"
+    ) as fake:
+        fake.side_effect = OsmUngueltigeKoordinatenError("ungültig")
+
+        connection = _FakeConnection()
+        ws_osm_info(
+            hass,
+            connection,
+            {
+                "id": 51,
+                "type": "hofkarte/management/osm_info",
+                "latitude": 999,
+                "longitude": 7.4474,
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 51
+    assert code == "invalid_coordinates"
+
+
+async def test_ws_osm_info_fehlerfall_nicht_erreichbar(hass: HomeAssistant) -> None:
+    """Fehlerfall 2 (Overpass API nicht erreichbar) -> Fehlercode
+    'unreachable'."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_osm_orte"
+    ) as fake:
+        fake.side_effect = OsmNichtErreichbarError("nicht erreichbar")
+
+        connection = _FakeConnection()
+        ws_osm_info(
+            hass,
+            connection,
+            {
+                "id": 52,
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.948,
+                "longitude": 7.4474,
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 52
+    assert code == "unreachable"
+
+
+async def test_ws_osm_info_fehlerfall_nichts_gefunden(hass: HomeAssistant) -> None:
+    """Fehlerfall 3 (keine Orte gefunden) -> Fehlercode 'not_found'."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_osm_orte"
+    ) as fake:
+        fake.side_effect = OsmKeineOrteGefundenError("nichts gefunden")
+
+        connection = _FakeConnection()
+        ws_osm_info(
+            hass,
+            connection,
+            {
+                "id": 53,
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.948,
+                "longitude": 7.4474,
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 53
+    assert code == "not_found"
+
+
+async def test_ws_osm_info_erfordert_admin(hass: HomeAssistant) -> None:
+    """Wie alle übrigen Verwaltungsbefehle erfordert auch dieser Befehl
+    Home-Assistant-Administratorrechte (require_admin) - siehe
+    test_ws_webseite_info_erfordert_admin für die Begründung des direkten
+    Unauthorized-Exception-Aufrufs in diesem Test."""
+    await _setup_mit_coordinator(hass)
+
+    connection = _FakeConnection()
+    connection.user = SimpleNamespace(is_admin=False)
+
+    with pytest.raises(Unauthorized):
+        ws_osm_info(
+            hass,
+            connection,
+            {
+                "id": 54,
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.948,
+                "longitude": 7.4474,
+            },
+        )
+
+    assert len(connection.results) == 0
+    assert len(connection.errors) == 0
+
+
+async def test_ws_osm_info_ohne_eingerichtete_integration_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    connection = _FakeConnection()
+    ws_osm_info(
+        hass,
+        connection,
+        {
+            "id": 55,
+            "type": "hofkarte/management/osm_info",
+            "latitude": 46.948,
+            "longitude": 7.4474,
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert len(connection.results) == 0
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 55
+    assert code == "not_ready"
+
+
+# ---------------------------------------------------------------------------
+# Optionaler radius-Parameter (Issue #11)
+# ---------------------------------------------------------------------------
+
+
+def test_ws_osm_info_schema_ohne_angabe_hat_keinen_radius_schluessel() -> None:
+    """Seit dem Options Flow (dauerhaft gespeicherter Standardwert statt
+    eines im Nachrichtenschema fest hinterlegten Standards) fehlt der
+    Schlüssel ``radius`` im geparsten Ergebnis, wenn er nicht mitgegeben
+    wurde - der tatsächliche Vorgabewert wird stattdessen erst innerhalb
+    von ``ws_osm_info`` über ``_settings()`` ermittelt (siehe dortigen
+    Test ``test_ws_osm_info_verwendet_gespeicherten_radius_ohne_angabe``)."""
+    ergebnis = ws_osm_info._ws_schema(
+        {"type": "hofkarte/management/osm_info", "latitude": 46.9, "longitude": 7.4, "id": 1}
+    )
+    assert "radius" not in ergebnis
+
+
+def test_ws_osm_info_schema_akzeptiert_gueltigen_radius() -> None:
+    ergebnis = ws_osm_info._ws_schema(
+        {
+            "type": "hofkarte/management/osm_info",
+            "latitude": 46.9,
+            "longitude": 7.4,
+            "radius": 200,
+            "id": 1,
+        }
+    )
+    assert ergebnis["radius"] == 200
+
+
+def test_ws_osm_info_schema_lehnt_zu_kleinen_radius_ab() -> None:
+    with pytest.raises(Exception):
+        ws_osm_info._ws_schema(
+            {
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.9,
+                "longitude": 7.4,
+                "radius": 5,
+                "id": 1,
+            }
+        )
+
+
+def test_ws_osm_info_schema_lehnt_zu_grossen_radius_ab() -> None:
+    with pytest.raises(Exception):
+        ws_osm_info._ws_schema(
+            {
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.9,
+                "longitude": 7.4,
+                "radius": 5000,
+                "id": 1,
+            }
+        )
+
+
+async def test_ws_osm_info_gibt_radius_an_async_ermittle_osm_orte_weiter(
+    hass: HomeAssistant,
+) -> None:
+    """Bei direktem Handler-Aufruf (ohne Schema-Anwendung, siehe übrige
+    Tests dieser Datei) muss ein fehlender ``radius``-Schlüssel dennoch
+    zum Standardradius führen (defensiver ``.get()`` statt ``[...]``,
+    siehe management.ws_osm_info)."""
+    await _setup_mit_coordinator(hass)
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_osm_orte"
+    ) as fake:
+        fake.return_value = (OsmOrt(name="Hofladen X"),)
+
+        connection = _FakeConnection()
+        ws_osm_info(
+            hass,
+            connection,
+            {
+                "id": 60,
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.948,
+                "longitude": 7.4474,
+                "radius": 200,
+            },
+        )
+        await hass.async_block_till_done()
+
+    fake.assert_called_once_with(hass, 46.948, 7.4474, radius_meter=200)
+
+
+async def test_ws_osm_info_verwendet_gespeicherten_radius_ohne_angabe(
+    hass: HomeAssistant,
+) -> None:
+    """Ohne explizit angegebenen Radius muss der über den Options Flow
+    dauerhaft gespeicherte Vorgabewert verwendet werden (siehe
+    management._settings(), config_flow.HofKarteOptionsFlow)."""
+    coordinator = await _setup_mit_coordinator(hass)
+    hass.config_entries.async_update_entry(
+        coordinator.config_entry, options={CONF_OSM_RADIUS_METER: 777}
+    )
+
+    with patch(
+        "custom_components.hofkarte.management.async_ermittle_osm_orte"
+    ) as fake:
+        fake.return_value = (OsmOrt(name="Hofladen X"),)
+
+        connection = _FakeConnection()
+        ws_osm_info(
+            hass,
+            connection,
+            {
+                "id": 61,
+                "type": "hofkarte/management/osm_info",
+                "latitude": 46.948,
+                "longitude": 7.4474,
+            },
+        )
+        await hass.async_block_till_done()
+
+    fake.assert_called_once_with(hass, 46.948, 7.4474, radius_meter=777)
+
+
+# ---------------------------------------------------------------------------
+# ws_settings (Options Flow: dauerhaft gespeicherte Einstellungen)
+# ---------------------------------------------------------------------------
+
+
+async def test_ws_settings_liefert_vorgabewerte_ohne_gespeicherte_optionen(
+    hass: HomeAssistant,
+) -> None:
+    await _setup_mit_coordinator(hass)
+
+    connection = _FakeConnection()
+    ws_settings(hass, connection, {"id": 70, "type": "hofkarte/management/settings"})
+    await hass.async_block_till_done()
+
+    msg_id, data = connection.results[0]
+    assert msg_id == 70
+    assert data["einstellungen"] == {
+        CONF_LISTEN_SORT_SPALTE: DEFAULT_LISTEN_SORT_SPALTE,
+        CONF_LISTEN_SORT_RICHTUNG: DEFAULT_LISTEN_SORT_RICHTUNG,
+        CONF_OSM_RADIUS_METER: DEFAULT_OSM_RADIUS_METER,
+    }
+
+
+async def test_ws_settings_liefert_gespeicherte_optionen(
+    hass: HomeAssistant,
+) -> None:
+    coordinator = await _setup_mit_coordinator(hass)
+    hass.config_entries.async_update_entry(
+        coordinator.config_entry,
+        options={
+            CONF_LISTEN_SORT_SPALTE: "bewertung",
+            CONF_LISTEN_SORT_RICHTUNG: "desc",
+            CONF_OSM_RADIUS_METER: 500,
+        },
+    )
+
+    connection = _FakeConnection()
+    ws_settings(hass, connection, {"id": 71, "type": "hofkarte/management/settings"})
+    await hass.async_block_till_done()
+
+    _msg_id, data = connection.results[0]
+    assert data["einstellungen"][CONF_LISTEN_SORT_SPALTE] == "bewertung"
+    assert data["einstellungen"][CONF_LISTEN_SORT_RICHTUNG] == "desc"
+    assert data["einstellungen"][CONF_OSM_RADIUS_METER] == 500
+
+
+def test_ws_settings_ohne_eingerichtete_integration_sendet_fehler(
+    hass: HomeAssistant,
+) -> None:
+    connection = _FakeConnection()
+    ws_settings(hass, connection, {"id": 72, "type": "hofkarte/management/settings"})
+
+    msg_id, code, _message = connection.errors[0]
+    assert msg_id == 72
+    assert code == "not_ready"
 

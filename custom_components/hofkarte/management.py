@@ -19,19 +19,44 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import (
+    CONF_LISTEN_SORT_RICHTUNG,
+    CONF_LISTEN_SORT_SPALTE,
+    CONF_OSM_RADIUS_METER,
+    DEFAULT_LISTEN_SORT_RICHTUNG,
+    DEFAULT_LISTEN_SORT_SPALTE,
+    DEFAULT_OSM_RADIUS_METER,
+    DOMAIN,
+)
 from .coordinator import HofKarteUpdateCoordinator
 from .data_provider import HofladenNotFoundError
 from .images import get_main_image_url
 from .models import Hofladen
 from .opening_hours import is_open
+from .osm_info import (
+    MAX_RADIUS_METER,
+    MIN_RADIUS_METER,
+    OsmKeineOrteGefundenError,
+    OsmNichtErreichbarError,
+    OsmUngueltigeKoordinatenError,
+    async_ermittle_osm_orte,
+)
 from .parsing import HofladenValidationError, parse_hofladen
+from .webseite_info import (
+    WebseiteInformationenNichtGefundenError,
+    WebseiteNichtErreichbarError,
+    WebseiteUngueltigeUrlError,
+    async_ermittle_webseite_info,
+)
 
 WS_LIST = "hofkarte/management/list"
 WS_SAVE = "hofkarte/management/save"
 WS_DELETE = "hofkarte/management/delete"
 WS_IMPORT_PREVIEW = "hofkarte/management/import_preview"
 WS_IMPORT_COMMIT = "hofkarte/management/import_commit"
+WS_WEBSEITE_INFO = "hofkarte/management/webseite_info"
+WS_OSM_INFO = "hofkarte/management/osm_info"
+WS_SETTINGS = "hofkarte/management/settings"
 
 # Gültige Werte für "aktion" in einem einzelnen Eintrag von
 # WS_IMPORT_COMMIT (siehe ws_import_commit()).
@@ -140,6 +165,44 @@ def _get_coordinator(hass: HomeAssistant) -> HofKarteUpdateCoordinator:
             "HofKarte ist nicht eingerichtet oder nicht eindeutig geladen."
         )
     return next(iter(entries.values()))
+
+
+def _settings(coordinator: HofKarteUpdateCoordinator) -> dict[str, Any]:
+    """Dauerhaft gespeicherte Einstellungen (Options Flow) mit Vorgabewerten
+    für fehlende Schlüssel ermitteln (z. B. eine noch nie über den Options
+    Flow bestätigte Config Entry - diese hat ``options == {}``)."""
+    optionen = (coordinator.config_entry.options if coordinator.config_entry else None) or {}
+    return {
+        CONF_LISTEN_SORT_SPALTE: optionen.get(
+            CONF_LISTEN_SORT_SPALTE, DEFAULT_LISTEN_SORT_SPALTE
+        ),
+        CONF_LISTEN_SORT_RICHTUNG: optionen.get(
+            CONF_LISTEN_SORT_RICHTUNG, DEFAULT_LISTEN_SORT_RICHTUNG
+        ),
+        CONF_OSM_RADIUS_METER: optionen.get(
+            CONF_OSM_RADIUS_METER, DEFAULT_OSM_RADIUS_METER
+        ),
+    }
+
+
+@websocket_api.websocket_command({vol.Required("type"): WS_SETTINGS})
+@websocket_api.require_admin
+@callback
+def ws_settings(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Dauerhaft gespeicherte Einstellungen (Options Flow, siehe
+    ``config_flow.HofKarteOptionsFlow``) an die Verwaltungsoberfläche
+    liefern - dient dort als Vorgabewert für Sortierung und OSM-
+    Suchradius beim erstmaligen Laden eines Formulars/der Übersicht
+    (siehe ``static/hofkarte-panel.js``, Initialisierung)."""
+    try:
+        coordinator = _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    connection.send_result(msg["id"], {"einstellungen": _settings(coordinator)})
 
 
 @websocket_api.websocket_command({vol.Required("type"): WS_LIST})
@@ -390,6 +453,148 @@ async def ws_import_commit(
     )
 
 
+@websocket_api.websocket_command(
+    {vol.Required("type"): WS_WEBSEITE_INFO, vol.Required("website"): str}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_webseite_info(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Informationen von einer vom Benutzer angegebenen Website ermitteln
+    (Issue #8, "Informationen aus Homepage").
+
+    Liefert ausschliesslich **Vorschlagsdaten zur Überprüfung** – es wird
+    dabei nichts gespeichert; das Speichern erfolgt unverändert über
+    ``ws_save``, nachdem die Benutzerin/der Benutzer die vorgeschlagenen
+    Werte im Formular geprüft und ggf. angepasst hat.
+
+    Bildet die drei im Issue geforderten Fehlerfälle jeweils auf einen
+    eigenen, unterscheidbaren Fehlercode ab (siehe ``webseite_info.py``
+    für die jeweilige Bedeutung):
+
+    - ``invalid_url`` - keine oder syntaktisch ungültige/unsichere
+      Website-Adresse (Fehlerfall 1).
+    - ``unreachable`` - Website nicht erreichbar oder nicht lesbar
+      (Fehlerfall 2).
+    - ``not_found`` - keine verwertbaren Informationen gefunden
+      (Fehlerfall 3).
+
+    Prüft (wie die übrigen Verwaltungsbefehle) zunächst, ob HofKarte
+    eindeutig eingerichtet ist – der eigentliche Abruf verwendet den
+    Coordinator zwar nicht, die Prüfung verhindert aber, dass die
+    Verwaltungsoberfläche diesen Befehl in einem nicht betriebsbereiten
+    Zustand aufrufen kann, konsistent mit ``ws_list``/``ws_save``/etc.
+    """
+    try:
+        _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    try:
+        info = await async_ermittle_webseite_info(hass, msg["website"])
+    except WebseiteUngueltigeUrlError as err:
+        connection.send_error(msg["id"], "invalid_url", str(err))
+        return
+    except WebseiteNichtErreichbarError as err:
+        connection.send_error(msg["id"], "unreachable", str(err))
+        return
+    except WebseiteInformationenNichtGefundenError as err:
+        connection.send_error(msg["id"], "not_found", str(err))
+        return
+
+    connection.send_result(msg["id"], {"info": _json_value(info)})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): WS_OSM_INFO,
+        vol.Required("latitude"): vol.Coerce(float),
+        vol.Required("longitude"): vol.Coerce(float),
+        vol.Optional("radius"): vol.All(
+            vol.Coerce(int), vol.Range(min=MIN_RADIUS_METER, max=MAX_RADIUS_METER)
+        ),
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_osm_info(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """In der Nähe der angegebenen Koordinaten nach Orten (OpenStreetMap /
+    Overpass API) suchen (Issue #10, "Ort in der Nähe suchen").
+
+    Liefert ausschliesslich **Vorschlagsdaten zur Überprüfung** – es wird
+    dabei nichts gespeichert; das Speichern erfolgt unverändert über
+    ``ws_save``, nachdem die Benutzerin/der Benutzer einen der
+    vorgeschlagenen Treffer geprüft und ggf. angepasst hat.
+
+    Bildet die drei möglichen Fehlerfälle jeweils auf einen eigenen,
+    unterscheidbaren Fehlercode ab (siehe ``osm_info.py`` für die
+    jeweilige Bedeutung):
+
+    - ``invalid_coordinates`` - Koordinaten fehlen oder sind ausserhalb
+      des gültigen Wertebereichs.
+    - ``unreachable`` - Overpass API nicht erreichbar oder Antwort nicht
+      auswertbar.
+    - ``not_found`` - keine (benannten) Orte im Suchradius gefunden.
+
+    Prüft (wie die übrigen Verwaltungsbefehle) zunächst, ob HofKarte
+    eindeutig eingerichtet ist – der eigentliche Abruf verwendet den
+    Coordinator zwar nicht, die Prüfung verhindert aber, dass die
+    Verwaltungsoberfläche diesen Befehl in einem nicht betriebsbereiten
+    Zustand aufrufen kann, konsistent mit ``ws_list``/``ws_save``/
+    ``ws_webseite_info``.
+
+    ``radius`` ist seit Issue #11 optional (fehlt er, greift der über den
+    Options Flow dauerhaft gespeicherte Vorgabewert, siehe ``_settings``)
+    und wird bereits über das Nachrichtenschema auf
+    ``MIN_RADIUS_METER``-``MAX_RADIUS_METER`` begrenzt (ein Wert
+    ausserhalb dieses Bereichs führt zu einem
+    regulären Schema-Validierungsfehler der Verwaltungsoberfläche); die
+    zusätzliche Begrenzung in ``async_ermittle_osm_orte`` selbst bleibt
+    als zweite, unabhängige Absicherung bestehen (siehe ``osm_info.py``).
+    """
+    try:
+        coordinator = _get_coordinator(hass)
+    except ValueError as err:
+        connection.send_error(msg["id"], "not_ready", str(err))
+        return
+
+    # Ohne vom Aufrufer angegebenen Radius greift der über den Options
+    # Flow dauerhaft gespeicherte Vorgabewert (Fallback auf
+    # ``STANDARD_RADIUS_METER``, falls keine Config Entry ermittelbar
+    # ist) - siehe Moduldoc von ``config_flow.py``. Die Verwaltungs-
+    # oberfläche selbst sendet den Radius inzwischen ohnehin stets
+    # explizit (initialisiert aus ``ws_settings``), dieser Fallback
+    # greift daher primär für andere WebSocket-Aufrufer.
+    radius = msg.get("radius")
+    if radius is None:
+        radius = _settings(coordinator)[CONF_OSM_RADIUS_METER]
+
+    try:
+        orte = await async_ermittle_osm_orte(
+            hass,
+            msg["latitude"],
+            msg["longitude"],
+            radius_meter=radius,
+        )
+    except OsmUngueltigeKoordinatenError as err:
+        connection.send_error(msg["id"], "invalid_coordinates", str(err))
+        return
+    except OsmNichtErreichbarError as err:
+        connection.send_error(msg["id"], "unreachable", str(err))
+        return
+    except OsmKeineOrteGefundenError as err:
+        connection.send_error(msg["id"], "not_found", str(err))
+        return
+
+    connection.send_result(
+        msg["id"], {"orte": [_json_value(ort) for ort in orte]}
+    )
+
+
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
     """HofKarte-WebSocket-Befehle registrieren (einmalig, Domain-Ebene)."""
     websocket_api.async_register_command(hass, ws_list)
@@ -397,3 +602,6 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_delete)
     websocket_api.async_register_command(hass, ws_import_preview)
     websocket_api.async_register_command(hass, ws_import_commit)
+    websocket_api.async_register_command(hass, ws_webseite_info)
+    websocket_api.async_register_command(hass, ws_osm_info)
+    websocket_api.async_register_command(hass, ws_settings)

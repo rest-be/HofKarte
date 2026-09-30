@@ -84,8 +84,129 @@ offenen Sicherheitslücken:
   (JPEG/PNG/GIF) und Grössenprüfung (max. 10 MB) erfolgen serverseitig
   durch diese Komponente.
 - Die Verwaltungsoberfläche (`frontend.py`, `management.py`) erfordert
-  Home-Assistant-Administratorrechte (`require_admin`).
+  Home-Assistant-Administratorrechte (`require_admin`) – auch für die
+  Funktion „🔍 Angaben automatisch ermitteln“, die seit Issue #11 beide
+  WebSocket-Befehle `ws_webseite_info` und `ws_osm_info` (siehe unten)
+  gemeinsam auslösen kann.
 - Es findet keine Kommunikation mit externen Diensten durch HofKarte
   selbst statt (siehe README, Abschnitt „Datenschutz- und
-  Standort-Hinweise“) – Ausnahme: das Laden von Hofladen-Bildern über
-  die vom Benutzer hinterlegten externen Bild-Adressen.
+  Standort-Hinweise“) – Ausnahmen: das Laden von Hofladen-Bildern über
+  die vom Benutzer hinterlegten externen Bild-Adressen, (seit
+  Issue #8) der Abruf einer vom Benutzer im Verwaltungs-Panel
+  eingegebenen Website-Adresse, sowie (seit Issue #10, erweitert in
+  Issue #11) die Suche über die OpenStreetMap-Overpass-API – beide
+  seit Issue #11 gemeinsam über die eine Funktion „🔍 Angaben
+  automatisch ermitteln“ auslösbar.
+
+### Funktion „Infos ermitteln“ (`webseite_info.py`, Issue #8)
+
+Diese Funktion ist die **erste eigene ausgehende Netzwerkanfrage im
+Backend-Code von HofKarte** – bisher wurde jede Netzwerkkommunikation an
+Home-Assistant-Komponenten oder den Browser delegiert. Getroffene
+Sicherheitsmassnahmen:
+
+- **Kein externer/Cloud-/KI-Dienst:** Die Extraktion erfolgt
+  ausschliesslich lokal und deterministisch (schema.org-JSON-LD,
+  `<title>`/Meta-Beschreibung als Fallback). Es wird kein Cloud-Dienst,
+  kein LLM und kein Scraping-Dienst eingebunden.
+- **SSRF-Schutz über den Standard aus `images.py` hinaus:** Neben der
+  syntaktischen Grundprüfung (Schema, Zugangsdaten, „localhost“,
+  private/interne IP-Literale – ausgelagert in
+  `custom_components/hofkarte/url_sicherheit.py` und von `images.py`
+  und `webseite_info.py` gemeinsam genutzt) gelten zusätzlich ein
+  Antwortgrössen-Limit (2 MB), eine Content-Type-Prüfung (nur
+  HTML-artige Antworten), eine Zeitüberschreitung (10 Sekunden) sowie
+  eine manuelle, bei jedem Sprung erneut geprüfte Weiterleitungsauflösung
+  (maximal 3 Sprünge) – eine Weiterleitung auf ein privates/internes
+  Ziel wird dadurch abgelehnt, statt ihr automatisch zu folgen.
+- **Home Assistants verwaltete Client-Session:** Der Abruf verwendet
+  `homeassistant.helpers.aiohttp_client.async_get_clientsession`, keine
+  eigene, unverwaltete `aiohttp.ClientSession` (siehe
+  `custom_components/hofkarte/quality_scale.yaml`, Kriterium
+  `inject-websession`).
+- **Review vor dem Speichern:** Das Ergebnis ist ausschliesslich ein
+  Vorschlag im Bearbeitungsformular – es wird dabei nichts automatisch
+  gespeichert; das eigentliche Speichern erfolgt unverändert über den
+  bestehenden, administratorpflichtigen `ws_save`-Befehl.
+- **Bekannte, bewusste Einschränkung (wie bei `images.py`):** Es findet
+  **keine DNS-Auflösung** zur Prüfung statt – ein Domainname, der erst
+  beim tatsächlichen Verbindungsaufbau auf eine private Adresse
+  auflöst (DNS-Rebinding), wird nicht erkannt.
+
+### Funktion „Ort in der Nähe suchen“ (`osm_info.py`, Issue #10, erweitert in Issue #11)
+
+Diese Funktion führt die **zweite eigene ausgehende Netzwerkanfrage im
+Backend-Code von HofKarte** ein – diesmal an die OpenStreetMap-Overpass-
+API, einen von HofKarte nicht kontrollierten, aber freien, kostenlosen,
+kontofreien OpenStreetMap-Community-Dienst (kein kommerzieller
+Cloud-Dienst, kein LLM/KI-Dienst, kein „Scraping-as-a-Service“). Anders
+als die rein clientseitig vom Browser geladenen Leaflet/OpenStreetMap-
+Kartenkacheln (Issue #2) überträgt diese Funktion **serverseitig
+konkrete Koordinaten eines bestimmten Hofladens** an den externen Dienst
+– ausschliesslich auf ausdrücklichen Klick auf „📍 Ort in der Nähe
+suchen“, nie automatisch oder im Hintergrund. Getroffene
+Sicherheitsmassnahmen bzw. bewusste Abgrenzungen:
+
+- **Kein externer/Cloud-/KI-Dienst im Sinne des Kernprinzips:** Die
+  Overpass API ist ein reiner OpenStreetMap-Datenabruf (strukturierte
+  Kartendaten, kein LLM, kein Konto, keine Nutzungsgebühr) – keine
+  Interpretation durch einen Cloud-/KI-Dienst. Die Antwort wird
+  ausschliesslich lokal und deterministisch ausgewertet (siehe
+  `osm_info.py`, Moduldoc, für die genaue Einordnung dieser bewusst
+  begrenzten, zweiten Ausnahme).
+- **Mehrere feste Anfrageziele statt eines Einzelpunkts:** Die
+  Haupt-Instanz `overpass-api.de` wird von ihren eigenen Betreibern als
+  häufig überlastet beschrieben. Statt eines einzelnen, fest verdrahteten
+  Endpunkts hinterlegt `osm_info.py` deshalb eine kurze, statische Liste
+  bekannter, öffentlicher Overpass-Instanzen (`OVERPASS_URLS`, alle drei
+  ebenfalls freie, kostenlose, kontofreie OpenStreetMap-Community-Dienste
+  – keine neue Kategorie externer Dienste); schlägt eine Instanz fehl
+  (Verbindungsfehler, Zeitüberschreitung, Fehler- oder
+  Drosselungs-Status wie HTTP 429), wird automatisch die nächste
+  versucht, jeder Fehlversuch wird protokolliert.
+- **Erkennbarer `User-Agent`-Header:** Die Overpass-Nutzungsrichtlinien
+  verlangen ausdrücklich einen identifizierenden `User-Agent`- oder
+  `Referer`-Header; jede Anfrage sendet daher einen festen,
+  HofKarte-identifizierenden `User-Agent` mit.
+- **Kein SSRF-Schutz à la `url_sicherheit.py` nötig, dafür andere
+  Limits:** Anders als bei `webseite_info.py` sind die Anfrageziele hier
+  **fest im Code hinterlegt** (`OVERPASS_URLS`) und werden nie durch
+  Benutzereingaben beeinflusst – nur Koordinaten und Radius (reine
+  Zahlenwerte) fliessen in den Anfragetext ein, eine Prüfung einer
+  benutzergesteuerten Ziel-URL entfällt damit. Es gelten dieselben
+  allgemeinen Abwehrmassnahmen wie in `webseite_info.py`: ein
+  Antwortgrössen-Limit (1 MB) sowie eine Zeitüberschreitung
+  (25 Sekunden je Instanz).
+- **Seit Issue #11 im Formular einstellbarer Radius, zweifach
+  begrenzt:** Der Suchradius ist nicht mehr fest auf
+  `STANDARD_RADIUS_METER` (50 m) verdrahtet, sondern im Formular
+  einstellbar – bewusst über **zwei unabhängige Schichten** begrenzt,
+  damit ein zu grosser oder ungültiger Wert weder eine überdimensionierte
+  Anfrage an den externen Dienst erzeugt noch die Anwendung mit einem
+  Fehler abbricht: Das WebSocket-Schema von `ws_osm_info` weist einen
+  Wert ausserhalb von `MIN_RADIUS_METER`–`MAX_RADIUS_METER` (20–2000 m)
+  bereits vor der Verarbeitung mit einem Schema-Fehler zurück; zusätzlich
+  klammert `async_ermittle_osm_orte()` selbst jeden übergebenen Radius
+  defensiv auf denselben Bereich, unabhängig davon, ob er über den
+  regulären WebSocket-Pfad oder – etwa in Tests – direkt an die Funktion
+  übergeben wurde.
+- **Home Assistants verwaltete Client-Session:** Wie
+  `webseite_info.py` verwendet auch dieser Abruf
+  `homeassistant.helpers.aiohttp_client.async_get_clientsession`, keine
+  eigene, unverwaltete `aiohttp.ClientSession` (siehe
+  `custom_components/hofkarte/quality_scale.yaml`, Kriterium
+  `inject-websession`).
+- **Begrenzter, dokumentierter `opening_hours`-Parser statt
+  Freitext-Raten:** OpenStreetMaps `opening_hours`-Tag folgt einer
+  eigenen, formal spezifizierten Syntax – dieses Modul unterstützt
+  bewusst nur eine gängige Teilmenge davon (siehe `osm_info.py`,
+  Moduldoc); nicht unterstützte Syntax (Feiertagsregeln, Datumsbereiche,
+  `off`-Ausnahmen u. Ä.) wird komplett übersprungen statt teilweise oder
+  falsch interpretiert.
+- **Review vor dem Speichern:** Wie bei `webseite_info.py` ist das
+  Ergebnis ausschliesslich ein Vorschlag im Bearbeitungsformular – es
+  wird dabei nichts automatisch gespeichert; das eigentliche Speichern
+  erfolgt unverändert über den bestehenden, administratorpflichtigen
+  `ws_save`-Befehl. Bei mehreren Treffern wird zunächst eine
+  Trefferauswahl gezeigt, bevor der gewählte Treffer im bereits aus
+  Issue #9 bekannten Bestätigungs-Popup zur Prüfung erscheint.

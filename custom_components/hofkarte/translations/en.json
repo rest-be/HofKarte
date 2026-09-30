@@ -16,6 +16,19 @@
       "single_instance_allowed": "HofKarte is already configured. Only a single instance is supported."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HofKarte settings",
+        "description": "Default sort order for the overview, and the default search radius for \"auto-fill\" (OpenStreetMap).",
+        "data": {
+          "listen_sort_spalte": "Default sort column",
+          "listen_sort_richtung": "Sort direction",
+          "osm_radius_meter": "OpenStreetMap search radius (meters)"
+        }
+      }
+    }
+  },
   "services": {
     "hoflaeden_suchen": {
       "name": "Search farm shops",

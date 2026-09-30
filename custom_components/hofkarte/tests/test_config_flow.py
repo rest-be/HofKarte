@@ -1,12 +1,23 @@
 """Tests für den HofKarte-Config-Flow."""
 
+import pytest
+import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.hofkarte.const import DEFAULT_NAME, DOMAIN
+from custom_components.hofkarte.const import (
+    CONF_LISTEN_SORT_RICHTUNG,
+    CONF_LISTEN_SORT_SPALTE,
+    CONF_OSM_RADIUS_METER,
+    DEFAULT_LISTEN_SORT_RICHTUNG,
+    DEFAULT_LISTEN_SORT_SPALTE,
+    DEFAULT_NAME,
+    DEFAULT_OSM_RADIUS_METER,
+    DOMAIN,
+)
 
 
 async def test_form_shown(hass: HomeAssistant) -> None:
@@ -79,3 +90,64 @@ async def test_user_flow_duplicate_setup_aborts(hass: HomeAssistant) -> None:
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "single_instance_allowed"
+
+
+async def test_options_flow_shows_defaults(hass: HomeAssistant) -> None:
+    """Ohne zuvor gespeicherte Optionen müssen die Vorgabewerte erscheinen."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, title=DEFAULT_NAME, data={CONF_NAME: DEFAULT_NAME}
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
+    schema = result["data_schema"].schema
+    werte = {key: key.default() for key in schema}
+    assert werte[CONF_LISTEN_SORT_SPALTE] == DEFAULT_LISTEN_SORT_SPALTE
+    assert werte[CONF_LISTEN_SORT_RICHTUNG] == DEFAULT_LISTEN_SORT_RICHTUNG
+    assert werte[CONF_OSM_RADIUS_METER] == DEFAULT_OSM_RADIUS_METER
+
+
+async def test_options_flow_saves_values(hass: HomeAssistant) -> None:
+    """Eine gültige Eingabe muss als Optionen der Config Entry gespeichert werden."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, title=DEFAULT_NAME, data={CONF_NAME: DEFAULT_NAME}
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_LISTEN_SORT_SPALTE: "bewertung",
+            CONF_LISTEN_SORT_RICHTUNG: "desc",
+            CONF_OSM_RADIUS_METER: 500,
+        },
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_LISTEN_SORT_SPALTE] == "bewertung"
+    assert entry.options[CONF_LISTEN_SORT_RICHTUNG] == "desc"
+    assert entry.options[CONF_OSM_RADIUS_METER] == 500
+
+
+async def test_options_flow_rejects_radius_out_of_range(hass: HomeAssistant) -> None:
+    """Ein Suchradius ausserhalb 20-2000 m muss abgelehnt werden."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, title=DEFAULT_NAME, data={CONF_NAME: DEFAULT_NAME}
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    with pytest.raises(vol.MultipleInvalid):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                CONF_LISTEN_SORT_SPALTE: "name",
+                CONF_LISTEN_SORT_RICHTUNG: "asc",
+                CONF_OSM_RADIUS_METER: 5,
+            },
+        )

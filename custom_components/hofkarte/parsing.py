@@ -40,6 +40,8 @@ _LONGITUDE_MIN = -180.0
 _LONGITUDE_MAX = 180.0
 _WOCHENTAG_MIN = 1
 _WOCHENTAG_MAX = 7
+_BEWERTUNG_MIN = 0
+_BEWERTUNG_MAX = 5
 
 
 class HofladenValidationError(ValueError):
@@ -81,6 +83,27 @@ def _optional_float(
             f"Feld '{field_name}' muss zwischen {minimum} und {maximum} liegen."
         )
     return number
+
+
+def _parse_bewertung(raw: Mapping[str, Any]) -> int:
+    """Bewertung (0-5 Sterne) einlesen.
+
+    Bewusst nicht wie ``latitude``/``longitude`` mit einer harten
+    Fehlermeldung bei Werten ausserhalb des Bereichs, sondern auf den
+    gültigen Bereich **begrenzt** (analog zum Suchradius in
+    ``osm_info.py``): Eine Bewertung ist reine Komfort-Metainformation,
+    kein sicherheits- oder korrektheitsrelevantes Feld - ein
+    geringfügig ausserhalb liegender Wert (z. B. durch eine künftige
+    Fremddatenquelle mit 1-10-Skala) soll das Speichern des gesamten
+    Hofladens nicht verhindern. Ein fehlender Wert ergibt den Standard
+    ``0`` (unbewertet).
+    """
+    value = raw.get("bewertung", 0)
+    if value is None:
+        return 0
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise HofladenValidationError("Feld 'bewertung' muss eine Zahl sein.")
+    return max(_BEWERTUNG_MIN, min(_BEWERTUNG_MAX, int(value)))
 
 
 def _parse_time(raw_value: Any, context: str, field_name: str) -> time:
@@ -316,6 +339,9 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
     ort = _optional_str(raw, "ort")
     land = _optional_str(raw, "land")
     website = _optional_str(raw, "website")
+    mobilnummer = _optional_str(raw, "mobilnummer")
+    email = _optional_str(raw, "email")
+    bewertung = _parse_bewertung(raw)
 
     latitude = _optional_float(raw, "latitude", _LATITUDE_MIN, _LATITUDE_MAX)
     longitude = _optional_float(raw, "longitude", _LONGITUDE_MIN, _LONGITUDE_MAX)
@@ -345,6 +371,8 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
         ort=ort,
         land=land,
         website=website,
+        mobilnummer=mobilnummer,
+        email=email,
         latitude=latitude,
         longitude=longitude,
         oeffnungszeiten=oeffnungszeiten,
@@ -352,4 +380,5 @@ def parse_hofladen(raw: Mapping[str, Any]) -> Hofladen:
         angebote=angebote,
         zahlungsarten=zahlungsarten,
         bilder=bilder,
+        bewertung=bewertung,
     )
