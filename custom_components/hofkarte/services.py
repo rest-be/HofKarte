@@ -38,15 +38,27 @@ from homeassistant.util import dt as dt_util
 from .const import DOMAIN
 from .coordinator import HofKarteUpdateCoordinator
 from .opening_hours import is_open
-from .search import find_hoflaeden
+from .search import find_hoflaeden, find_hoflaeden_in_naehe
 
 SERVICE_HOFLAEDEN_SUCHEN = "hoflaeden_suchen"
+SERVICE_HOFLAEDEN_IN_NAEHE = "hoflaeden_in_naehe"
 
 _SERVICE_HOFLAEDEN_SUCHEN_SCHEMA = vol.Schema(
     {
         vol.Optional("suchbegriff"): cv.string,
         vol.Optional("angebot"): cv.string,
         vol.Optional("zahlungsart"): cv.string,
+        vol.Optional("nur_geoeffnet"): cv.boolean,
+    }
+)
+
+_SERVICE_HOFLAEDEN_IN_NAEHE_SCHEMA = vol.Schema(
+    {
+        vol.Required("latitude"): cv.latitude,
+        vol.Required("longitude"): cv.longitude,
+        vol.Required("radius_meter"): vol.All(
+            vol.Coerce(float), vol.Range(min=0)
+        ),
         vol.Optional("nur_geoeffnet"): cv.boolean,
     }
 )
@@ -79,6 +91,21 @@ def _hofladen_zu_ergebnis_eintrag(hofladen: Any, now) -> dict[str, Any]:
     }
 
 
+def _naehe_treffer_zu_ergebnis_eintrag(
+    hofladen: Any, entfernung_km: float, now
+) -> dict[str, Any]:
+    """Ein Nähe-Treffer als knapper, JSON-tauglicher Datensatz.
+
+    Analog zu ``_hofladen_zu_ergebnis_eintrag``, zusätzlich mit der auf
+    volle Meter gerundeten Entfernung zum übergebenen Standort – der für
+    diese Action namensgebenden zusätzlichen Information gegenüber
+    ``hoflaeden_suchen``.
+    """
+    eintrag = _hofladen_zu_ergebnis_eintrag(hofladen, now)
+    eintrag["entfernung_meter"] = round(entfernung_km * 1000)
+    return eintrag
+
+
 async def _async_hoflaeden_suchen(
     hass: HomeAssistant, call: ServiceCall
 ) -> ServiceResponse:
@@ -101,6 +128,40 @@ async def _async_hoflaeden_suchen(
         "anzahl_treffer": len(treffer),
         "hoflaeden": [
             _hofladen_zu_ergebnis_eintrag(hofladen, now) for hofladen in treffer
+        ],
+    }
+
+
+async def _async_hoflaeden_in_naehe(
+    hass: HomeAssistant, call: ServiceCall
+) -> ServiceResponse:
+    """Service-Handler für ``hofkarte.hoflaeden_in_naehe``.
+
+    Anders als ``hoflaeden_suchen``/der ``Entfernung``-Sensor (beide
+    gegen die fixe, konfigurierte Home-Assistant-Position) prüft diese
+    Action gegen einen beliebigen, bei jedem Aufruf mitgegebenen
+    Standort – Grundlage für eine Nähe-Benachrichtigung anhand des
+    tatsächlichen Gerätestandorts (siehe ``search.find_hoflaeden_in_naehe``).
+    """
+    coordinator = _get_coordinator(hass)
+
+    nur_geoeffnet = call.data.get("nur_geoeffnet")
+    now = dt_util.now()
+
+    treffer = find_hoflaeden_in_naehe(
+        coordinator.data.values() if coordinator.data else [],
+        latitude=call.data["latitude"],
+        longitude=call.data["longitude"],
+        radius_meter=call.data["radius_meter"],
+        nur_geoeffnet=nur_geoeffnet,
+        now=now if nur_geoeffnet is not None else None,
+    )
+
+    return {
+        "anzahl_treffer": len(treffer),
+        "hoflaeden": [
+            _naehe_treffer_zu_ergebnis_eintrag(hofladen, entfernung_km, now)
+            for hofladen, entfernung_km in treffer
         ],
     }
 
@@ -129,5 +190,19 @@ def async_register_services(hass: HomeAssistant) -> None:
         SERVICE_HOFLAEDEN_SUCHEN,
         _service_handler,
         schema=_SERVICE_HOFLAEDEN_SUCHEN_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def _naehe_service_handler(call: ServiceCall) -> ServiceResponse:
+        # Siehe Kommentar bei ``_service_handler`` oben – aus demselben
+        # Grund auch hier eine eigene ``async def``-Funktion statt einer
+        # lambda-Hülle.
+        return await _async_hoflaeden_in_naehe(hass, call)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_HOFLAEDEN_IN_NAEHE,
+        _naehe_service_handler,
+        schema=_SERVICE_HOFLAEDEN_IN_NAEHE_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )

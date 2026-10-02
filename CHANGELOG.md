@@ -13,6 +13,32 @@ Entwicklung, vor der ersten offiziellen Veröffentlichung, einer an
 Semantic Versioning angelehnten, fortlaufenden Nummerierung und sind
 unten als historische Entwicklungsdokumentation erhalten.
 
+## [Unreleased]
+
+### Hinzugefügt
+
+- **Action `hofkarte.hoflaeden_in_naehe`:** Liefert Hofläden innerhalb
+  eines Radius um einen beliebigen, mitgegebenen Standort
+  (`latitude`/`longitude`/`radius_meter`), sortiert nach Entfernung,
+  optional nur aktuell geöffnete (`nur_geoeffnet`). Anders als der
+  bestehende `Entfernung`-Sensor und die Action `hoflaeden_suchen`
+  (beide gegen die fixe, konfigurierte Home-Assistant-Position) prüft
+  diese Action gegen einen beliebigen Standort, der bei jedem Aufruf
+  frisch übergeben wird – Grundlage für Nähe-Benachrichtigungen anhand
+  des tatsächlichen, aktuellen Gerätestandorts (z. B. aus einer
+  `person`-/`device_tracker`-Entity der Home Assistant Companion App).
+  Es werden weiterhin keine Standortdaten durch die Integration
+  gespeichert oder verfolgt.
+- **Automation-Blueprint „HofKarte – Benachrichtigung bei Hofladen in
+  der Nähe“** (`blueprints/automation/hofkarte/naehe_benachrichtigung.yaml`):
+  nutzt die neue Action, um bei jeder Standortänderung einer Person
+  oder eines Geräts zu prüfen, ob ein Hofladen in der Nähe liegt, und
+  löst dafür eine frei wählbare Benachrichtigungs-Aktion aus.
+- **README-Abschnitt „Mobile PWA“:** Hinweis auf die unabhängig
+  entwickelte, unter `rest-be/HofKarte-PWA` gepflegte Progressive Web
+  App, die HofKarte als Client dieser Integration nutzt (eigener
+  Admin-Benutzer, CORS-Einstellung, HTTPS/DuckDNS).
+
 ## [2026.9.2] - 2026-09-30
 
 Enthält die in den sieben Entwicklungsversionen `2026.9.2-dev.1` bis

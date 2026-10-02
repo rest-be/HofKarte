@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import datetime
 
+from .distance import haversine_distance_km
 from .models import Hofladen
 from .opening_hours import is_open
 
@@ -93,3 +94,65 @@ def find_hoflaeden(
         ergebnis.append(hofladen)
 
     return ergebnis
+
+
+def find_hoflaeden_in_naehe(
+    hoflaeden: Iterable[Hofladen],
+    *,
+    latitude: float,
+    longitude: float,
+    radius_meter: float,
+    nur_geoeffnet: bool | None = None,
+    now: datetime | None = None,
+) -> list[tuple[Hofladen, float]]:
+    """Hofläden innerhalb eines Radius um einen beliebigen Standort.
+
+    Im Unterschied zu ``HofKarteEntfernungSensor``/``distance.py`` wird
+    hier **nicht** die konfigurierte Home-Assistant-Position verwendet,
+    sondern ein beliebiger, mitgegebener Standort (``latitude``/
+    ``longitude``) – Grundlage für eine Nähe-Benachrichtigung anhand des
+    tatsächlichen, aktuellen Gerätestandorts (z. B. aus einer
+    ``person``-/``device_tracker``-Entity), der von der Integration
+    selbst bewusst nicht gespeichert oder verfolgt wird (siehe
+    ``distance.py``, Grundsatz „Keine Standortdaten persistieren“) –
+    der Aufrufer (typischerweise eine Automation) liefert ihn bei jedem
+    Aufruf frisch mit.
+
+    Hofläden ohne bekannte Koordinaten werden übersprungen, da für sie
+    keine Entfernung berechnet werden kann. ``nur_geoeffnet`` filtert
+    analog zu ``find_hoflaeden`` zusätzlich auf aktuell geöffnete
+    Hofläden (dafür ist ``now`` erforderlich).
+
+    Gibt eine Liste aus Tupeln ``(Hofladen, entfernung_km)`` zurück,
+    aufsteigend nach Entfernung sortiert (nächstgelegener Hofladen
+    zuerst).
+    """
+    if nur_geoeffnet is not None and now is None:
+        raise ValueError(
+            "'now' muss angegeben werden, wenn 'nur_geoeffnet' gesetzt ist."
+        )
+    if radius_meter < 0:
+        raise ValueError("'radius_meter' darf nicht negativ sein.")
+
+    radius_km = radius_meter / 1000
+
+    treffer: list[tuple[Hofladen, float]] = []
+    for hofladen in hoflaeden:
+        if hofladen.latitude is None or hofladen.longitude is None:
+            continue
+
+        entfernung_km = haversine_distance_km(
+            latitude, longitude, hofladen.latitude, hofladen.longitude
+        )
+        if entfernung_km > radius_km:
+            continue
+
+        if nur_geoeffnet:
+            assert now is not None  # durch die Prüfung oben sichergestellt
+            if is_open(hofladen, now) is not True:
+                continue
+
+        treffer.append((hofladen, entfernung_km))
+
+    treffer.sort(key=lambda eintrag: eintrag[1])
+    return treffer

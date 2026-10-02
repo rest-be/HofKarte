@@ -11,9 +11,13 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.hofkarte.const import DOMAIN
 from custom_components.hofkarte.services import (
+    SERVICE_HOFLAEDEN_IN_NAEHE,
     SERVICE_HOFLAEDEN_SUCHEN,
     _get_coordinator,
 )
+
+# Bern, Bahnhof - Referenzstandort für die hoflaeden_in_naehe-Tests
+_BERN_LAT, _BERN_LON = 46.9480, 7.4474
 
 
 def _make_entry(hass: HomeAssistant) -> MockConfigEntry:
@@ -241,6 +245,197 @@ async def test_suche_mit_unbekanntem_feld_wird_abgelehnt(
             DOMAIN,
             SERVICE_HOFLAEDEN_SUCHEN,
             {"unbekanntes_feld": "wert"},
+            blocking=True,
+            return_response=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# hoflaeden_in_naehe – Registrierung
+# ---------------------------------------------------------------------------
+
+
+async def test_naehe_service_wird_registriert(hass: HomeAssistant) -> None:
+    """Die Action muss nach dem Setup unter der Domain verfügbar sein."""
+    await _setup(hass)
+
+    assert hass.services.has_service(DOMAIN, SERVICE_HOFLAEDEN_IN_NAEHE)
+
+
+# ---------------------------------------------------------------------------
+# hoflaeden_in_naehe – Aufruf mit Rückgabedaten
+# ---------------------------------------------------------------------------
+
+
+async def test_naehe_findet_hofladen_im_radius(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-nahe",
+            "name": "Hofladen nahe Bern",
+            "latitude": 46.95,
+            "longitude": 7.45,
+        }
+    )
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-weit-weg",
+            "name": "Hofladen weit weg",
+            "latitude": 47.3769,
+            "longitude": 8.5417,
+        }
+    )
+
+    ergebnis = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_HOFLAEDEN_IN_NAEHE,
+        {"latitude": _BERN_LAT, "longitude": _BERN_LON, "radius_meter": 2000},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert ergebnis["anzahl_treffer"] == 1
+    assert ergebnis["hoflaeden"][0]["id"] == "hof-nahe"
+    assert ergebnis["hoflaeden"][0]["name"] == "Hofladen nahe Bern"
+    assert isinstance(ergebnis["hoflaeden"][0]["entfernung_meter"], int)
+
+
+async def test_naehe_ohne_treffer_liefert_leeres_ergebnis(
+    hass: HomeAssistant,
+) -> None:
+    await _setup(hass)
+    coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-weit-weg",
+            "name": "Hofladen weit weg",
+            "latitude": 47.3769,
+            "longitude": 8.5417,
+        }
+    )
+
+    ergebnis = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_HOFLAEDEN_IN_NAEHE,
+        {"latitude": _BERN_LAT, "longitude": _BERN_LON, "radius_meter": 500},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert ergebnis["anzahl_treffer"] == 0
+    assert ergebnis["hoflaeden"] == []
+
+
+async def test_naehe_sortiert_nach_entfernung(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
+    await coordinator.async_add_hofladen(
+        {"id": "hof-weiter", "name": "Weiter weg", "latitude": 47.0, "longitude": 7.5}
+    )
+    await coordinator.async_add_hofladen(
+        {"id": "hof-naeher", "name": "Näher dran", "latitude": 46.95, "longitude": 7.45}
+    )
+
+    ergebnis = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_HOFLAEDEN_IN_NAEHE,
+        {"latitude": _BERN_LAT, "longitude": _BERN_LON, "radius_meter": 100_000},
+        blocking=True,
+        return_response=True,
+    )
+
+    assert [hof["id"] for hof in ergebnis["hoflaeden"]] == [
+        "hof-naeher",
+        "hof-weiter",
+    ]
+
+
+async def test_naehe_nur_geoeffnet_filtert(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    coordinator = hass.data[DOMAIN][next(iter(hass.data[DOMAIN]))]
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-immer-offen",
+            "name": "Rund-um-die-Uhr-Hofladen",
+            "latitude": 46.95,
+            "longitude": 7.45,
+            "oeffnungszeiten": [
+                {"wochentag": tag, "beginn": "00:00", "ende": "23:59"}
+                for tag in range(1, 8)
+            ],
+        }
+    )
+    await coordinator.async_add_hofladen(
+        {
+            "id": "hof-ohne-zeiten",
+            "name": "Hofladen ohne Öffnungszeiten",
+            "latitude": 46.95,
+            "longitude": 7.45,
+        }
+    )
+
+    ergebnis = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_HOFLAEDEN_IN_NAEHE,
+        {
+            "latitude": _BERN_LAT,
+            "longitude": _BERN_LON,
+            "radius_meter": 2000,
+            "nur_geoeffnet": True,
+        },
+        blocking=True,
+        return_response=True,
+    )
+
+    assert ergebnis["anzahl_treffer"] == 1
+    assert ergebnis["hoflaeden"][0]["id"] == "hof-immer-offen"
+
+
+# ---------------------------------------------------------------------------
+# hoflaeden_in_naehe – Validierung
+# ---------------------------------------------------------------------------
+
+
+async def test_naehe_ohne_pflichtfeld_wird_abgelehnt(hass: HomeAssistant) -> None:
+    """``latitude``/``longitude``/``radius_meter`` sind Pflichtfelder."""
+    await _setup(hass)
+
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_HOFLAEDEN_IN_NAEHE,
+            {"latitude": _BERN_LAT, "longitude": _BERN_LON},
+            blocking=True,
+            return_response=True,
+        )
+
+
+async def test_naehe_mit_ungueltiger_latitude_wird_abgelehnt(
+    hass: HomeAssistant,
+) -> None:
+    await _setup(hass)
+
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_HOFLAEDEN_IN_NAEHE,
+            {"latitude": 999, "longitude": _BERN_LON, "radius_meter": 500},
+            blocking=True,
+            return_response=True,
+        )
+
+
+async def test_naehe_mit_negativem_radius_wird_abgelehnt(
+    hass: HomeAssistant,
+) -> None:
+    await _setup(hass)
+
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_HOFLAEDEN_IN_NAEHE,
+            {"latitude": _BERN_LAT, "longitude": _BERN_LON, "radius_meter": -1},
             blocking=True,
             return_response=True,
         )

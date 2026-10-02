@@ -12,7 +12,7 @@ from custom_components.hofkarte.models import (
     Oeffnungszeit,
     Zahlungsart,
 )
-from custom_components.hofkarte.search import find_hoflaeden
+from custom_components.hofkarte.search import find_hoflaeden, find_hoflaeden_in_naehe
 
 _MONTAG = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc)  # innerhalb 08-12 Uhr
 
@@ -205,3 +205,130 @@ def test_eingabe_wird_nicht_veraendert() -> None:
     find_hoflaeden(eingabe, angebot="Kartoffeln")
 
     assert eingabe == [_MUELLER, _SCHMID]
+
+
+# ---------------------------------------------------------------------------
+# find_hoflaeden_in_naehe
+# ---------------------------------------------------------------------------
+
+# Bern, Bahnhof
+_BERN_LAT, _BERN_LON = 46.9480, 7.4474
+# Zürich HB - ca. 95.5 km von Bern entfernt
+_ZUERICH_LAT, _ZUERICH_LON = 47.3769, 8.5417
+
+_NAHE_BERN = _hofladen(
+    id="hof-nahe-bern", name="Hofladen nahe Bern", latitude=46.95, longitude=7.45
+)
+_WEIT_WEG = _hofladen(
+    id="hof-weit-weg",
+    name="Hofladen weit weg",
+    latitude=_ZUERICH_LAT,
+    longitude=_ZUERICH_LON,
+)
+_OHNE_KOORDINATEN = _hofladen(id="hof-ohne-koordinaten", name="Ohne Koordinaten")
+
+
+def test_in_naehe_findet_hofladen_im_radius() -> None:
+    treffer = find_hoflaeden_in_naehe(
+        [_NAHE_BERN, _WEIT_WEG],
+        latitude=_BERN_LAT,
+        longitude=_BERN_LON,
+        radius_meter=2000,
+    )
+
+    assert [hofladen.id for hofladen, _ in treffer] == ["hof-nahe-bern"]
+
+
+def test_in_naehe_schliesst_hofladen_ausserhalb_radius_aus() -> None:
+    treffer = find_hoflaeden_in_naehe(
+        [_WEIT_WEG],
+        latitude=_BERN_LAT,
+        longitude=_BERN_LON,
+        radius_meter=500,
+    )
+
+    assert treffer == []
+
+
+def test_in_naehe_ignoriert_hoflaeden_ohne_koordinaten() -> None:
+    treffer = find_hoflaeden_in_naehe(
+        [_OHNE_KOORDINATEN],
+        latitude=_BERN_LAT,
+        longitude=_BERN_LON,
+        radius_meter=100_000,
+    )
+
+    assert treffer == []
+
+
+def test_in_naehe_sortiert_nach_entfernung_aufsteigend() -> None:
+    naeher = _hofladen(id="hof-naeher", latitude=46.95, longitude=7.45)
+    weiter = _hofladen(id="hof-weiter", latitude=47.0, longitude=7.5)
+
+    treffer = find_hoflaeden_in_naehe(
+        [weiter, naeher],
+        latitude=_BERN_LAT,
+        longitude=_BERN_LON,
+        radius_meter=100_000,
+    )
+
+    assert [hofladen.id for hofladen, _ in treffer] == ["hof-naeher", "hof-weiter"]
+
+
+def test_in_naehe_liefert_entfernung_in_km() -> None:
+    treffer = find_hoflaeden_in_naehe(
+        [_WEIT_WEG],
+        latitude=_BERN_LAT,
+        longitude=_BERN_LON,
+        radius_meter=200_000,
+    )
+
+    [(hofladen, entfernung_km)] = treffer
+    assert hofladen.id == "hof-weit-weg"
+    assert entfernung_km == pytest.approx(95.49, abs=0.1)
+
+
+def test_in_naehe_nur_geoeffnet_filtert() -> None:
+    geoeffnet = _hofladen(
+        id="hof-offen",
+        latitude=46.95,
+        longitude=7.45,
+        oeffnungszeiten=(
+            Oeffnungszeit(wochentag=1, beginn=time(8, 0), ende=time(12, 0)),
+        ),
+    )
+    geschlossen = _hofladen(
+        id="hof-ohne-zeiten", latitude=46.95, longitude=7.45, oeffnungszeiten=()
+    )
+
+    treffer = find_hoflaeden_in_naehe(
+        [geoeffnet, geschlossen],
+        latitude=_BERN_LAT,
+        longitude=_BERN_LON,
+        radius_meter=2000,
+        nur_geoeffnet=True,
+        now=_MONTAG,
+    )
+
+    assert [hofladen.id for hofladen, _ in treffer] == ["hof-offen"]
+
+
+def test_in_naehe_nur_geoeffnet_ohne_now_wirft_fehler() -> None:
+    with pytest.raises(ValueError):
+        find_hoflaeden_in_naehe(
+            [_NAHE_BERN],
+            latitude=_BERN_LAT,
+            longitude=_BERN_LON,
+            radius_meter=2000,
+            nur_geoeffnet=True,
+        )
+
+
+def test_in_naehe_negativer_radius_wirft_fehler() -> None:
+    with pytest.raises(ValueError):
+        find_hoflaeden_in_naehe(
+            [_NAHE_BERN],
+            latitude=_BERN_LAT,
+            longitude=_BERN_LON,
+            radius_meter=-1,
+        )

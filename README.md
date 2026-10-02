@@ -456,6 +456,37 @@ hoflaeden:
 bereits ab), separate Actions je Filterdimension, sowie eine
 proprietäre REST-API oder eine Suche über andere Integrationen hinweg.
 
+Daneben steht die Action `hofkarte.hoflaeden_in_naehe` zur Verfügung,
+die – anders als `hoflaeden_suchen` und der `Entfernung`-Sensor (beide
+gegen die fixe, konfigurierte Home-Assistant-Position) – gegen einen
+beliebigen, bei jedem Aufruf mitgegebenen Standort prüft:
+
+**Parameter:**
+
+| Parameter        | Typ     | Pflicht | Bedeutung                                           |
+|-------------------|---------|---------|------------------------------------------------------|
+| `latitude`        | Zahl    | ja      | Breitengrad des Bezugspunkts                          |
+| `longitude`       | Zahl    | ja      | Längengrad des Bezugspunkts                           |
+| `radius_meter`    | Zahl    | ja      | Suchradius in Metern um den Bezugspunkt               |
+| `nur_geoeffnet`   | Bool    | nein    | Nur aktuell geöffnete Hofläden                        |
+
+**Rückgabedaten**, aufsteigend nach Entfernung sortiert:
+
+```yaml
+anzahl_treffer: 1
+hoflaeden:
+  - id: hof-mueller
+    name: Hofladen Müller
+    geoeffnet: true
+    entfernung_meter: 340
+```
+
+Es werden dabei **keine** Standortdaten durch die Integration
+gespeichert oder verfolgt – der Bezugspunkt wird bei jedem Aufruf frisch
+übergeben (z. B. aus den `latitude`/`longitude`-Attributen einer
+`person`- oder `device_tracker`-Entity). Siehe auch das mitgelieferte
+Automation-Blueprint im Abschnitt „Mobile PWA“ unten.
+
 ## Beispiele für Automationen
 
 **Benachrichtigung, wenn ein Lieblings-Hofladen öffnet:**
@@ -500,6 +531,49 @@ action:
 Integration): Da `image`-Entities in Lovelace-Bildkarten funktionieren,
 kann eine Picture-Entity-Karte direkt `image.hofladen_mueller_hauptbild`
 verwenden.
+
+**Mitgeliefertes Blueprint – Benachrichtigung bei Hofladen in der
+Nähe:** Statt die Action `hoflaeden_in_naehe` selbst zu verdrahten,
+kann das Automation-Blueprint
+[`blueprints/automation/hofkarte/naehe_benachrichtigung.yaml`](blueprints/automation/hofkarte/naehe_benachrichtigung.yaml)
+importiert werden (*Einstellungen → Automatisierungen & Szenen →
+Blueprints → Blueprint importieren*). Es löst bei jeder
+Standortänderung einer `person`- oder `device_tracker`-Entity eine
+frei wählbare Benachrichtigungs-Aktion aus, wenn sich ein Hofladen
+innerhalb des konfigurierten Radius befindet.
+
+## Mobile PWA
+
+Unabhängig von dieser Integration wird unter
+[`rest-be/HofKarte-PWA`](https://github.com/rest-be/HofKarte-PWA) eine
+Progressive Web App entwickelt, die HofKarte als dünner Client dieser
+Integration nutzt – **ohne eigene Datenhaltung**: Sämtliche Hofladen-
+Daten bleiben in dieser Integration, die PWA liest und schreibt
+ausschliesslich über die bestehende Home-Assistant-WebSocket-API.
+
+Für den Betrieb der PWA sind auf Seiten dieser Integration folgende,
+unabhängig von der PWA selbst sinnvolle Voraussetzungen zu schaffen:
+
+- **Eigener Admin-Benutzer** (z. B. „HofKarte“) als technisches
+  Service-Konto für die PWA, mit einem eigenen Long-Lived Access Token
+  pro Gerät (granulare Widerrufbarkeit bei Geräteverlust) statt eines
+  persönlichen Kontos oder eines gemeinsamen Passworts.
+- **`cors_allowed_origins`** in `configuration.yaml`, damit der Browser
+  Anfragen von der die PWA ausliefernden Origin (z. B. GitHub Pages)
+  akzeptiert – siehe Home-Assistant-Dokumentation zu `http:`.
+- **Interner HTTPS-Zugriff** auf diese Home-Assistant-Instanz (z. B.
+  über eine eigene DuckDNS-Domain mit Let's-Encrypt-Zertifikat per
+  DNS-01-Challenge): Eine über `https://` ausgelieferte PWA darf aus
+  Browser-Sicherheitsgründen (*Mixed Content*) keine Verbindung zu
+  einer nur über `http://` erreichbaren Home-Assistant-Instanz
+  aufbauen, auch nicht innerhalb eines VPNs.
+- Die Nähe-Benachrichtigung der PWA nutzt die oben beschriebene Action
+  `hoflaeden_in_naehe` bzw. das mitgelieferte Automation-Blueprint,
+  ausgelöst über die Standort-Entities der offiziellen Home Assistant
+  Companion App.
+
+Detailplanung und Umsetzungsschritte für dieses Zusammenspiel werden
+unabhängig von diesem Repository dokumentiert.
 
 ## Unter der Haube (technische Referenz)
 
